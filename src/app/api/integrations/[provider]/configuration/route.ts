@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { parseProvider } from "@/lib/integrations/catalog";
 
-const safeKeys = new Set(["account_id","account_name","ad_account_id","ad_account_name","customer_id","customer_name","property_id","property_name","site_url","location_id","location_name","board_id","board_name","endpoint_name","monday_columns"]);
+const safeKeys = new Set(["account_id","account_name","ad_account_id","ad_account_name","customer_id","customer_name","property_id","property_name","site_url","location_id","location_name","board_id","board_name","portal_id","portal_name","pipeline_id","pipeline_name","endpoint_name","monday_columns"]);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ provider: string }> }) {
   const provider = parseProvider((await params).provider);

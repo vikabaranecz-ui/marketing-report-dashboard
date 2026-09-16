@@ -96,7 +96,7 @@ export type LocationMetric = {
 
 export type Integration = {
   id: string;
-  provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "website_forms";
+  provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "website_forms";
   name: string;
   status: "Connected" | "Connecting" | "Not connected" | "Error";
   lastSuccess: string | null;

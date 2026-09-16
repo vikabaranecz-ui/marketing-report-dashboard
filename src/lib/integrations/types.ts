@@ -1,4 +1,4 @@
-export type IntegrationProvider = "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "website_forms";
+export type IntegrationProvider = "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "website_forms";
 
 export type SyncWindow = { from: string; to: string };
 
@@ -59,6 +59,10 @@ export type ConnectionConfiguration = {
   board_id?: string;
   board_name?: string;
   endpoint_name?: string;
+  portal_id?: string;
+  portal_name?: string;
+  pipeline_id?: string;
+  pipeline_name?: string;
   monday_columns?: MondayColumnMapping;
 };
 
