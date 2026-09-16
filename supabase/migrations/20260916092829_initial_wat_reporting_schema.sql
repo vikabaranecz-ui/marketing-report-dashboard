@@ -375,3 +375,4 @@ grant select on public.organizations, public.companies, public.users, public.com
   public.campaigns, public.ad_groups, public.ads, public.creative_metadata, public.daily_marketing_metrics, public.website_metrics,
   public.seo_metrics, public.gbp_metrics, public.leads, public.lead_events, public.appointments, public.quotes, public.projects,
   public.revenue_attribution, public.reporting_integration_connections, public.sync_logs to authenticated;
+;

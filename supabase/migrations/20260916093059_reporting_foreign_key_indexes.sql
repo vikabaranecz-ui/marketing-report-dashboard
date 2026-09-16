@@ -12,4 +12,4 @@ create index if not exists projects_lead_idx on public.projects (lead_id);
 create index if not exists revenue_attribution_project_idx on public.revenue_attribution (project_id);
 create index if not exists revenue_attribution_channel_idx on public.revenue_attribution (channel_id);
 create index if not exists revenue_attribution_campaign_idx on public.revenue_attribution (campaign_id);
-create index if not exists sync_logs_reporting_integration_idx on public.sync_logs (integration_connection_id);
+create index if not exists sync_logs_reporting_integration_idx on public.sync_logs (integration_connection_id);;
