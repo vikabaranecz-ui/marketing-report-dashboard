@@ -1,0 +1,15 @@
+create index if not exists users_organization_idx on public.users (organization_id);
+create index if not exists company_users_user_idx on public.company_users (user_id);
+create index if not exists campaigns_channel_idx on public.campaigns (channel_id);
+create index if not exists creative_metadata_service_idx on public.creative_metadata (service_id);
+create index if not exists daily_metrics_ad_group_idx on public.daily_marketing_metrics (ad_group_id);
+create index if not exists daily_metrics_ad_idx on public.daily_marketing_metrics (ad_id);
+create index if not exists leads_ad_idx on public.leads (ad_id);
+create index if not exists leads_assigned_to_idx on public.leads (assigned_to);
+create index if not exists lead_events_created_by_idx on public.lead_events (created_by);
+create index if not exists appointments_lead_idx on public.appointments (lead_id);
+create index if not exists projects_lead_idx on public.projects (lead_id);
+create index if not exists revenue_attribution_project_idx on public.revenue_attribution (project_id);
+create index if not exists revenue_attribution_channel_idx on public.revenue_attribution (channel_id);
+create index if not exists revenue_attribution_campaign_idx on public.revenue_attribution (campaign_id);
+create index if not exists sync_logs_reporting_integration_idx on public.sync_logs (integration_connection_id);

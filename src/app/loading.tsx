@@ -1,0 +1,1 @@
+export default function Loading() { return <div className="grid min-h-screen place-items-center bg-[#f3f3ef]"><div className="flex items-center gap-3 text-sm font-medium text-[#656761]"><span className="h-2 w-2 animate-pulse bg-[#b9ef25]"/>Preparing report…</div></div>; }
