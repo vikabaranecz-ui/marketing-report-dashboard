@@ -5,7 +5,7 @@ type ProviderDefinition = {
   id: IntegrationProvider;
   name: string;
   auth: "oauth" | "signed_webhook" | "server_token";
-  authorizationGroup: "meta" | "google" | "monday" | "hubspot" | "website";
+  authorizationGroup: "meta" | "google" | "monday" | "hubspot" | "robaws" | "website";
   selectedResource: string;
 };
 
@@ -20,6 +20,7 @@ export const providerCatalog: Record<IntegrationProvider, ProviderDefinition> = 
   // OAuth can be added later for external WAT clients.
   monday: { id: "monday", name: "Monday.com", auth: "server_token", authorizationGroup: "monday", selectedResource: "Monday board" },
   hubspot: { id: "hubspot", name: "HubSpot", auth: "server_token", authorizationGroup: "hubspot", selectedResource: "HubSpot CRM" },
+  robaws: { id: "robaws", name: "ROBAWS", auth: "server_token", authorizationGroup: "robaws", selectedResource: "ROBAWS commercial data" },
 
   website_forms: { id: "website_forms", name: "Website forms", auth: "signed_webhook", authorizationGroup: "website", selectedResource: "Lead ingestion endpoint" },
 };
@@ -36,6 +37,7 @@ export function missingProviderConfiguration(provider: IntegrationProvider) {
     google: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_CLOUD_PROJECT_ID"],
     monday: ["MONDAY_API_TOKEN"],
     hubspot: ["HUBSPOT_ACCESS_TOKEN"],
+    robaws: ["ROBAWS_API_KEY", "ROBAWS_API_SECRET"],
     website: ["LEAD_INGEST_SECRETS_JSON"],
   };
 

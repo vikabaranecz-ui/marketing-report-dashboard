@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { parseProvider, providerCatalog } from "@/lib/integrations/catalog";
 import { syncCrmProvider } from "@/lib/integrations/crm-sync";
+import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -57,7 +58,11 @@ export async function POST(
     );
   }
 
-  if (provider !== "monday" && provider !== "hubspot") {
+  if (
+    provider !== "monday" &&
+    provider !== "hubspot" &&
+    provider !== "robaws"
+  ) {
     return NextResponse.json(
       {
         error:
@@ -103,14 +108,19 @@ export async function POST(
     .eq("id", access.connection.id);
 
   try {
-    const result = await syncCrmProvider(
-      provider,
-      body.companyId,
-      access.connection.configuration as Record<
-        string,
-        unknown
-      >,
-    );
+    const result =
+      provider === "robaws"
+        ? await syncRobawsProvider(
+            body.companyId,
+          )
+        : await syncCrmProvider(
+            provider,
+            body.companyId,
+            access.connection.configuration as Record<
+              string,
+              unknown
+            >,
+          );
 
     const completedAt = new Date().toISOString();
 
@@ -140,6 +150,14 @@ export async function POST(
             result.leadsImported,
           dealsImported:
             result.dealsImported,
+          quotesImported:
+            "quotesImported" in result
+              ? result.quotesImported
+              : 0,
+          invoicesImported:
+            "invoicesImported" in result
+              ? result.invoicesImported
+              : 0,
           projectsImported:
             result.projectsImported,
           revenueImported:

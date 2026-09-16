@@ -44,6 +44,52 @@ export type CommercialDeal = {
   linkedLeadId: string | null;
 };
 
+export type CommercialOffer = {
+  id: string;
+  leadId: string;
+  leadName: string;
+  source: string;
+  date: string;
+  number: string;
+  status: string;
+  priceInclVat: number;
+  priceExclVat: number;
+  projectExternalId: string | null;
+  attributionStatus: string;
+  isOpen: boolean;
+  isAccepted: boolean;
+  isRejected: boolean;
+  daysWaiting: number | null;
+};
+
+export type CommercialProject = {
+  id: string;
+  leadId: string;
+  leadName: string;
+  source: string;
+  externalId: string;
+  status: string;
+  valueInclVat: number | null;
+  valueExclVat: number | null;
+  attributionStatus: string;
+};
+
+export type CommercialInvoice = {
+  id: string;
+  leadId: string | null;
+  leadName: string;
+  source: string;
+  date: string;
+  number: string;
+  status: string;
+  totalInclVat: number;
+  totalExclVat: number;
+  paidTotal: number;
+  creditedTotal: number;
+  projectExternalId: string | null;
+  attributionStatus: string;
+};
+
 export type Lead = {
   id: string;
   date: string;
@@ -127,7 +173,7 @@ export type LocationMetric = {
 
 export type Integration = {
   id: string;
-  provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "website_forms";
+  provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" | "website_forms";
   name: string;
   status: "Connected" | "Connecting" | "Not connected" | "Error";
   lastSuccess: string | null;
@@ -146,6 +192,10 @@ export type CompanyDataset = {
   channels: ChannelMetric[];
   leadSources: SourceMetric[];
   commercialDeals?: CommercialDeal[];
+  commercialOffers?: CommercialOffer[];
+  commercialProjects?: CommercialProject[];
+  commercialInvoices?: CommercialInvoice[];
+  appointmentLeadIds?: string[];
   leads: Lead[];
   services: ServiceMetric[];
   campaigns: CampaignMetric[];

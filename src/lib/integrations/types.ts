@@ -1,4 +1,4 @@
-export type IntegrationProvider = "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "website_forms";
+export type IntegrationProvider = "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" | "website_forms";
 
 export type SyncWindow = { from: string; to: string };
 
