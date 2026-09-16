@@ -4,57 +4,167 @@ import { useMemo, useState } from "react";
 import { Clock3, Mail, MapPin, Phone, X } from "lucide-react";
 import type { CompanyDataset, Lead } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
-import { QualityBars } from "./charts";
 import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
 
 const stageOrder = ["New lead", "Contacted", "Qualified", "Visit booked", "Visit completed", "Quote sent", "Won"];
 
+function leadState(lead: Lead) {
+  return `${lead.crmStatus} ${lead.stage}`
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function isWonLead(lead: Lead) {
+  const value = leadState(lead);
+
+  return (
+    lead.stage === "Won" ||
+    value.includes("signed") ||
+    value.includes("closed won") ||
+    value.includes("contract signed")
+  );
+}
+
+function isRejectedOffer(lead: Lead) {
+  const value = leadState(lead);
+
+  return (
+    value.includes("offerte afgekeurd") ||
+    value.includes("proposal rejected") ||
+    value.includes("offer rejected")
+  );
+}
+
+function isOfferReached(lead: Lead) {
+  const value = leadState(lead);
+
+  return (
+    isWonLead(lead) ||
+    isRejectedOffer(lead) ||
+    value.includes("offer sent") ||
+    value.includes("email offerte") ||
+    value.includes("proposal sent") ||
+    value.includes("negotiation")
+  );
+}
+
+function isAppointmentReached(lead: Lead) {
+  const value = leadState(lead);
+
+  return (
+    isOfferReached(lead) ||
+    value.includes("afspraak ingeboekt") ||
+    value.includes("visited offerte") ||
+    value.includes("visit booked") ||
+    value.includes("visit completed") ||
+    value.includes("initial consultation")
+  );
+}
+
 export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
   const [selected, setSelected] = useState<Lead | null>(null);
-  const quality = useMemo(() => (["A","B","C"] as const).map(name => ({ name: `Quality ${name}`, value: data.leads.filter(l => l.quality === name).length })), [data.leads]);
-  const avgQuote = data.leads.filter(l => l.quoteValue).reduce((s,l) => s + (l.quoteValue ?? 0), 0) / Math.max(1, data.leads.filter(l => l.quoteValue).length);
-  const avgWon = data.metrics.revenue / Math.max(1, data.metrics.won);
+  const commercialDeals =
+    data.commercialDeals ?? [];
+
+  const offerLeads = data.leads.filter(
+    isOfferReached,
+  );
+
+  const signedClients = data.leads.filter(
+    isWonLead,
+  );
+
+  const rejectedOffers = data.leads.filter(
+    isRejectedOffer,
+  );
+
+  const appointmentLeads = data.leads.filter(
+    isAppointmentReached,
+  );
+
+  const wonDeals = commercialDeals.filter(
+    deal => deal.stage === "won",
+  );
+
+  const lostDeals = commercialDeals.filter(
+    deal => deal.stage === "lost",
+  );
+
+  const openDeals = commercialDeals.filter(
+    deal =>
+      deal.stage !== "won" &&
+      deal.stage !== "lost",
+  );
+
+  const sumDeals = (
+    rows: typeof commercialDeals,
+  ) =>
+    rows.reduce(
+      (sum, deal) =>
+        sum + (deal.value ?? 0),
+      0,
+    );
+
+  const totalPipelineValue =
+    sumDeals(commercialDeals);
+
+  const wonDealValue =
+    sumDeals(wonDeals);
+
+  const lostDealValue =
+    sumDeals(lostDeals);
+
+  const openDealValue =
+    sumDeals(openDeals);
 
   const sourceRows = useMemo(() => {
     const rows = new Map<string, {
       source: string;
       leads: number;
+      appointments: number;
       offers: number;
-      quoted: number;
+      rejected: number;
       clients: number;
-      revenue: number;
     }>();
 
     for (const lead of data.leads) {
-      const source = lead.source || "Unattributed";
+      const source =
+        lead.source || "Unattributed";
 
-      const row = rows.get(source) ?? {
-        source,
-        leads: 0,
-        offers: 0,
-        quoted: 0,
-        clients: 0,
-        revenue: 0,
-      };
+      const row =
+        rows.get(source) ?? {
+          source,
+          leads: 0,
+          appointments: 0,
+          offers: 0,
+          rejected: 0,
+          clients: 0,
+        };
 
       row.leads += 1;
 
-      if (lead.quoteValue !== null || lead.quoteNumber !== "—") {
+      if (isAppointmentReached(lead)) {
+        row.appointments += 1;
+      }
+
+      if (isOfferReached(lead)) {
         row.offers += 1;
       }
 
-      row.quoted += lead.quoteValue ?? 0;
-
-      if (lead.isClient) {
-        row.clients += 1;
+      if (isRejectedOffer(lead)) {
+        row.rejected += 1;
       }
 
-      row.revenue += lead.wonRevenue ?? 0;
+      if (isWonLead(lead)) {
+        row.clients += 1;
+      }
 
       rows.set(source, row);
     }
 
-    return [...rows.values()].sort((a,b) => b.leads - a.leads);
+    return [...rows.values()]
+      .sort((a,b) => b.leads - a.leads);
   }, [data.leads]);
 
   const crmStatuses = useMemo(() => {
@@ -76,20 +186,122 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
 
   return <div className="space-y-6">
     <div className="kpi-grid kpi-grid-six border-l border-t border-[var(--line)]">
-      <KpiCard label="Avg. response time" value="12 min" delta={-18.4} meta="From lead creation"/>
-      <KpiCard label="Contacted" value="91.2%" delta={2.6} meta="73% within 30 min"/>
-      <KpiCard label="Visit booking rate" value={formatPercent(percentage(data.metrics.visits, data.metrics.qualified))} meta="Qualified → visit"/>
-      <KpiCard label="Quote acceptance" value={formatPercent(percentage(data.metrics.won, data.metrics.quotes))} delta={4.2} meta="CRM-confirmed"/>
-      <KpiCard label="Average quote" value={formatCurrency(avgQuote, true)} meta="Open and closed quotes"/>
-      <KpiCard label="Average won project" value={formatCurrency(avgWon, true)} meta="Attributed revenue"/>
+      <KpiCard
+        label="CRM leads"
+        value={formatNumber(data.leads.length)}
+        meta="Actual CRM records"
+      />
+
+      <KpiCard
+        label="Reached offer"
+        value={formatNumber(offerLeads.length)}
+        meta={`${formatPercent(percentage(offerLeads.length,data.leads.length))} of leads`}
+      />
+
+      <KpiCard
+        label="Signed clients"
+        value={formatNumber(signedClients.length)}
+        meta="CRM signed / won"
+      />
+
+      <KpiCard
+        label="Lead → client"
+        value={formatPercent(percentage(signedClients.length,data.leads.length))}
+        meta="Actual current outcome"
+      />
+
+      <KpiCard
+        label="Won deal value"
+        value={formatCurrency(wonDealValue,true)}
+        meta={`${wonDeals.length} closed-won deals`}
+      />
+
+      <KpiCard
+        label="Open pipeline"
+        value={formatCurrency(openDealValue,true)}
+        meta={`${openDeals.length} open / on-hold deals`}
+      />
     </div>
 
-    <Card className="p-5"><SectionHeader title="Sales funnel" description="Stage velocity and conversion from the previous stage"/><div className="sales-funnel">{stageOrder.map((stage,index) => { const counts = [data.metrics.leads, Math.round(data.metrics.leads*.91), data.metrics.qualified, Math.round(data.metrics.visits*1.13), data.metrics.visits, data.metrics.quotes, data.metrics.won]; const conversion = index === 0 ? null : percentage(counts[index], counts[index-1]); return <div className="sales-stage" key={stage}><div className="flex items-start justify-between gap-2"><p>{stage}</p><span>{index === 0 ? "0.0d" : `${(index*.7+.4).toFixed(1)}d`}</span></div><strong>{formatNumber(counts[index])}</strong><small>{conversion === null ? "Entry" : `${formatPercent(conversion)} conv. · ${formatPercent(conversion === null ? null : 100-conversion)} lost`}</small></div>; })}</div></Card>
+    <Card className="p-5">
+      <SectionHeader
+        title="Commercial conversion"
+        description="Real CRM outcomes — no synthetic qualification scores"
+      />
 
-    <div className="grid gap-6 xl:grid-cols-[.8fr_1.7fr]">
-      <Card className="p-5"><SectionHeader title="Lead quality" description="A = strong, B = possible, C = poor or invalid"/><QualityBars data={quality}/><div className="mt-3 grid grid-cols-3 gap-px bg-[var(--line)]">{quality.map(item => <div className="bg-white p-3 text-center" key={item.name}><p className="text-xl font-semibold">{item.value}</p><p className="text-xs text-[var(--muted)]">{item.name}</p></div>)}</div></Card>
-      <Card className="p-5"><SectionHeader title="Sales efficiency" description="Operational factors that affect close rate"/><div className="grid grid-cols-2 gap-px bg-[var(--line)] lg:grid-cols-4"><Mini label="Within 5 min" value="38%"/><Mini label="Within 30 min" value="73%"/><Mini label="No-show rate" value="8.4%"/><Mini label="Average sales cycle" value="18.6d"/><Mini label="Quote rate" value={formatPercent(percentage(data.metrics.quotes,data.metrics.visits))}/><Mini label="Qualified rate" value={formatPercent(percentage(data.metrics.qualified,data.metrics.leads))}/><Mini label="Lost leads" value={String(Math.round(data.metrics.leads*.19))}/><Mini label="Open pipeline" value={formatCurrency(avgQuote*data.metrics.quotes*.62,true)}/></div></Card>
-    </div>
+      <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-5">
+        <Mini
+          label="All leads"
+          value={String(data.leads.length)}
+        />
+
+        <Mini
+          label="Appointment / later"
+          value={String(appointmentLeads.length)}
+        />
+
+        <Mini
+          label="Reached offer"
+          value={String(offerLeads.length)}
+        />
+
+        <Mini
+          label="Offer rejected"
+          value={String(rejectedOffers.length)}
+        />
+
+        <Mini
+          label="Signed / won"
+          value={String(signedClients.length)}
+        />
+      </div>
+
+      <div className="mt-5 grid gap-px bg-[var(--line)] sm:grid-cols-3">
+        <Mini
+          label="Lead → offer"
+          value={formatPercent(percentage(offerLeads.length,data.leads.length))}
+        />
+
+        <Mini
+          label="Offer → client"
+          value={formatPercent(percentage(signedClients.length,offerLeads.length))}
+        />
+
+        <Mini
+          label="Lead → client"
+          value={formatPercent(percentage(signedClients.length,data.leads.length))}
+        />
+      </div>
+    </Card>
+
+    <Card className="p-5">
+      <SectionHeader
+        title="Commercial pipeline value"
+        description="Imported from Monday Deals — values are not attributed to a specific lead until email/phone matching is verified"
+      />
+
+      <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4">
+        <Mini
+          label="Total deal value"
+          value={formatCurrency(totalPipelineValue,true)}
+        />
+
+        <Mini
+          label="Closed won"
+          value={formatCurrency(wonDealValue,true)}
+        />
+
+        <Mini
+          label="Closed lost"
+          value={formatCurrency(lostDealValue,true)}
+        />
+
+        <Mini
+          label="Open / on hold"
+          value={formatCurrency(openDealValue,true)}
+        />
+      </div>
+    </Card>
 
     <Card className="p-5">
       <SectionHeader
@@ -102,11 +314,12 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
             <tr>
               <th>CRM source</th>
               <th>Leads</th>
-              <th>Offers</th>
-              <th>Quoted value</th>
+              <th>Appointments+</th>
+              <th>Reached offer</th>
+              <th>Rejected offer</th>
               <th>Clients</th>
               <th>Lead → client</th>
-              <th>Won revenue</th>
+              <th>Offer → client</th>
             </tr>
           </thead>
           <tbody>
@@ -114,13 +327,53 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
               <tr key={row.source}>
                 <td className="font-semibold">{row.source}</td>
                 <td>{row.leads}</td>
+                <td>{row.appointments}</td>
                 <td>{row.offers}</td>
-                <td>{formatCurrency(row.quoted)}</td>
+                <td>{row.rejected}</td>
                 <td>{row.clients}</td>
                 <td>{formatPercent(percentage(row.clients,row.leads))}</td>
-                <td>{formatCurrency(row.revenue)}</td>
+                <td>{formatPercent(percentage(row.clients,row.offers))}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+
+    <Card className="p-5">
+      <SectionHeader
+        title="Deal / project values"
+        description="Commercial pipeline imported from Monday Deals"
+      />
+
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Deal</th>
+              <th>Pipeline</th>
+              <th>Value</th>
+              <th>Offer status</th>
+              <th>Offer number</th>
+              <th>Lost reason</th>
+              <th>Lead linked</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {commercialDeals
+              .sort((a,b) => (b.value ?? 0) - (a.value ?? 0))
+              .map(deal => (
+                <tr key={deal.id}>
+                  <td className="font-semibold">{deal.name}</td>
+                  <td>{deal.pipelineGroup}</td>
+                  <td>{formatCurrency(deal.value)}</td>
+                  <td>{deal.offerStatus}</td>
+                  <td>{deal.offerNumber}</td>
+                  <td>{deal.lostReason}</td>
+                  <td>{deal.linkedLeadId ? "Yes" : "Not yet"}</td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
@@ -161,7 +414,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
 function Mini({label,value}:{label:string;value:string}) { return <div className="bg-white p-4"><p className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</p><p className="mt-3 text-xl font-semibold">{value}</p></div>; }
 
 function LeadDrawer({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  return <div className="drawer-backdrop" role="presentation" onMouseDown={onClose}><aside className="drawer" role="dialog" aria-modal="true" aria-label={`${lead.name} details`} onMouseDown={e => e.stopPropagation()}><div className="flex items-start justify-between border-b border-[var(--line)] p-6"><div><div className="mb-3 flex gap-2"><StatusPill tone={lead.quality === "A" ? "good" : "warn"}>Quality {lead.quality}</StatusPill><StatusPill tone="accent">{lead.stage}</StatusPill></div><h2 className="text-2xl font-semibold tracking-tight">{lead.name}</h2><p className="mt-1 text-sm text-[var(--muted)]">Created {lead.date} · {lead.daysOpen} days open</p></div><button className="icon-button" onClick={onClose} aria-label="Close lead details"><X size={18}/></button></div><div className="space-y-7 overflow-y-auto p-6"><div className="grid gap-3 text-sm"><p className="flex items-center gap-3"><Mail size={16} className="text-[var(--muted)]"/>{lead.email}</p><p className="flex items-center gap-3"><Phone size={16} className="text-[var(--muted)]"/>{lead.phone}</p><p className="flex items-center gap-3"><MapPin size={16} className="text-[var(--muted)]"/>{lead.municipality}</p></div><Detail title="Attribution"><Row label="Source" value={lead.source}/><Row label="Campaign" value={lead.campaign}/><Row label="Ad" value={lead.ad}/><Row label="UTM parameters" value={lead.utm}/></Detail><Detail title="CRM"><Row label="Source" value={lead.source}/><Row label="Exact status" value={lead.crmStatus}/><Row label="Stage" value={lead.stage}/><Row label="Service" value={lead.service}/></Detail><Detail title="Commercial / ROBAWS"><Row label="Match" value={lead.robawsMatchMethod}/><Row label="ROBAWS client" value={lead.robawsClientId}/><Row label="Status" value={lead.commercialStatus}/><Row label="Offer" value={lead.quoteNumber}/><Row label="Offer status" value={lead.quoteStatus}/><Row label="Offer value" value={formatCurrency(lead.quoteValue)}/><Row label="Client" value={lead.isClient ? "Yes" : "Not confirmed"}/><Row label="Won revenue" value={formatCurrency(lead.wonRevenue)}/></Detail><Detail title="Marketing attribution"><Row label="Campaign" value={lead.campaign}/><Row label="Ad" value={lead.ad}/><Row label="Ad cost" value={formatCurrency(lead.acquisitionCost)}/><Row label="Attribution" value={lead.attributionLevel}/><Row label="UTM parameters" value={lead.utm || "—"}/></Detail><Detail title="Timeline"><div className="relative ml-2 space-y-5 border-l border-[var(--line-strong)] pl-5"><Timeline label="Lead received" meta={lead.date}/><Timeline label="Contact attempt logged" meta="12 minutes later"/><Timeline label={lead.stage} meta="Current stage"/></div></Detail><Detail title="Notes"><p className="text-sm leading-6 text-[var(--muted)]">{lead.notes}</p></Detail></div></aside></div>;
+  return <div className="drawer-backdrop" role="presentation" onMouseDown={onClose}><aside className="drawer" role="dialog" aria-modal="true" aria-label={`${lead.name} details`} onMouseDown={e => e.stopPropagation()}><div className="flex items-start justify-between border-b border-[var(--line)] p-6"><div><div className="mb-3 flex gap-2"><StatusPill tone="accent">{lead.stage}</StatusPill></div><h2 className="text-2xl font-semibold tracking-tight">{lead.name}</h2><p className="mt-1 text-sm text-[var(--muted)]">Created {lead.date} · {lead.daysOpen} days open</p></div><button className="icon-button" onClick={onClose} aria-label="Close lead details"><X size={18}/></button></div><div className="space-y-7 overflow-y-auto p-6"><div className="grid gap-3 text-sm"><p className="flex items-center gap-3"><Mail size={16} className="text-[var(--muted)]"/>{lead.email}</p><p className="flex items-center gap-3"><Phone size={16} className="text-[var(--muted)]"/>{lead.phone}</p><p className="flex items-center gap-3"><MapPin size={16} className="text-[var(--muted)]"/>{lead.municipality}</p></div><Detail title="Attribution"><Row label="Source" value={lead.source}/><Row label="Campaign" value={lead.campaign}/><Row label="Ad" value={lead.ad}/><Row label="UTM parameters" value={lead.utm}/></Detail><Detail title="CRM"><Row label="Source" value={lead.source}/><Row label="Exact status" value={lead.crmStatus}/><Row label="Stage" value={lead.stage}/><Row label="Service" value={lead.service}/></Detail><Detail title="Commercial / ROBAWS"><Row label="Match" value={lead.robawsMatchMethod}/><Row label="ROBAWS client" value={lead.robawsClientId}/><Row label="Status" value={lead.commercialStatus}/><Row label="Offer" value={lead.quoteNumber}/><Row label="Offer status" value={lead.quoteStatus}/><Row label="Offer value" value={formatCurrency(lead.quoteValue)}/><Row label="Client" value={lead.isClient ? "Yes" : "Not confirmed"}/><Row label="Won revenue" value={formatCurrency(lead.wonRevenue)}/></Detail><Detail title="Marketing attribution"><Row label="Campaign" value={lead.campaign}/><Row label="Ad" value={lead.ad}/><Row label="Ad cost" value={formatCurrency(lead.acquisitionCost)}/><Row label="Attribution" value={lead.attributionLevel}/><Row label="UTM parameters" value={lead.utm || "—"}/></Detail><Detail title="Timeline"><div className="relative ml-2 space-y-5 border-l border-[var(--line-strong)] pl-5"><Timeline label="Lead received" meta={lead.date}/><Timeline label={lead.stage} meta="Current stage"/></div></Detail><Detail title="Notes"><p className="text-sm leading-6 text-[var(--muted)]">{lead.notes}</p></Detail></div></aside></div>;
 }
 function Detail({title,children}:{title:string;children:React.ReactNode}) { return <section><h3 className="mb-3 text-xs font-bold uppercase tracking-[.12em] text-[var(--muted)]">{title}</h3><div className="space-y-3">{children}</div></section>; }
 function Row({label,value}:{label:string;value:string}) { return <div className="grid grid-cols-[110px_1fr] gap-3 text-sm"><span className="text-[var(--muted)]">{label}</span><span className="break-words font-medium">{value}</span></div>; }

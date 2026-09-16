@@ -8,6 +8,7 @@ type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 type SyncResult = {
   recordsImported: number;
   leadsImported: number;
+  dealsImported: number;
   projectsImported: number;
   revenueImported: number;
 };
@@ -34,6 +35,10 @@ type MondayItem = {
   id: string;
   name: string;
   created_at: string;
+  group?: {
+    id: string;
+    title: string;
+  } | null;
   column_values: MondayColumn[];
 };
 
@@ -211,9 +216,87 @@ async function syncMonday(
 
   const imported = await upsertLeads(admin, leads);
 
+  const dealItems = await fetchAllMondayItems(
+    token,
+    "5094302335",
+  );
+
+  const dealRows = dealItems.map((item) => {
+    const columns = new Map(
+      item.column_values.map((column) => [
+        column.id,
+        column.text ?? column.value ?? "",
+      ]),
+    );
+
+    const group =
+      clean(item.group?.title);
+
+    const rawStage =
+      clean(columns.get("deal_stage"));
+
+    const groupKey = normalize(group);
+
+    const stage =
+      groupKey.includes("closed won")
+        ? "won"
+        : groupKey.includes("closed lost")
+          ? "lost"
+          : groupKey.includes("waiting") ||
+              groupKey.includes("on hold")
+            ? "on_hold"
+            : rawStage || "open";
+
+    return {
+      company_id: companyId,
+      crm_source: "monday",
+      crm_external_id: item.id,
+      name: item.name,
+      stage,
+      pipeline_group: group || null,
+      deal_value: numberOrNull(
+        clean(columns.get("deal_value")),
+      ),
+      offer_status:
+        clean(
+          columns.get("color_mm3h4jj0"),
+        ) || null,
+      offer_number:
+        clean(
+          columns.get("text_mm3hn5gm"),
+        ) || null,
+      lost_reason:
+        clean(
+          columns.get("color_mm3han24"),
+        ) || null,
+      created_at_external:
+        crmDate(undefined, item.created_at),
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  const dealResult = await admin
+    .from("crm_deals")
+    .upsert(dealRows, {
+      onConflict:
+        "company_id,crm_source,crm_external_id",
+    })
+    .select("id");
+
+  if (dealResult.error) {
+    throw new Error(
+      `Unable to import Monday deals: ${dealResult.error.message}`,
+    );
+  }
+
+  const dealsImported =
+    dealResult.data?.length ?? 0;
+
   return {
-    recordsImported: imported.length,
+    recordsImported:
+      imported.length + dealsImported,
     leadsImported: imported.length,
+    dealsImported,
     projectsImported: 0,
     revenueImported: 0,
   };
@@ -234,6 +317,10 @@ async function fetchAllMondayItems(
             id
             name
             created_at
+            group {
+              id
+              title
+            }
             column_values {
               id
               text
@@ -268,6 +355,10 @@ async function fetchAllMondayItems(
             id
             name
             created_at
+            group {
+              id
+              title
+            }
             column_values {
               id
               text
@@ -530,6 +621,7 @@ async function syncHubSpot(
       importedLeads.length +
       importedProjects.length,
     leadsImported: importedLeads.length,
+    dealsImported: 0,
     projectsImported: importedProjects.length,
     revenueImported: revenueRows.length,
   };
@@ -684,11 +776,14 @@ function mondayStage(
   rejection?: string,
 ) {
   const value = normalize(
-    [status, rejection].filter(Boolean).join(" "),
+    [status, rejection]
+      .filter(Boolean)
+      .join(" "),
   );
 
   if (
     includesAny(value, [
+      "signed",
       "gewonnen",
       "akkoord",
       "contract",
@@ -699,9 +794,17 @@ function mondayStage(
 
   if (
     includesAny(value, [
+      "offerte afgekeurd",
       "afgewezen",
       "verloren",
       "geen interesse",
+      "niet interessant",
+      "wrong region",
+      "verkeerde regio",
+      "verkeerde nummer",
+      "onjuiste contactgegevens",
+      "heeft al iemand gevonden",
+      "afspraak geannuleerd",
       "incorrect contact",
       "rejected",
       "lost",
@@ -710,6 +813,8 @@ function mondayStage(
 
   if (
     includesAny(value, [
+      "offer sent",
+      "email offerte",
       "offerte",
       "proposal",
       "quote",
@@ -719,6 +824,7 @@ function mondayStage(
 
   if (
     includesAny(value, [
+      "visited offerte to be done",
       "bezoek uitgevoerd",
       "afspraak uitgevoerd",
       "visit completed",
@@ -727,6 +833,7 @@ function mondayStage(
 
   if (
     includesAny(value, [
+      "afspraak ingeboekt",
       "bezoek gepland",
       "afspraak",
       "visit booked",
@@ -737,17 +844,20 @@ function mondayStage(
     includesAny(value, [
       "qualified",
       "gekwalificeerd",
-      "interesse",
     ])
   ) return "qualified";
 
   if (
     includesAny(value, [
+      "opvolgen",
+      "terug bellen",
       "voicemail",
       "gebeld",
       "contact",
       "onbereikbaar",
       "bereikt",
+      "email verstuurd",
+      "info email",
     ])
   ) return "contacted";
 

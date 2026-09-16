@@ -138,6 +138,8 @@ export async function POST(
           provider,
           leadsImported:
             result.leadsImported,
+          dealsImported:
+            result.dealsImported,
           projectsImported:
             result.projectsImported,
           revenueImported:
@@ -150,6 +152,7 @@ export async function POST(
       message:
         `${providerCatalog[provider].name}: ` +
         `${result.leadsImported} leads, ` +
+        `${result.dealsImported} deals, ` +
         `${result.projectsImported} projects and ` +
         `${result.revenueImported} revenue records synced.`,
       ...result,

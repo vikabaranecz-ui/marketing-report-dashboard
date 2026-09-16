@@ -40,6 +40,19 @@ type RawMetric = { date:string; spend:number|string; impressions:number; clicks:
 type RawLead = { id:string; created_at:string; name:string; email:string|null; phone:string|null; source:string|null; channel_id:string|null; campaign_id:string|null; ad_id:string|null; service_id:string|null; municipality:string|null; lead_quality:"A"|"B"|"C"|null; sales_stage:string; crm_status:string|null; commercial_status:string|null; robaws_match_method:string|null; robaws_client_id:string|null; attributed_acquisition_cost:number|string|null; attribution_level:string|null; assigned_to:string|null; utm_source:string|null; utm_medium:string|null; utm_campaign:string|null; utm_content:string|null; utm_term:string|null; notes:string|null; campaigns:{name:string}|null; services:{name:string}|null; ads:{name:string}|null; users:{full_name:string}|null };
 type RawQuote = { lead_id:string; quote_number:string; quote_value:number|string; status:string; accepted_at:string|null; external_source:string|null };
 type RawProject = { lead_id:string; service_id:string|null; project_value:number|string|null; gross_margin:number|string|null; status:string; won_at:string|null };
+type RawCrmDeal = {
+  id:string;
+  name:string;
+  stage:string|null;
+  pipeline_group:string|null;
+  deal_value:number|string|null;
+  offer_status:string|null;
+  offer_number:string|null;
+  lost_reason:string|null;
+  linked_lead_id:string|null;
+  created_at_external:string|null;
+};
+
 type RawRevenue = { attributed_revenue:number|string; channel_id:string|null; campaign_id:string|null; attributed_at:string };
 type RawWebsite = { date:string; users:number; sessions:number; new_users:number; engaged_sessions:number; form_submissions:number; whatsapp_clicks:number; phone_clicks:number; quote_requests:number };
 type RawSeo = { impressions:number; clicks:number; position_sum:number|string; is_branded:boolean|null };
@@ -51,11 +64,12 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     Date.UTC(to.getUTCFullYear(), 0, 1),
   );
   const fromIso = from.toISOString(); const toIso = to.toISOString(); const fromDate = fromIso.slice(0,10); const toDate = toIso.slice(0,10);
-  const [metricsRes, leadsRes, quotesRes, projectsRes, revenueRes, servicesRes, campaignsRes, websiteRes, seoRes, integrationsRes] = await Promise.all([
+  const [metricsRes, leadsRes, quotesRes, projectsRes, crmDealsRes, revenueRes, servicesRes, campaignsRes, websiteRes, seoRes, integrationsRes] = await Promise.all([
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
     supabase.from("quotes").select("lead_id,quote_number,quote_value,status,accepted_at,external_source").in("lead_id", await accessibleLeadIds(supabase, company.id, fromIso, toIso)),
     supabase.from("projects").select("lead_id,service_id,project_value,gross_margin,status,won_at").in("lead_id", await accessibleLeadIds(supabase, company.id, fromIso, toIso)),
+    supabase.from("crm_deals").select("id,name,stage,pipeline_group,deal_value,offer_status,offer_number,lost_reason,linked_lead_id,created_at_external").eq("company_id",company.id).gte("created_at_external",fromIso).lte("created_at_external",toIso),
     supabase.from("revenue_attribution").select("attributed_revenue,channel_id,campaign_id,attributed_at").eq("company_id",company.id).gte("attributed_at",fromIso).lte("attributed_at",toIso).eq("model","first_touch"),
     supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true),
     supabase.from("campaigns").select("id,name,channel_id,marketing_channels(name)").eq("company_id",company.id),
@@ -63,13 +77,14 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     supabase.from("seo_metrics").select("impressions,clicks,position_sum,is_branded").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("reporting_integration_connections").select("id,provider,status,configuration,error_message,last_successful_sync,last_attempted_sync,sync_logs(records_imported)").eq("company_id",company.id),
   ]);
-  const firstError = [metricsRes,leadsRes,quotesRes,projectsRes,revenueRes,servicesRes,campaignsRes,websiteRes,seoRes,integrationsRes].find(result => result.error)?.error;
+  const firstError = [metricsRes,leadsRes,quotesRes,projectsRes,crmDealsRes,revenueRes,servicesRes,campaignsRes,websiteRes,seoRes,integrationsRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
   const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
   const rawQuotes = (quotesRes.data ?? []) as unknown as RawQuote[];
   const rawProjects = (projectsRes.data ?? []) as unknown as RawProject[];
+  const rawCrmDeals = (crmDealsRes.data ?? []) as unknown as RawCrmDeal[];
   const rawRevenue = (revenueRes.data ?? []) as unknown as RawRevenue[];
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? []) as unknown as RawSeo[];
@@ -89,8 +104,51 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const leadSources = buildLeadSources(rawLeads,quoteByLead,projectByLead);
   const website={users:sum(rawWebsite,"users"),sessions:sum(rawWebsite,"sessions"),newUsers:sum(rawWebsite,"new_users"),engagedSessions:sum(rawWebsite,"engaged_sessions"),formSubmissions:sum(rawWebsite,"form_submissions"),whatsappClicks:sum(rawWebsite,"whatsapp_clicks"),phoneClicks:sum(rawWebsite,"phone_clicks"),quoteRequests:sum(rawWebsite,"quote_requests")};
   const seoImpressions=sum(rawSeo,"impressions"),seoClicks=sum(rawSeo,"clicks"),positionSum=rawSeo.reduce((s,r)=>s+Number(r.position_sum),0),branded=rawSeo.filter(r=>r.is_branded).reduce((s,r)=>s+r.clicks,0);
+  const commercialDeals = rawCrmDeals.map(deal => ({
+    id: deal.id,
+    name: deal.name,
+    stage: deal.stage ?? "open",
+    pipelineGroup: deal.pipeline_group ?? "—",
+    value:
+      deal.deal_value === null
+        ? null
+        : Number(deal.deal_value),
+    offerStatus: deal.offer_status ?? "—",
+    offerNumber: deal.offer_number ?? "—",
+    lostReason: deal.lost_reason ?? "—",
+    linkedLeadId: deal.linked_lead_id,
+  }));
+
+  const wonLeadIds = new Set(
+    rawLeads
+      .filter(lead => lead.sales_stage === "won")
+      .map(lead => lead.id)
+      .concat(
+        rawProjects
+          .filter(project => project.status === "won")
+          .map(project => project.lead_id),
+      ),
+  );
+
+  const quoteLeadIds = new Set(
+    rawQuotes.map(quote => quote.lead_id)
+      .concat(
+        rawLeads
+          .filter(
+            lead =>
+              ["quote_sent", "won"].includes(
+                lead.sales_stage,
+              ) ||
+              isQuoteOutcomeStatus(
+                lead.crm_status,
+              ),
+          )
+          .map(lead => lead.id),
+      ),
+  );
+
   const revenue=total("revenue"), grossProfit=rawProjects.every(p=>p.gross_margin!==null)?rawProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
-  return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"vs previous period",metrics:{spend:total("spend"),leads:rawLeads.length,qualified:total("qualified"),visits:total("visits"),quotes:rawQuotes.length,won:rawProjects.filter(p=>p.status==="won").length,revenue,grossProfit},previous:{spend:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leadSources,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:rawProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:0,campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
+  return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"vs previous period",metrics:{spend:total("spend"),leads:rawLeads.length,qualified:total("qualified"),visits:total("visits"),quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous:{spend:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leadSources,commercialDeals,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:rawProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:0,campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
 }
 
 async function accessibleLeadIds(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,companyId:string,from:string,to:string){const {data}=await supabase.from("leads").select("id").eq("company_id",companyId).gte("created_at",from).lte("created_at",to);const ids=(data??[]).map(r=>r.id);return ids.length?ids:["00000000-0000-0000-0000-000000000000"];}
@@ -109,7 +167,9 @@ function mapLeads(
       .map(v => v[0].toUpperCase() + v.slice(1))
       .join(" ");
 
-    const isClient = p?.status === "won";
+    const isClient =
+      p?.status === "won" ||
+      row.sales_stage === "won";
 
     let commercialStatus =
       row.commercial_status ??
@@ -198,6 +258,27 @@ function mapLeads(
   });
 }
 
+function isQuoteOutcomeStatus(
+  value: string | null,
+) {
+  const status = (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  return [
+    "offer sent",
+    "email offerte",
+    "offerte afgekeurd",
+    "signed",
+    "proposal sent",
+    "negotiation",
+    "contract signed",
+    "closed won",
+    "closed lost",
+  ].some(item => status.includes(item));
+}
+
 function buildLeadSources(
   leads: RawLead[],
   quotes: Map<string,RawQuote>,
@@ -248,7 +329,8 @@ function buildLeadSources(
 
     if (
       quotes.has(lead.id) ||
-      ["quote_sent", "won"].includes(lead.sales_stage)
+      ["quote_sent", "won"].includes(lead.sales_stage) ||
+      isQuoteOutcomeStatus(lead.crm_status)
     ) {
       row.quotes += 1;
     }

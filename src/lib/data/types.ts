@@ -32,6 +32,18 @@ export type SourceMetric = {
   revenue: number;
 };
 
+export type CommercialDeal = {
+  id: string;
+  name: string;
+  stage: string;
+  pipelineGroup: string;
+  value: number | null;
+  offerStatus: string;
+  offerNumber: string;
+  lostReason: string;
+  linkedLeadId: string | null;
+};
+
 export type Lead = {
   id: string;
   date: string;
@@ -133,6 +145,7 @@ export type CompanyDataset = {
   previous: { spend: number; leads: number; qualified: number; visits: number; quotes: number; won: number; revenue: number };
   channels: ChannelMetric[];
   leadSources: SourceMetric[];
+  commercialDeals?: CommercialDeal[];
   leads: Lead[];
   services: ServiceMetric[];
   campaigns: CampaignMetric[];
