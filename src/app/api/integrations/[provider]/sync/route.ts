@@ -3,14 +3,15 @@ import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { parseProvider, providerCatalog } from "@/lib/integrations/catalog";
 import { syncCrmProvider } from "@/lib/integrations/crm-sync";
+import { syncMetaProvider } from "@/lib/integrations/meta-sync";
 import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
-import type { IntegrationProvider } from "@/lib/integrations/types";
+import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
-type SyncResult = {
+type StandardSyncResult = {
   recordsImported: number;
   leadsImported: number;
   leadsMatched?: number;
@@ -20,6 +21,9 @@ type SyncResult = {
   invoicesImported?: number;
   revenueImported: number;
 };
+
+type MetaSyncResult = Awaited<ReturnType<typeof syncMetaProvider>>;
+type SyncResult = StandardSyncResult | MetaSyncResult;
 
 export async function POST(
   request: Request,
@@ -66,6 +70,10 @@ export async function POST(
   }
 
   const startedAt = new Date().toISOString();
+  const configuredAdAccountId = provider === "meta" &&
+    typeof access.connection.configuration?.ad_account_id === "string"
+    ? access.connection.configuration.ad_account_id
+    : null;
   const logResult = await admin
     .from("sync_logs")
     .insert({
@@ -73,7 +81,14 @@ export async function POST(
       started_at: startedAt,
       status: "running",
       records_imported: 0,
-      metadata: { trigger: "manual", provider },
+      metadata: provider === "meta"
+        ? {
+            trigger: "manual",
+            provider,
+            companyId: body.companyId,
+            adAccountId: configuredAdAccountId,
+          }
+        : { trigger: "manual", provider },
     })
     .select("id")
     .single();
@@ -113,7 +128,13 @@ export async function POST(
   try {
     result = provider === "robaws"
       ? await syncRobawsProvider(body.companyId)
-      : await syncCrmProvider(
+      : provider === "meta"
+        ? await syncMetaProvider(
+            access.connection.id,
+            body.companyId,
+            access.connection.configuration as ConnectionConfiguration,
+          )
+        : await syncCrmProvider(
           provider,
           body.companyId,
           access.connection.configuration as Record<string, unknown>,
@@ -131,17 +152,16 @@ export async function POST(
   }
 
   const completedAt = new Date().toISOString();
-  const metadata = {
-    trigger: "manual",
-    provider,
-    leadsImported: result.leadsImported,
-    leadsMatched: result.leadsMatched ?? result.leadsImported,
-    dealsImported: result.dealsImported,
-    quotesImported: result.quotesImported ?? 0,
-    projectsImported: result.projectsImported,
-    invoicesImported: result.invoicesImported ?? 0,
-    revenueImported: result.revenueImported,
-  };
+  const metadata = provider === "meta"
+    ? metaSyncMetadata(
+        result as MetaSyncResult,
+        body.companyId,
+        configuredAdAccountId,
+      )
+    : standardSyncMetadata(
+        provider,
+        result as StandardSyncResult,
+      );
 
   const logSuccess = await admin
     .from("sync_logs")
@@ -192,16 +212,70 @@ export async function POST(
   });
 }
 
-function isManualSyncProvider(provider: IntegrationProvider): provider is "monday" | "hubspot" | "robaws" {
-  return provider === "monday" || provider === "hubspot" || provider === "robaws";
+function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "monday" | "hubspot" | "robaws" {
+  return provider === "meta" || provider === "monday" || provider === "hubspot" || provider === "robaws";
 }
 
-function successMessage(provider: "monday" | "hubspot" | "robaws", result: SyncResult) {
-  if (provider === "robaws") {
-    return `ROBAWS synced successfully: ${result.leadsMatched ?? result.leadsImported} matched leads · ${result.quotesImported ?? 0} offers · ${result.projectsImported} projects · ${result.invoicesImported ?? 0} invoices · ${result.revenueImported} revenue records.`;
+function successMessage(provider: "meta" | "monday" | "hubspot" | "robaws", result: SyncResult) {
+  if (provider === "meta") {
+    const meta = result as MetaSyncResult;
+    return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows · ${meta.campaignsImported} campaigns · ${meta.adsetsImported} ad sets · ${meta.adsImported} ads.`;
   }
 
-  return `${providerCatalog[provider].name} synced successfully: ${result.leadsImported} leads · ${result.dealsImported} deals · ${result.projectsImported} projects · ${result.revenueImported} revenue records.`;
+  const standard = result as StandardSyncResult;
+
+  if (provider === "robaws") {
+    return `ROBAWS synced successfully: ${standard.leadsMatched ?? standard.leadsImported} matched leads · ${standard.quotesImported ?? 0} offers · ${standard.projectsImported} projects · ${standard.invoicesImported ?? 0} invoices · ${standard.revenueImported} revenue records.`;
+  }
+
+  return `${providerCatalog[provider].name} synced successfully: ${standard.leadsImported} leads · ${standard.dealsImported} deals · ${standard.projectsImported} projects · ${standard.revenueImported} revenue records.`;
+}
+
+function metaSyncMetadata(
+  result: MetaSyncResult,
+  companyId: string,
+  configuredAdAccountId: string | null,
+) {
+  return {
+    trigger: "manual",
+    provider: "meta",
+    dailyRowsImported: result.dailyRowsImported,
+    campaignsImported: result.campaignsImported,
+    adsetsImported: result.adsetsImported,
+    adsImported: result.adsImported,
+    dateFrom: result.dateFrom,
+    dateTo: result.dateTo,
+    earliestDate: result.earliestDate,
+    latestDate: result.latestDate,
+    totalSpend: result.totalSpend,
+    selectedAdAccountId: result.selectedAdAccountId,
+    monthlySpend: result.monthlySpend,
+    missingMonths: result.missingMonths,
+    companyId,
+    adAccountId:
+      result.selectedAdAccountId ?? configuredAdAccountId,
+    spendImported: result.totalSpend,
+    firstDate: result.earliestDate,
+    lastDate: result.latestDate,
+  };
+}
+
+function standardSyncMetadata(
+  provider: "monday" | "hubspot" | "robaws",
+  result: StandardSyncResult,
+) {
+  return {
+    trigger: "manual",
+    provider,
+    leadsImported: result.leadsImported,
+    leadsMatched:
+      result.leadsMatched ?? result.leadsImported,
+    dealsImported: result.dealsImported,
+    quotesImported: result.quotesImported ?? 0,
+    projectsImported: result.projectsImported,
+    invoicesImported: result.invoicesImported ?? 0,
+    revenueImported: result.revenueImported,
+  };
 }
 
 async function persistFailure(
