@@ -32,7 +32,11 @@ All ratios are calculated at query/reporting time from raw facts. A zero denomin
 
 ## Data flow
 
-External connector → source-specific normalizer → raw reporting tables → server repository → aggregate metrics → UI. Platform conversions, CRM leads, CRM-confirmed projects, and attributed revenue remain separate facts. First-touch is the initial attribution model; `revenue_attribution.model` supports later last-touch and multi-touch models.
+External provider → OAuth/server-only connector → source-specific normalizer → idempotent Supabase upsert → server repository → aggregate metrics → UI. Platform conversions, CRM leads, CRM-confirmed projects, and attributed revenue remain separate facts. First-touch is the initial attribution model; `revenue_attribution.model` supports later last-touch and multi-touch models.
+
+OAuth token exchange and persistence are intentionally disabled until the credential-store security review is complete. `reporting_integration_connections.configuration` contains only non-secret resource IDs, display names, and Monday column mappings. The `reporting_private` schema remains inaccessible to browser roles.
+
+Website leads use a timestamped HMAC-signed server request. The API writes the normalized lead to Supabase before any future CRM forwarding. Existing Formspree forms remain untouched until this endpoint has been tested per website.
 
 If Supabase environment variables are absent, the repository returns the bundled synthetic dataset and the UI displays a persistent **Demo data** label. No integration is shown as connected in demo mode.
 

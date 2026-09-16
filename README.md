@@ -40,13 +40,15 @@ Required for live mode:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-Server-only, as integrations are implemented:
+Server-only, as integrations are activated:
 
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SECRET_KEY`
+- `INTEGRATION_STATE_SECRET`
+- `OAUTH_TOKEN_STORAGE_REVIEWED` (keep `false` until the credential store is approved)
 - `META_APP_ID`, `META_APP_SECRET`
-- `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `MONDAY_API_TOKEN`
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_CLOUD_PROJECT_ID`
+- `MONDAY_CLIENT_ID`, `MONDAY_CLIENT_SECRET`
+- `LEAD_INGEST_SECRETS_JSON`
 
 ## Database and permissions
 
@@ -56,7 +58,7 @@ RLS allows agency-level roles to see organization companies and client roles to 
 
 ## Integrations
 
-Each provider follows `IntegrationConnector`: fetch source records on the server, normalize them, then upsert raw facts. Meta-reported and Google-reported conversions remain separate from CRM leads and confirmed sales. Connector stubs deliberately fail closed until credentials and importer logic exist.
+Each provider follows `IntegrationConnector`: fetch source records on the server, normalize them, then upsert raw facts. Meta-reported and Google-reported conversions remain separate from CRM leads and confirmed sales. Connector stubs deliberately fail closed until credentials, account selections, and the reviewed credential store exist. See `docs/integrations.md` for the OAuth, sync, Monday mapping, and signed lead-ingestion contracts.
 
 Recommended rollout:
 

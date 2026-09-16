@@ -96,11 +96,14 @@ export type LocationMetric = {
 
 export type Integration = {
   id: string;
+  provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "website_forms";
   name: string;
-  status: "Connected" | "Not connected" | "Error";
+  status: "Connected" | "Connecting" | "Not connected" | "Error";
   lastSuccess: string | null;
   lastAttempt: string | null;
   records: number;
+  resource: string;
+  errorMessage: string | null;
 };
 
 export type CompanyDataset = {

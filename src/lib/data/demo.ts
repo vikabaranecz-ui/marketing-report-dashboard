@@ -1,8 +1,8 @@
 import type { CampaignMetric, ChannelMetric, CompanyDataset, CompanyId, Lead, LocationMetric, ServiceMetric, TrendPoint } from "./types";
 
 const integrations = [
-  "Meta Ads", "Google Ads", "Google Analytics 4", "Google Search Console", "Google Business Profile", "CRM / Monday", "Website forms",
-].map((name, index) => ({ id: `int-${index}`, name, status: "Not connected" as const, lastSuccess: null, lastAttempt: null, records: 0 }));
+  ["meta", "Meta Ads"], ["google_ads", "Google Ads"], ["ga4", "Google Analytics 4"], ["search_console", "Google Search Console"], ["google_business", "Google Business Profile"], ["monday", "CRM / Monday"], ["website_forms", "Website forms"],
+].map(([provider, name], index) => ({ id: `int-${index}`, provider: provider as CompanyDataset["integrations"][number]["provider"], name, status: "Not connected" as const, lastSuccess: null, lastAttempt: null, records: 0, resource: "Not selected", errorMessage: null }));
 
 function channels(scale: number): ChannelMetric[] {
   const rows = [

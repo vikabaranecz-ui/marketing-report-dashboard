@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Check, ChevronDown, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ShieldCheck } from "lucide-react";
 import type { CampaignMetric, CompanyDataset } from "@/lib/data/types";
 import { calculateKpis, formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { ComparisonBars, TrendChart } from "./charts";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
+import { IntegrationCenter } from "./integration-center";
 
 export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   const paid = data.channels.filter(c => c.spend > 0);
@@ -36,7 +37,7 @@ export function LocationsPage({ data }: { data: CompanyDataset }) {
 
 export function IntegrationsPage({ data }: { data: CompanyDataset }) {
   const h=data.dataHealth;
-  return <div className="space-y-6"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.integrations.map(item=><Card className="p-5" key={item.id}><div className="flex items-start justify-between"><div className="grid h-10 w-10 place-items-center bg-[var(--surface)]"><RefreshCw size={18}/></div><StatusPill tone={item.status==="Connected"?"good":item.status==="Error"?"bad":"neutral"}>{item.status}</StatusPill></div><h3 className="mt-5 font-semibold">{item.name}</h3><dl className="mt-4 space-y-2 text-sm"><div className="flex justify-between"><dt className="text-[var(--muted)]">Last successful sync</dt><dd>{item.lastSuccess??"Never"}</dd></div><div className="flex justify-between"><dt className="text-[var(--muted)]">Last attempted</dt><dd>{item.lastAttempt??"Never"}</dd></div><div className="flex justify-between"><dt className="text-[var(--muted)]">Records imported</dt><dd>{item.records}</dd></div></dl><div className="mt-5 flex gap-2"><button className="button-primary" disabled={item.status!=="Connected"}><RefreshCw size={14}/> Sync</button><button className="button-secondary">Configure <ExternalLink size={13}/></button></div></Card>)}</div><Card className="p-5"><SectionHeader title="Data health audit" description="Issues are exposed instead of silently guessed"/><div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4"><Mini label="Leads missing source" value={String(h.missingSource)}/><Mini label="Missing service" value={String(h.missingService)}/><Mini label="Missing campaign" value={String(h.missingCampaign)}/><Mini label="Won without revenue" value={String(h.wonMissingRevenue)}/><Mini label="Potential duplicates" value={String(h.duplicates)}/><Mini label="Campaigns without spend" value={String(h.campaignsWithoutSpend)}/><Mini label="Days since sync" value={h.daysSinceSync===null?"—":String(h.daysSinceSync)}/><Mini label="Schema status" value="Ready"/></div></Card></div>;
+  return <div className="space-y-6"><IntegrationCenter companyId={data.company.id} integrations={data.integrations}/><Card className="p-5"><SectionHeader title="Data health audit" description="Issues are exposed instead of silently guessed"/><div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4"><Mini label="Leads missing source" value={String(h.missingSource)}/><Mini label="Missing service" value={String(h.missingService)}/><Mini label="Missing campaign" value={String(h.missingCampaign)}/><Mini label="Won without revenue" value={String(h.wonMissingRevenue)}/><Mini label="Potential duplicates" value={String(h.duplicates)}/><Mini label="Campaigns without spend" value={String(h.campaignsWithoutSpend)}/><Mini label="Days since sync" value={h.daysSinceSync===null?"—":String(h.daysSinceSync)}/><Mini label="Schema status" value="Ready"/></div></Card></div>;
 }
 
 export function SettingsPage({ data }: { data: CompanyDataset }) {
