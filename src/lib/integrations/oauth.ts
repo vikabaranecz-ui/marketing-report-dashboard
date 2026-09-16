@@ -15,7 +15,6 @@ const googleScopes = [
 const metaScopes = [
   "ads_read",
   "business_management",
-  "leads_retrieval",
 ];
 
 export function buildAuthorizationUrl(

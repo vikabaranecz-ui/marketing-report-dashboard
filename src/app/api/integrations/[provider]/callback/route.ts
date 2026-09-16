@@ -22,6 +22,9 @@ const googleProviders = [
   "google_business",
 ] as const;
 
+const incompleteAuthorizationMessage =
+  "Authorization was cancelled or incomplete.";
+
 export async function GET(
   request: Request,
   {
@@ -42,15 +45,24 @@ export async function GET(
   const url = new URL(request.url);
   const stateValue = url.searchParams.get("state");
   const code = url.searchParams.get("code");
+  const providerReportedError = [
+    "error",
+    "error_reason",
+    "error_description",
+  ].some((parameter) => url.searchParams.has(parameter));
 
-  if (!stateValue || !code) {
+  if (!stateValue) {
     return NextResponse.redirect(
       new URL(
-        "/integrations?integration_error=Authorization%20was%20cancelled%20or%20incomplete.",
+        `/integrations?integration_error=${encodeURIComponent(incompleteAuthorizationMessage)}`,
         url.origin,
       ),
     );
   }
+
+  let resetConnection:
+    | ((message: string) => Promise<void>)
+    | null = null;
 
   try {
     const state = verifyOAuthState(stateValue);
@@ -70,6 +82,42 @@ export async function GET(
     ) {
       throw new Error(
         "The authorization session is no longer valid.",
+      );
+    }
+
+    if (provider === "meta") {
+      resetConnection = async (message: string) => {
+        const { error } = await access.supabase
+          .from("reporting_integration_connections")
+          .update({
+            status: "not_connected",
+            error_message: message,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", access.connection.id)
+          .eq("company_id", state.companyId)
+          .eq("provider", provider)
+          .select("id")
+          .single();
+
+        if (error) {
+          throw new Error(
+            `Unable to reset the cancelled authorization: ${error.message}`,
+          );
+        }
+      };
+    }
+
+    if (!code || (provider === "meta" && providerReportedError)) {
+      if (resetConnection) {
+        await resetConnection(incompleteAuthorizationMessage);
+      }
+
+      return NextResponse.redirect(
+        new URL(
+          `/integrations?integration_error=${encodeURIComponent(incompleteAuthorizationMessage)}`,
+          url.origin,
+        ),
       );
     }
 
@@ -168,10 +216,22 @@ export async function GET(
       ),
     );
   } catch (error) {
-    const message =
+    let message =
       error instanceof Error
         ? error.message
         : "Invalid OAuth callback.";
+
+    if (resetConnection) {
+      try {
+        await resetConnection(message);
+      } catch (resetError) {
+        const resetMessage =
+          resetError instanceof Error
+            ? resetError.message
+            : "Unable to reset the integration state.";
+        message = `${message} ${resetMessage}`;
+      }
+    }
 
     return NextResponse.redirect(
       new URL(
