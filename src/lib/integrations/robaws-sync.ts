@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { fetchAllRobaws } from "@/lib/integrations/robaws-client";
 
 type LeadRow = {
   id: string;
@@ -57,14 +58,10 @@ type RobawsInvoice = {
   creditedTotal?: number | null;
 };
 
-type Page<T> = {
-  items?: T[];
-  totalPages?: number;
-};
-
 export type RobawsSyncResult = {
   recordsImported: number;
   leadsImported: number;
+  leadsMatched: number;
   dealsImported: number;
   quotesImported: number;
   projectsImported: number;
@@ -89,12 +86,12 @@ export async function syncRobawsProvider(
 
   const [clients, offers, projects, invoices, leadsResult] =
     await Promise.all([
-      fetchAll<RobawsClient>("clients", {
+      fetchAllRobaws<RobawsClient>("clients", {
         include: "contacts",
       }),
-      fetchAll<RobawsOffer>("offers"),
-      fetchAll<RobawsProject>("projects"),
-      fetchAll<RobawsInvoice>("sales-invoices"),
+      fetchAllRobaws<RobawsOffer>("offers"),
+      fetchAllRobaws<RobawsProject>("projects"),
+      fetchAllRobaws<RobawsInvoice>("sales-invoices"),
       admin
         .from("leads")
         .select(
@@ -184,7 +181,7 @@ export async function syncRobawsProvider(
   const leadIds = leads.map((lead) => lead.id);
 
   if (leadIds.length) {
-    await Promise.all([
+    const cleanupResults = await Promise.all([
       admin
         .from("quotes")
         .delete()
@@ -203,9 +200,15 @@ export async function syncRobawsProvider(
         .eq("company_id", companyId)
         .eq("external_source", "robaws"),
     ]);
+
+    const cleanupError = cleanupResults.find(result => result.error)?.error;
+
+    if (cleanupError) {
+      throw new Error(`ROBAWS cleanup: ${cleanupError.message}`);
+    }
   }
 
-  await admin
+  const resetResult = await admin
     .from("leads")
     .update({
       robaws_client_id: null,
@@ -215,6 +218,10 @@ export async function syncRobawsProvider(
     })
     .eq("company_id", companyId)
     .eq("crm_source", "monday");
+
+  if (resetResult.error) {
+    throw new Error(`ROBAWS lead reset: ${resetResult.error.message}`);
+  }
 
   const quoteRows: Record<string, unknown>[] = [];
   const projectRows: Record<string, unknown>[] = [];
@@ -543,6 +550,8 @@ export async function syncRobawsProvider(
       invoiceRows.length,
     leadsImported:
       updates.length,
+    leadsMatched:
+      updates.filter(item => typeof item.values.robaws_client_id === "string").length,
     dealsImported: 0,
     quotesImported:
       quoteRows.length,
@@ -558,91 +567,6 @@ export async function syncRobawsProvider(
           Number(row.paid_total ?? 0) > 0,
       ).length,
   };
-}
-
-async function fetchAll<T>(
-  path: string,
-  params: Record<string, string> = {},
-): Promise<T[]> {
-  const key =
-    process.env.ROBAWS_API_KEY;
-
-  const secret =
-    process.env.ROBAWS_API_SECRET;
-
-  if (!key || !secret) {
-    throw new Error(
-      "ROBAWS_API_KEY or ROBAWS_API_SECRET is missing.",
-    );
-  }
-
-  const auth =
-    "Basic " +
-    Buffer.from(
-      `${key}:${secret}`,
-    ).toString("base64");
-
-  const all: T[] = [];
-
-  let page = 0;
-  let totalPages = 1;
-
-  do {
-    const url = new URL(
-      `https://app.robaws.com/api/v2/${path}`,
-    );
-
-    url.searchParams.set(
-      "page",
-      String(page),
-    );
-
-    url.searchParams.set(
-      "size",
-      "100",
-    );
-
-    for (
-      const [key, value]
-      of Object.entries(params)
-    ) {
-      url.searchParams.set(
-        key,
-        value,
-      );
-    }
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: auth,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
-
-    const json =
-      await response.json() as Page<T> & {
-        message?: string;
-      };
-
-    if (!response.ok) {
-      throw new Error(
-        json.message ||
-        `ROBAWS ${path}: HTTP ${response.status}`,
-      );
-    }
-
-    all.push(
-      ...(json.items ?? []),
-    );
-
-    totalPages =
-      Number(json.totalPages ?? 1);
-
-    page += 1;
-  } while (page < totalPages);
-
-  return all;
 }
 
 function matchClient(

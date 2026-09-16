@@ -3,6 +3,7 @@ import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { missingProviderConfiguration, parseProvider, providerCatalog } from "@/lib/integrations/catalog";
 import { buildAuthorizationUrl } from "@/lib/integrations/oauth";
 import { createOAuthState } from "@/lib/integrations/oauth-state";
+import { validateRobawsCredentials } from "@/lib/integrations/robaws-client";
 
 export const runtime = "nodejs";
 
@@ -65,6 +66,41 @@ export async function GET(
 
   if (definition.auth === "server_token") {
     const now = new Date().toISOString();
+
+    if (provider === "robaws") {
+      try {
+        await validateRobawsCredentials();
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "ROBAWS credential validation failed.";
+
+        const { error: saveError } = await access.supabase
+          .from("reporting_integration_connections")
+          .update({
+            status: "error",
+            error_message: message,
+            updated_at: now,
+          })
+          .eq("id", access.connection.id);
+
+        if (saveError) {
+          return NextResponse.json(
+            {
+              error:
+                `${message} Unable to save the connection error: ${saveError.message}`,
+            },
+            { status: 500 },
+          );
+        }
+
+        return NextResponse.json(
+          { error: message },
+          { status: 502 },
+        );
+      }
+    }
 
     const { error } = await access.supabase
       .from("reporting_integration_connections")
