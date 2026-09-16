@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { missingProviderConfiguration, parseProvider, providerCatalog } from "@/lib/integrations/catalog";
+import { credentialStore } from "@/lib/integrations/credentials";
 import { buildAuthorizationUrl } from "@/lib/integrations/oauth";
 import { createOAuthState } from "@/lib/integrations/oauth-state";
 import { validateRobawsCredentials } from "@/lib/integrations/robaws-client";
+import { ensureWebsiteFormsCredential } from "@/lib/integrations/website-forms";
 
 export const runtime = "nodejs";
 
@@ -54,14 +56,46 @@ export async function GET(
 
   const definition = providerCatalog[provider];
 
-  if (definition.auth === "signed_webhook") {
-    return NextResponse.json(
-      {
-        error:
-          "Website forms connect through the signed lead-ingestion endpoint after its server secrets are configured.",
-      },
-      { status: 409 },
-    );
+  if (provider === "website_forms") {
+    try {
+      const credential = await ensureWebsiteFormsCredential(
+        access.connection.id,
+        credentialStore,
+      );
+      const now = new Date().toISOString();
+      const { error } = await access.supabase
+        .from("reporting_integration_connections")
+        .update({
+          configuration: { endpoint_name: "/api/leads/ingest" },
+          status: "connected",
+          error_message: null,
+          updated_at: now,
+        })
+        .eq("id", access.connection.id);
+
+      if (error) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({
+        message: credential.created
+          ? "Website forms connected. Rotate the signing secret to retrieve a one-time value for the website server."
+          : "Website forms reconnected using the existing signing secret.",
+        secretCreated: credential.created,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: error instanceof Error
+            ? error.message
+            : "Unable to configure Website forms.",
+        },
+        { status: 500 },
+      );
+    }
   }
 
   if (definition.auth === "server_token") {

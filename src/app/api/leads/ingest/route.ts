@@ -1,5 +1,6 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { credentialStore } from "@/lib/integrations/credentials";
+import { verifyWebsiteFormsSignature } from "@/lib/integrations/website-forms";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -38,17 +39,45 @@ export async function POST(request: Request) {
   const companySlug = clean(payload.company, 100);
   const idempotencyKey = clean(request.headers.get("x-idempotency-key"), 200);
   if (!companySlug || !idempotencyKey) return NextResponse.json({ error: "company and x-idempotency-key are required." }, { status: 400 });
-  const signatureError = verifySignature(request.headers, companySlug, rawBody);
-  if (signatureError) return NextResponse.json({ error: signatureError }, { status: signatureError.includes("configured") ? 503 : 401 });
-
-  const name = clean(payload.name, 200);
-  if (!name || (!payload.email && !payload.phone)) return NextResponse.json({ error: "name and either email or phone are required." }, { status: 400 });
 
   try {
     const supabase = createSupabaseAdminClient();
     const { data: company, error: companyError } = await supabase.from("companies").select("id").eq("slug", companySlug).eq("is_active", true).maybeSingle();
     if (companyError) throw companyError;
     if (!company) return NextResponse.json({ error: "Unknown company." }, { status: 404 });
+
+    const { data: connection, error: connectionError } = await supabase
+      .from("reporting_integration_connections")
+      .select("id,status")
+      .eq("company_id", company.id)
+      .eq("provider", "website_forms")
+      .maybeSingle();
+    if (connectionError) throw connectionError;
+    if (!connection || connection.status !== "connected") {
+      return NextResponse.json(
+        { error: "Lead ingestion is not configured for this company." },
+        { status: 503 },
+      );
+    }
+
+    const credential = await credentialStore.read(
+      connection.id,
+      "website_forms",
+    );
+    const signature = await verifyWebsiteFormsSignature({
+      body: rawBody,
+      headers: request.headers,
+      secret: credential?.accessToken,
+    });
+    if (!signature.ok) {
+      return NextResponse.json(
+        { error: signature.error },
+        { status: signature.status },
+      );
+    }
+
+    const name = clean(payload.name, 200);
+    if (!name || (!payload.email && !payload.phone)) return NextResponse.json({ error: "name and either email or phone are required." }, { status: 400 });
 
     let serviceId: string | null = null;
     const serviceName = clean(payload.service, 200);
@@ -81,22 +110,6 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Lead ingestion failed.";
     return NextResponse.json({ error: message }, { status: message.includes("SUPABASE_SECRET_KEY") ? 503 : 500 });
   }
-}
-
-function verifySignature(headers: Headers, company: string, body: string) {
-  const timestamp = headers.get("x-lead-timestamp") ?? "";
-  const supplied = headers.get("x-lead-signature")?.replace(/^sha256=/, "") ?? "";
-  const seconds = Number(timestamp);
-  if (!Number.isFinite(seconds) || Math.abs(Date.now() - seconds * 1000) > 5 * 60 * 1000) return "The request timestamp is invalid or expired.";
-  let secrets: Record<string, string>;
-  try { secrets = JSON.parse(process.env.LEAD_INGEST_SECRETS_JSON ?? "{}") as Record<string, string>; }
-  catch { return "Lead ingestion secrets are not configured correctly."; }
-  const secret = secrets[company];
-  if (!secret || secret.length < 32) return "Lead ingestion is not configured for this company.";
-  const expected = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
-  const expectedBuffer = Buffer.from(expected);
-  const suppliedBuffer = Buffer.from(supplied);
-  return suppliedBuffer.length === expectedBuffer.length && timingSafeEqual(suppliedBuffer, expectedBuffer) ? null : "Invalid request signature.";
 }
 
 function clean(value: unknown, maxLength: number) { return typeof value === "string" && value.trim() ? value.trim().slice(0, maxLength) : null; }

@@ -38,7 +38,7 @@ export function missingProviderConfiguration(provider: IntegrationProvider) {
     monday: ["MONDAY_API_TOKEN"],
     hubspot: ["HUBSPOT_ACCESS_TOKEN"],
     robaws: ["ROBAWS_API_KEY", "ROBAWS_API_SECRET"],
-    website: ["LEAD_INGEST_SECRETS_JSON"],
+    website: [],
   };
 
   const missing = requirements[group].filter((name) => !process.env[name]);
