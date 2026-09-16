@@ -22,6 +22,16 @@ export type ChannelMetric = {
   revenue: number;
 };
 
+export type SourceMetric = {
+  source: string;
+  leads: number;
+  qualified: number;
+  visits: number;
+  quotes: number;
+  won: number;
+  revenue: number;
+};
+
 export type Lead = {
   id: string;
   date: string;
@@ -35,7 +45,16 @@ export type Lead = {
   municipality: string;
   quality: "A" | "B" | "C";
   stage: string;
+  crmStatus: string;
+  commercialStatus: string;
+  robawsMatchMethod: string;
+  robawsClientId: string;
+  quoteNumber: string;
+  quoteStatus: string;
   quoteValue: number | null;
+  isClient: boolean;
+  acquisitionCost: number | null;
+  attributionLevel: string;
   wonRevenue: number | null;
   salesperson: string;
   daysOpen: number;
@@ -113,6 +132,7 @@ export type CompanyDataset = {
   metrics: { spend: number; leads: number; qualified: number; visits: number; quotes: number; won: number; revenue: number; grossProfit: number | null };
   previous: { spend: number; leads: number; qualified: number; visits: number; quotes: number; won: number; revenue: number };
   channels: ChannelMetric[];
+  leadSources: SourceMetric[];
   leads: Lead[];
   services: ServiceMetric[];
   campaigns: CampaignMetric[];

@@ -11,7 +11,47 @@ import { IntegrationCenter } from "./integration-center";
 export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   const paid = data.channels.filter(c => c.spend > 0);
   const spend = paid.reduce((s,c)=>s+c.spend,0), impressions=paid.reduce((s,c)=>s+c.impressions,0), clicks=paid.reduce((s,c)=>s+c.clicks,0), platform=paid.reduce((s,c)=>s+c.platformConversions,0), leads=paid.reduce((s,c)=>s+c.leads,0), won=paid.reduce((s,c)=>s+c.won,0), revenue=paid.reduce((s,c)=>s+c.revenue,0);
-  return <div className="space-y-6"><div className="kpi-grid kpi-grid-six border-l border-t border-[var(--line)]"><KpiCard label="Paid media spend" value={formatCurrency(spend,true)} delta={6.4}/><KpiCard label="Impressions" value={formatNumber(impressions)} meta={`${formatCurrency(safeDivide(spend,impressions/1000))} CPM`}/><KpiCard label="Clicks" value={formatNumber(clicks)} meta={`${formatPercent(percentage(clicks,impressions))} CTR`}/><KpiCard label="Platform conversions" value={formatNumber(platform)} meta="Ad-platform reported"/><KpiCard label="CRM leads" value={formatNumber(leads)} meta={`${formatCurrency(safeDivide(spend,leads))} CPL`}/><KpiCard label="CRM-confirmed won" value={formatNumber(won)} meta={`${formatNumber(safeDivide(revenue,spend))}× ROAS`}/></div><div className="callout"><AlertCircle size={18}/><div><strong>Platform conversions are directional.</strong><p>They are shown separately from CRM-confirmed leads, visits, customers, and revenue.</p></div></div><div className="grid gap-6 xl:grid-cols-2"><Card className="p-5"><SectionHeader title="Spend vs attributed revenue" description="Paid channels only"/><ComparisonBars accent={data.company.accent} data={paid.map(c=>({name:c.channel.replace(" Ads",""),value:c.spend,secondary:c.revenue}))}/></Card><Card className="p-5"><SectionHeader title="Qualified lead cost trend" description="Efficiency after lead validation"/><TrendChart data={data.trend} metric="cpl" accent={data.company.accent}/></Card></div><Card className="p-5"><SectionHeader title="Paid channel detail" description="Marketing delivery alongside CRM-confirmed outcomes"/><div className="table-scroll"><table><thead><tr><th>Channel</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPC</th><th>Platform conv.</th><th>CRM leads</th><th>Qualified</th><th>Visits</th><th>Won</th><th>Revenue</th><th>CAC</th><th>ROAS</th></tr></thead><tbody>{paid.map(row=>{const k=calculateKpis(row);return <tr key={row.id}><td className="font-semibold">{row.channel}</td><td>{formatCurrency(row.spend)}</td><td>{formatNumber(row.impressions)}</td><td>{formatNumber(row.clicks)}</td><td>{formatPercent(percentage(row.clicks,row.impressions))}</td><td>{formatCurrency(safeDivide(row.spend,row.clicks))}</td><td>{row.platformConversions}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.won}</td><td>{formatCurrency(row.revenue)}</td><td>{formatCurrency(k.cac)}</td><td>{k.roas===null?"—":`${formatNumber(k.roas)}×`}</td></tr>})}</tbody></table></div></Card></div>;
+  return <div className="space-y-6"><div className="kpi-grid kpi-grid-six border-l border-t border-[var(--line)]"><KpiCard label="Paid media spend" value={formatCurrency(spend,true)} delta={6.4}/><KpiCard label="Impressions" value={formatNumber(impressions)} meta={`${formatCurrency(safeDivide(spend,impressions/1000))} CPM`}/><KpiCard label="Clicks" value={formatNumber(clicks)} meta={`${formatPercent(percentage(clicks,impressions))} CTR`}/><KpiCard label="Platform conversions" value={formatNumber(platform)} meta="Ad-platform reported"/><KpiCard label="CRM leads" value={formatNumber(leads)} meta={`${formatCurrency(safeDivide(spend,leads))} CPL`}/><KpiCard label="CRM-confirmed won" value={formatNumber(won)} meta={`${formatNumber(safeDivide(revenue,spend))}× ROAS`}/></div><div className="callout"><AlertCircle size={18}/><div><strong>Platform conversions are directional.</strong><p>They are shown separately from CRM-confirmed leads, visits, customers, and revenue.</p></div></div><div className="grid gap-6 xl:grid-cols-2"><Card className="p-5"><SectionHeader title="Spend vs attributed revenue" description="Paid channels only"/><ComparisonBars accent={data.company.accent} data={paid.map(c=>({name:c.channel.replace(" Ads",""),value:c.spend,secondary:c.revenue}))}/></Card><Card className="p-5"><SectionHeader title="Qualified lead cost trend" description="Efficiency after lead validation"/><TrendChart data={data.trend} metric="cpl" accent={data.company.accent}/></Card></div><Card className="p-5"><SectionHeader title="Paid channel detail" description="Marketing delivery alongside CRM-confirmed outcomes"/><div className="table-scroll"><table><thead><tr><th>Channel</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPC</th><th>Platform conv.</th><th>CRM leads</th><th>Qualified</th><th>Visits</th><th>Won</th><th>Revenue</th><th>CAC</th><th>ROAS</th></tr></thead><tbody>{paid.map(row=>{const k=calculateKpis(row);return <tr key={row.id}><td className="font-semibold">{row.channel}</td><td>{formatCurrency(row.spend)}</td><td>{formatNumber(row.impressions)}</td><td>{formatNumber(row.clicks)}</td><td>{formatPercent(percentage(row.clicks,row.impressions))}</td><td>{formatCurrency(safeDivide(row.spend,row.clicks))}</td><td>{row.platformConversions}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.won}</td><td>{formatCurrency(row.revenue)}</td><td>{formatCurrency(k.cac)}</td><td>{k.roas===null?"—":`${formatNumber(k.roas)}×`}</td></tr>})}</tbody></table></div></Card>
+
+<Card className="p-5">
+  <SectionHeader
+    title="CRM lead sources"
+    description="Exact lead source recorded in the CRM — independent from ad-platform attribution"
+  />
+  <div className="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>CRM source</th>
+          <th>Leads</th>
+          <th>Share</th>
+          <th>Qualified</th>
+          <th>Visits</th>
+          <th>Quotes</th>
+          <th>Won</th>
+          <th>Lead → Won</th>
+          <th>Revenue</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.leadSources.map((row) => (
+          <tr key={row.source}>
+            <td className="font-semibold">{row.source}</td>
+            <td>{row.leads}</td>
+            <td>{formatPercent(percentage(row.leads, data.metrics.leads))}</td>
+            <td>{row.qualified}</td>
+            <td>{row.visits}</td>
+            <td>{row.quotes}</td>
+            <td>{row.won}</td>
+            <td>{formatPercent(percentage(row.won, row.leads))}</td>
+            <td>{formatCurrency(row.revenue)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</Card>
+</div>;
 }
 
 export function ServicesPage({ data }: { data: CompanyDataset }) {

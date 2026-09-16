@@ -44,13 +44,92 @@ function leads(company: CompanyId, services: string[]): Lead[] {
     municipality: cities[index % cities.length],
     quality: (["A", "B", "A", "C"] as const)[index % 4],
     stage: stages[index % stages.length],
-    quoteValue: index % 3 === 0 ? null : 8500 + index * 1150,
-    wonRevenue: index % 8 === 6 ? 24500 + index * 900 : null,
+    crmStatus: stages[index % stages.length],
+    commercialStatus:
+      stages[index % stages.length] === "Won"
+        ? "CLIENT_WON"
+        : stages[index % stages.length] === "Quote sent"
+          ? "OFFER_SENT"
+          : stages[index % stages.length] === "Lost"
+            ? "OFFER_LOST"
+            : "NOT_VERIFIED",
+    robawsMatchMethod: "—",
+    robawsClientId: "—",
+    quoteNumber:
+      index % 3 === 0
+        ? "—"
+        : `DEMO-${1000 + index}`,
+    quoteStatus:
+      index % 3 === 0
+        ? "—"
+        : stages[index % stages.length] === "Won"
+          ? "Accepted"
+          : "Open",
+    quoteValue:
+      index % 3 === 0
+        ? null
+        : 8500 + index * 1150,
+    isClient:
+      stages[index % stages.length] === "Won",
+    acquisitionCost: null,
+    attributionLevel: "—",
+    wonRevenue:
+      index % 8 === 6
+        ? 24500 + index * 900
+        : null,
     salesperson: index % 2 === 0 ? "Nora V." : "Thomas D.",
     daysOpen: index % 8,
     notes: "Synthetic demonstration record. Follow-up captured in the activity timeline.",
     utm: `utm_source=${index % 2 ? "meta" : "google"}&utm_campaign=demo-september`,
   }));
+}
+
+function leadSourceRows(rows: Lead[]): CompanyDataset["leadSources"] {
+  const map = new Map<string, CompanyDataset["leadSources"][number]>();
+
+  for (const lead of rows) {
+    const source = lead.source || "Unattributed";
+
+    const row = map.get(source) ?? {
+      source,
+      leads: 0,
+      qualified: 0,
+      visits: 0,
+      quotes: 0,
+      won: 0,
+      revenue: 0,
+    };
+
+    row.leads += 1;
+
+    if (
+      ["Qualified", "Visit booked", "Visit completed", "Quote sent", "Won"]
+        .includes(lead.stage)
+    ) {
+      row.qualified += 1;
+    }
+
+    if (
+      ["Visit completed", "Quote sent", "Won"]
+        .includes(lead.stage)
+    ) {
+      row.visits += 1;
+    }
+
+    if (lead.quoteValue !== null) {
+      row.quotes += 1;
+    }
+
+    if (lead.isClient) {
+      row.won += 1;
+    }
+
+    row.revenue += lead.wonRevenue ?? 0;
+
+    map.set(source, row);
+  }
+
+  return [...map.values()].sort((a, b) => b.leads - a.leads);
 }
 
 function serviceRows(names: string[], scale: number): ServiceMetric[] {
@@ -77,6 +156,7 @@ function dataset(company: CompanyId): CompanyDataset {
   const scale = isIso ? 1 : .78;
   const serviceNames = isIso ? ["Dakrenovatie", "Dakisolatie", "Gevelisolatie", "Gevelrenovatie", "Dakkapel", "Asbest", "Other"] : ["Badkamerrenovatie", "Totaalrenovatie", "Interieurafwerking", "Gyproc / pleisterwerken", "Vloeren", "Schilderwerken", "Tegelwerken", "Other"];
   const channelRows = channels(scale);
+  const leadRows = leads(company, serviceNames);
   const spend = channelRows.reduce((s, row) => s + row.spend, 0);
   const total = (key: "leads" | "qualified" | "visits" | "quotes" | "won" | "revenue") => channelRows.reduce((s, row) => s + row[key], 0);
   return {
@@ -86,7 +166,8 @@ function dataset(company: CompanyId): CompanyDataset {
     metrics: { spend, leads: total("leads"), qualified: total("qualified"), visits: total("visits"), quotes: total("quotes"), won: total("won"), revenue: total("revenue"), grossProfit: total("revenue") * (isIso ? .34 : .31) },
     previous: { spend: spend * .94, leads: total("leads") * .91, qualified: total("qualified") * .88, visits: total("visits") * .95, quotes: total("quotes") * .92, won: total("won") * .86, revenue: total("revenue") * .82 },
     channels: channelRows,
-    leads: leads(company, serviceNames),
+    leadSources: leadSourceRows(leadRows),
+    leads: leadRows,
     services: serviceRows(serviceNames, scale),
     campaigns: campaignRows(scale),
     trend: makeTrend(scale),

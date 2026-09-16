@@ -197,6 +197,7 @@ async function syncMonday(
           ? rawLocation
           : null,
       sales_stage: stage,
+      crm_status: rawStatus || null,
       notes: notes || null,
       closed_at:
         stage === "won" || stage === "lost"
@@ -408,6 +409,7 @@ async function syncHubSpot(
       municipality: clean(properties.city) || null,
       postal_code: postcode || null,
       sales_stage: stage,
+      crm_status: hubSpotCrmStatus(properties, deal),
       notes: notes || null,
       closed_at:
         deal && (stage === "won" || stage === "lost")
@@ -750,6 +752,35 @@ function mondayStage(
   ) return "contacted";
 
   return "new";
+}
+
+function hubSpotCrmStatus(
+  contact: Record<string, string | null | undefined>,
+  deal?: HubSpotDeal,
+) {
+  if (deal) {
+    const stage = clean(deal.properties.dealstage);
+
+    const labels: Record<string,string> = {
+      "5229984993": "Lead Identified",
+      "5229984994": "Initial Consultation",
+      "5229984995": "Proposal Sent",
+      "5229984996": "Negotiation",
+      "5229984997": "Contract Signed",
+      closedwon: "Closed Won",
+      closedlost: "Closed Lost",
+    };
+
+    if (stage) {
+      return labels[stage] ?? stage;
+    }
+  }
+
+  return (
+    clean(contact.hs_lead_status) ||
+    clean(contact.lifecyclestage) ||
+    null
+  );
 }
 
 function hubSpotStage(

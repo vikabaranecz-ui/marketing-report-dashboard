@@ -2,7 +2,7 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { demoCompanies, demoDatasets } from "./demo";
-import type { CampaignMetric, ChannelMetric, Company, CompanyDataset, Integration, Lead, LocationMetric, ServiceMetric, TrendPoint } from "./types";
+import type { CampaignMetric, ChannelMetric, Company, CompanyDataset, Integration, Lead, LocationMetric, ServiceMetric, SourceMetric, TrendPoint } from "./types";
 
 export type DashboardBootstrap = {
   mode: "demo" | "live";
@@ -37,8 +37,8 @@ export async function getDashboardBootstrap(): Promise<DashboardBootstrap> {
 }
 
 type RawMetric = { date:string; spend:number|string; impressions:number; clicks:number; platform_conversions:number|string; channel_id:string; campaign_id:string|null; service_id:string|null; marketing_channels:{name:string}|null; campaigns:{name:string}|null; services:{name:string}|null };
-type RawLead = { id:string; created_at:string; name:string; email:string|null; phone:string|null; source:string|null; channel_id:string|null; campaign_id:string|null; ad_id:string|null; service_id:string|null; municipality:string|null; lead_quality:"A"|"B"|"C"|null; sales_stage:string; assigned_to:string|null; utm_source:string|null; utm_medium:string|null; utm_campaign:string|null; utm_content:string|null; utm_term:string|null; notes:string|null; campaigns:{name:string}|null; services:{name:string}|null; ads:{name:string}|null; users:{full_name:string}|null };
-type RawQuote = { lead_id:string; quote_value:number|string; status:string };
+type RawLead = { id:string; created_at:string; name:string; email:string|null; phone:string|null; source:string|null; channel_id:string|null; campaign_id:string|null; ad_id:string|null; service_id:string|null; municipality:string|null; lead_quality:"A"|"B"|"C"|null; sales_stage:string; crm_status:string|null; commercial_status:string|null; robaws_match_method:string|null; robaws_client_id:string|null; attributed_acquisition_cost:number|string|null; attribution_level:string|null; assigned_to:string|null; utm_source:string|null; utm_medium:string|null; utm_campaign:string|null; utm_content:string|null; utm_term:string|null; notes:string|null; campaigns:{name:string}|null; services:{name:string}|null; ads:{name:string}|null; users:{full_name:string}|null };
+type RawQuote = { lead_id:string; quote_number:string; quote_value:number|string; status:string; accepted_at:string|null; external_source:string|null };
 type RawProject = { lead_id:string; service_id:string|null; project_value:number|string|null; gross_margin:number|string|null; status:string; won_at:string|null };
 type RawRevenue = { attributed_revenue:number|string; channel_id:string|null; campaign_id:string|null; attributed_at:string };
 type RawWebsite = { date:string; users:number; sessions:number; new_users:number; engaged_sessions:number; form_submissions:number; whatsapp_clicks:number; phone_clicks:number; quote_requests:number };
@@ -53,8 +53,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const fromIso = from.toISOString(); const toIso = to.toISOString(); const fromDate = fromIso.slice(0,10); const toDate = toIso.slice(0,10);
   const [metricsRes, leadsRes, quotesRes, projectsRes, revenueRes, servicesRes, campaignsRes, websiteRes, seoRes, integrationsRes] = await Promise.all([
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
-    supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
-    supabase.from("quotes").select("lead_id,quote_value,status").in("lead_id", await accessibleLeadIds(supabase, company.id, fromIso, toIso)),
+    supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
+    supabase.from("quotes").select("lead_id,quote_number,quote_value,status,accepted_at,external_source").in("lead_id", await accessibleLeadIds(supabase, company.id, fromIso, toIso)),
     supabase.from("projects").select("lead_id,service_id,project_value,gross_margin,status,won_at").in("lead_id", await accessibleLeadIds(supabase, company.id, fromIso, toIso)),
     supabase.from("revenue_attribution").select("attributed_revenue,channel_id,campaign_id,attributed_at").eq("company_id",company.id).gte("attributed_at",fromIso).lte("attributed_at",toIso).eq("model","first_touch"),
     supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true),
@@ -86,15 +86,193 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const campaigns = buildCampaigns((campaignsRes.data??[]) as unknown as {id:string;name:string;channel_id:string;marketing_channels:{name:string}|null}[],rawMetrics,rawLeads,rawRevenue,projectByLead);
   const trend = buildTrend(rawMetrics,rawLeads,rawRevenue,projectByLead,rawWebsite);
   const locations = buildLocations(rawLeads,rawMetrics,projectByLead);
+  const leadSources = buildLeadSources(rawLeads,quoteByLead,projectByLead);
   const website={users:sum(rawWebsite,"users"),sessions:sum(rawWebsite,"sessions"),newUsers:sum(rawWebsite,"new_users"),engagedSessions:sum(rawWebsite,"engaged_sessions"),formSubmissions:sum(rawWebsite,"form_submissions"),whatsappClicks:sum(rawWebsite,"whatsapp_clicks"),phoneClicks:sum(rawWebsite,"phone_clicks"),quoteRequests:sum(rawWebsite,"quote_requests")};
   const seoImpressions=sum(rawSeo,"impressions"),seoClicks=sum(rawSeo,"clicks"),positionSum=rawSeo.reduce((s,r)=>s+Number(r.position_sum),0),branded=rawSeo.filter(r=>r.is_branded).reduce((s,r)=>s+r.clicks,0);
   const revenue=total("revenue"), grossProfit=rawProjects.every(p=>p.gross_margin!==null)?rawProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
-  return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"vs previous period",metrics:{spend:total("spend"),leads:rawLeads.length,qualified:total("qualified"),visits:total("visits"),quotes:rawQuotes.length,won:rawProjects.filter(p=>p.status==="won").length,revenue,grossProfit},previous:{spend:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:rawProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:0,campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
+  return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"vs previous period",metrics:{spend:total("spend"),leads:rawLeads.length,qualified:total("qualified"),visits:total("visits"),quotes:rawQuotes.length,won:rawProjects.filter(p=>p.status==="won").length,revenue,grossProfit},previous:{spend:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leadSources,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:rawProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:0,campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
 }
 
 async function accessibleLeadIds(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,companyId:string,from:string,to:string){const {data}=await supabase.from("leads").select("id").eq("company_id",companyId).gte("created_at",from).lte("created_at",to);const ids=(data??[]).map(r=>r.id);return ids.length?ids:["00000000-0000-0000-0000-000000000000"];}
 function sum<T>(rows:T[],key:keyof T){return rows.reduce((s,row)=>s+Number(row[key]??0),0);}
-function mapLeads(rows:RawLead[],quotes:Map<string,RawQuote>,projects:Map<string,RawProject>):Lead[]{return rows.map(row=>{const q=quotes.get(row.id),p=projects.get(row.id);return{id:row.id,date:row.created_at.slice(0,10),name:row.name,email:row.email??"",phone:row.phone??"",source:row.source??"Unattributed",campaign:row.campaigns?.name??"—",ad:row.ads?.name??"—",service:row.services?.name??"Unassigned",municipality:row.municipality??"Unknown",quality:row.lead_quality??"C",stage:row.sales_stage.split("_").map(v=>v[0].toUpperCase()+v.slice(1)).join(" "),quoteValue:q?Number(q.quote_value):null,wonRevenue:p?.project_value?Number(p.project_value):null,salesperson:row.users?.full_name??"Unassigned",daysOpen:Math.max(0,Math.floor((Date.now()-new Date(row.created_at).getTime())/86400000)),notes:row.notes??"",utm:[row.utm_source&&`utm_source=${row.utm_source}`,row.utm_medium&&`utm_medium=${row.utm_medium}`,row.utm_campaign&&`utm_campaign=${row.utm_campaign}`,row.utm_content&&`utm_content=${row.utm_content}`,row.utm_term&&`utm_term=${row.utm_term}`].filter(Boolean).join("&")};});}
+function mapLeads(
+  rows: RawLead[],
+  quotes: Map<string,RawQuote>,
+  projects: Map<string,RawProject>,
+): Lead[] {
+  return rows.map(row => {
+    const q = quotes.get(row.id);
+    const p = projects.get(row.id);
+
+    const normalizedStage = row.sales_stage
+      .split("_")
+      .map(v => v[0].toUpperCase() + v.slice(1))
+      .join(" ");
+
+    const isClient = p?.status === "won";
+
+    let commercialStatus =
+      row.commercial_status ??
+      "NOT_VERIFIED";
+
+    if (isClient) {
+      commercialStatus = "CLIENT_WON";
+    } else if (q?.accepted_at) {
+      commercialStatus = "CLIENT_WON";
+    } else if (q) {
+      const status = (q.status ?? "").toLowerCase();
+
+      if (
+        status.includes("lost") ||
+        status.includes("reject") ||
+        status.includes("afgekeurd")
+      ) {
+        commercialStatus = "OFFER_LOST";
+      } else {
+        commercialStatus = "OFFER_SENT";
+      }
+    }
+
+    return {
+      id: row.id,
+      date: row.created_at.slice(0,10),
+      name: row.name,
+      email: row.email ?? "",
+      phone: row.phone ?? "",
+      source: row.source ?? "Unattributed",
+      campaign: row.campaigns?.name ?? "—",
+      ad: row.ads?.name ?? "—",
+      service: row.services?.name ?? "Unassigned",
+      municipality: row.municipality ?? "Unknown",
+      quality: row.lead_quality ?? "C",
+      stage: normalizedStage,
+      crmStatus: row.crm_status ?? "—",
+      commercialStatus,
+      robawsMatchMethod:
+        row.robaws_match_method ?? "—",
+      robawsClientId:
+        row.robaws_client_id ?? "—",
+      quoteNumber:
+        q?.quote_number ?? "—",
+      quoteStatus:
+        q?.status ?? "—",
+      quoteValue:
+        q ? Number(q.quote_value) : null,
+      isClient,
+      wonRevenue:
+        p?.project_value
+          ? Number(p.project_value)
+          : null,
+      acquisitionCost:
+        row.attributed_acquisition_cost === null
+          ? null
+          : Number(row.attributed_acquisition_cost),
+      attributionLevel:
+        row.attribution_level ?? "—",
+      salesperson:
+        row.users?.full_name ?? "Unassigned",
+      daysOpen:
+        Math.max(
+          0,
+          Math.floor(
+            (
+              Date.now() -
+              new Date(row.created_at).getTime()
+            ) / 86400000
+          )
+        ),
+      notes: row.notes ?? "",
+      utm: [
+        row.utm_source &&
+          `utm_source=${row.utm_source}`,
+        row.utm_medium &&
+          `utm_medium=${row.utm_medium}`,
+        row.utm_campaign &&
+          `utm_campaign=${row.utm_campaign}`,
+        row.utm_content &&
+          `utm_content=${row.utm_content}`,
+        row.utm_term &&
+          `utm_term=${row.utm_term}`,
+      ].filter(Boolean).join("&"),
+    };
+  });
+}
+
+function buildLeadSources(
+  leads: RawLead[],
+  quotes: Map<string,RawQuote>,
+  projects: Map<string,RawProject>,
+): CompanyDataset["leadSources"] {
+  const map = new Map<
+    string,
+    CompanyDataset["leadSources"][number]
+  >();
+
+  for (const lead of leads) {
+    const source =
+      lead.source?.trim() || "Unattributed";
+
+    const row = map.get(source) ?? {
+      source,
+      leads: 0,
+      qualified: 0,
+      visits: 0,
+      quotes: 0,
+      won: 0,
+      revenue: 0,
+    };
+
+    row.leads += 1;
+
+    if (
+      [
+        "qualified",
+        "visit_booked",
+        "visit_completed",
+        "quote_sent",
+        "won",
+      ].includes(lead.sales_stage)
+    ) {
+      row.qualified += 1;
+    }
+
+    if (
+      [
+        "visit_completed",
+        "quote_sent",
+        "won",
+      ].includes(lead.sales_stage)
+    ) {
+      row.visits += 1;
+    }
+
+    if (
+      quotes.has(lead.id) ||
+      ["quote_sent", "won"].includes(lead.sales_stage)
+    ) {
+      row.quotes += 1;
+    }
+
+    const project = projects.get(lead.id);
+
+    if (
+      project?.status === "won" ||
+      lead.sales_stage === "won"
+    ) {
+      row.won += 1;
+    }
+
+    row.revenue += Number(
+      project?.project_value ?? 0
+    );
+
+    map.set(source, row);
+  }
+
+  return [...map.values()]
+    .sort((a, b) => b.leads - a.leads);
+}
+
 function buildServices(rows:{id:string;name:string;default_gross_margin:number|null}[],metrics:RawMetric[],leads:RawLead[],projects:RawProject[],quotes:Map<string,RawQuote>):ServiceMetric[]{return rows.map(s=>{const ls=leads.filter(l=>l.service_id===s.id),ps=projects.filter(p=>p.service_id===s.id&&p.status==="won");return{id:s.id,name:s.name,spend:metrics.filter(m=>m.service_id===s.id).reduce((n,m)=>n+Number(m.spend),0),leads:ls.length,qualified:ls.filter(l=>["qualified","visit_booked","visit_completed","quote_sent","won"].includes(l.sales_stage)).length,visits:ls.filter(l=>["visit_completed","quote_sent","won"].includes(l.sales_stage)).length,quotes:ls.filter(l=>quotes.has(l.id)).length,won:ps.length,revenue:ps.reduce((n,p)=>n+Number(p.project_value??0),0),grossMargin:s.default_gross_margin===null?null:Number(s.default_gross_margin)*100};});}
 function buildCampaigns(rows:{id:string;name:string;channel_id:string;marketing_channels:{name:string}|null}[],metrics:RawMetric[],leads:RawLead[],revenues:RawRevenue[],projects:Map<string,RawProject>):CampaignMetric[]{return rows.map(c=>{const ms=metrics.filter(m=>m.campaign_id===c.id),ls=leads.filter(l=>l.campaign_id===c.id);return{id:c.id,name:c.name,channel:c.marketing_channels?.name??"Unknown",childLabel:"Drill-down available",spend:ms.reduce((n,m)=>n+Number(m.spend),0),impressions:ms.reduce((n,m)=>n+m.impressions,0),clicks:ms.reduce((n,m)=>n+m.clicks,0),leads:ls.length,qualified:ls.filter(l=>["qualified","visit_booked","visit_completed","quote_sent","won"].includes(l.sales_stage)).length,visits:ls.filter(l=>["visit_completed","quote_sent","won"].includes(l.sales_stage)).length,won:ls.filter(l=>projects.get(l.id)?.status==="won").length,revenue:revenues.filter(r=>r.campaign_id===c.id).reduce((n,r)=>n+Number(r.attributed_revenue),0),angle:"Unclassified"};});}
 function buildTrend(metrics:RawMetric[],leads:RawLead[],revenues:RawRevenue[],projects:Map<string,RawProject>,website:RawWebsite[]):TrendPoint[]{const dates=[...new Set([...metrics.map(m=>m.date),...website.map(w=>w.date)])].sort();return dates.map(date=>{const ms=metrics.filter(m=>m.date===date),ls=leads.filter(l=>l.created_at.startsWith(date)),spend=ms.reduce((n,m)=>n+Number(m.spend),0),won=ls.filter(l=>projects.get(l.id)?.status==="won").length,revenue=revenues.filter(r=>r.attributed_at.startsWith(date)).reduce((n,r)=>n+Number(r.attributed_revenue),0),qualified=ls.filter(l=>l.lead_quality==="A"||l.lead_quality==="B").length;return{date,spend,leads:ls.length,qualified,revenue,cpl:ls.length?spend/ls.length:0,cac:won?spend/won:0,roas:spend?revenue/spend:0,sessions:website.filter(w=>w.date===date).reduce((n,w)=>n+w.sessions,0),conversions:ls.length};});}
