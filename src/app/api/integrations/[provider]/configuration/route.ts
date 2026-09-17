@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { parseProvider } from "@/lib/integrations/catalog";
 import { credentialStore } from "@/lib/integrations/credentials";
+import { getGoogleCredential, isGoogleProvider } from "@/lib/integrations/google/client";
+import { findAccessibleResource } from "@/lib/integrations/google/core";
+import { discoverGoogleResources, googleResourceConfiguration } from "@/lib/integrations/google/resources";
 import { discoverMetaAdAccounts } from "@/lib/integrations/meta/client";
 import { normalizeMetaAdAccountId } from "@/lib/integrations/meta/core";
 
 export const runtime = "nodejs";
 
-const safeKeys = new Set(["account_id","account_name","ad_account_id","ad_account_name","customer_id","customer_name","property_id","property_name","site_url","location_id","location_name","board_id","board_name","portal_id","portal_name","pipeline_id","pipeline_name","endpoint_name","monday_columns"]);
+const safeKeys = new Set(["account_id","account_name","ad_account_id","ad_account_name","customer_id","customer_name","login_customer_id","currency","timezone","property_id","property_name","site_url","location_id","location_name","board_id","board_name","portal_id","portal_name","pipeline_id","pipeline_name","endpoint_name","monday_columns"]);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ provider: string }> }) {
   const provider = parseProvider((await params).provider);
@@ -40,12 +43,41 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate the Meta ad account." }, { status: 502 });
     }
+  } else if (isGoogleProvider(provider)) {
+    const requestedId = googleRequestedResourceId(provider, body.configuration);
+    if (!requestedId) return NextResponse.json({ error: "Select a Google resource." }, { status: 400 });
+
+    try {
+      const credential = await getGoogleCredential(access.connection.id, provider);
+      const resources = await discoverGoogleResources(provider, credential.accessToken);
+      const selected = findAccessibleResource(resources, requestedId);
+      if (!selected) return NextResponse.json({ error: "That resource is not accessible to the authorized Google user." }, { status: 403 });
+      requestedConfiguration = googleResourceConfiguration(provider, selected);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate the Google resource." }, { status: 502 });
+    }
   }
 
-  const configuration = { ...(access.connection.configuration as Record<string, unknown>), ...requestedConfiguration };
+  const configuration = isGoogleProvider(provider)
+    ? requestedConfiguration
+    : { ...(access.connection.configuration as Record<string, unknown>), ...requestedConfiguration };
   const { error } = await access.supabase.from("reporting_integration_connections").update({ configuration, updated_at: new Date().toISOString() }).eq("id", access.connection.id).select("id").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ message: "Resource selection saved.", configuration });
+}
+
+function googleRequestedResourceId(
+  provider: "google_ads" | "ga4" | "search_console" | "google_business",
+  configuration: Record<string, unknown>,
+) {
+  const key = {
+    google_ads: "customer_id",
+    ga4: "property_id",
+    search_console: "site_url",
+    google_business: "location_id",
+  }[provider];
+  const value = configuration[key];
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function isSafeConfiguration(configuration: Record<string, unknown>) {

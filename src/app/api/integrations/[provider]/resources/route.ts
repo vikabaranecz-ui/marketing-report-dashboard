@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { parseProvider } from "@/lib/integrations/catalog";
 import { credentialStore } from "@/lib/integrations/credentials";
+import { getGoogleCredential, isGoogleProvider } from "@/lib/integrations/google/client";
+import { discoverGoogleResources } from "@/lib/integrations/google/resources";
 import { discoverMetaAdAccounts } from "@/lib/integrations/meta/client";
 
 export const runtime = "nodejs";
@@ -19,15 +21,24 @@ export async function GET(
 
   const access = await requireIntegrationConnection(companyId, provider);
   if ("error" in access) return json({ error: access.error }, access.status);
-  if (provider !== "meta") return json({ error: "Resource discovery is not implemented for this provider." }, 501);
 
   try {
-    const credential = await credentialStore.read(access.connection.id, provider);
-    if (!credential?.accessToken) return json({ error: "Reconnect Meta before loading ad accounts." }, 409);
-    const resources = await discoverMetaAdAccounts(credential.accessToken);
-    return json({ resources });
+    if (provider === "meta") {
+      const credential = await credentialStore.read(access.connection.id, provider);
+      if (!credential?.accessToken) return json({ error: "Reconnect Meta before loading ad accounts." }, 409);
+      const resources = await discoverMetaAdAccounts(credential.accessToken);
+      return json({ resources });
+    }
+
+    if (isGoogleProvider(provider)) {
+      const credential = await getGoogleCredential(access.connection.id, provider);
+      const resources = await discoverGoogleResources(provider, credential.accessToken);
+      return json({ resources });
+    }
+
+    return json({ error: "Resource discovery is not implemented for this provider." }, 501);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Unable to load Meta ad accounts." }, 502);
+    return json({ error: error instanceof Error ? error.message : "Unable to load provider resources." }, 502);
   }
 }
 

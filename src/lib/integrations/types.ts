@@ -51,6 +51,9 @@ export type ConnectionConfiguration = {
   ad_account_name?: string;
   customer_id?: string;
   customer_name?: string;
+  login_customer_id?: string;
+  currency?: string;
+  timezone?: string;
   property_id?: string;
   property_name?: string;
   site_url?: string;

@@ -46,7 +46,7 @@ Server-only, as integrations are activated:
 - `INTEGRATION_STATE_SECRET`
 - `OAUTH_TOKEN_STORAGE_REVIEWED` (keep `false` until the credential store is approved)
 - `META_APP_ID`, `META_APP_SECRET`
-- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_CLOUD_PROJECT_ID`
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_CLOUD_PROJECT_ID`, `GOOGLE_ADS_DEVELOPER_TOKEN`
 - `MONDAY_CLIENT_ID`, `MONDAY_CLIENT_SECRET`
 - `LEAD_INGEST_SECRETS_JSON`
 
@@ -58,7 +58,7 @@ RLS allows agency-level roles to see organization companies and client roles to 
 
 ## Integrations
 
-Each provider follows `IntegrationConnector`: fetch source records on the server, normalize them, then upsert raw facts. Meta-reported and Google-reported conversions remain separate from CRM leads and confirmed sales. Connector stubs deliberately fail closed until credentials, account selections, and the reviewed credential store exist. See `docs/integrations.md` for the OAuth, sync, Monday mapping, and signed lead-ingestion contracts.
+Google reporting connectors call the official REST APIs on the server, normalize their responses, and upsert raw reporting facts. Meta-reported and Google-reported conversions remain separate from CRM leads and confirmed sales. Integrations fail closed until credentials, explicit resource selections, and the reviewed credential store exist. See `docs/integrations.md` for the OAuth, sync, Monday mapping, and signed lead-ingestion contracts.
 
 Recommended rollout:
 

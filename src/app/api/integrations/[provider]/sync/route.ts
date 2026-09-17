@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { requireIntegrationConnection } from "@/lib/integrations/access";
 import { parseProvider, providerCatalog } from "@/lib/integrations/catalog";
 import { syncCrmProvider } from "@/lib/integrations/crm-sync";
+import { isGoogleProvider } from "@/lib/integrations/google/client";
+import { syncGoogleProvider, type GoogleSyncResult } from "@/lib/integrations/google-sync";
 import { syncMetaProvider } from "@/lib/integrations/meta-sync";
 import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
@@ -23,7 +25,7 @@ type StandardSyncResult = {
 };
 
 type MetaSyncResult = Awaited<ReturnType<typeof syncMetaProvider>>;
-type SyncResult = StandardSyncResult | MetaSyncResult;
+type SyncResult = StandardSyncResult | MetaSyncResult | GoogleSyncResult;
 
 export async function POST(
   request: Request,
@@ -134,6 +136,13 @@ export async function POST(
             body.companyId,
             access.connection.configuration as ConnectionConfiguration,
           )
+        : isGoogleProvider(provider)
+          ? await syncGoogleProvider(
+              provider,
+              access.connection.id,
+              body.companyId,
+              access.connection.configuration as ConnectionConfiguration,
+            )
         : await syncCrmProvider(
           provider,
           body.companyId,
@@ -158,6 +167,8 @@ export async function POST(
         body.companyId,
         configuredAdAccountId,
       )
+    : isGoogleProvider(provider)
+      ? googleSyncMetadata(result as GoogleSyncResult, body.companyId)
     : standardSyncMetadata(
         provider,
         result as StandardSyncResult,
@@ -212,14 +223,24 @@ export async function POST(
   });
 }
 
-function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "monday" | "hubspot" | "robaws" {
-  return provider === "meta" || provider === "monday" || provider === "hubspot" || provider === "robaws";
+function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" {
+  return provider === "meta" || isGoogleProvider(provider) || provider === "monday" || provider === "hubspot" || provider === "robaws";
 }
 
-function successMessage(provider: "meta" | "monday" | "hubspot" | "robaws", result: SyncResult) {
+function successMessage(provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws", result: SyncResult) {
   if (provider === "meta") {
     const meta = result as MetaSyncResult;
     return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows · ${meta.campaignsImported} campaigns · ${meta.adsetsImported} ad sets · ${meta.adsImported} ads.`;
+  }
+
+  if (isGoogleProvider(provider)) {
+    const google = result as GoogleSyncResult;
+    if (provider === "google_ads") {
+      return `Google Ads synced: ${google.dailyRowsImported} daily rows · ${google.campaignsImported ?? 0} campaigns · €${(google.totalSpend ?? 0).toFixed(2)} spend.`;
+    }
+    if (provider === "ga4") return `GA4 synced: ${google.dailyRowsImported} daily rows.`;
+    if (provider === "search_console") return `Search Console synced: ${google.recordsImported} search rows.`;
+    return `Google Business Profile synced: ${google.dailyRowsImported} daily rows.`;
   }
 
   const standard = result as StandardSyncResult;
@@ -229,6 +250,23 @@ function successMessage(provider: "meta" | "monday" | "hubspot" | "robaws", resu
   }
 
   return `${providerCatalog[provider].name} synced successfully: ${standard.leadsImported} leads · ${standard.dealsImported} deals · ${standard.projectsImported} projects · ${standard.revenueImported} revenue records.`;
+}
+
+function googleSyncMetadata(result: GoogleSyncResult, companyId: string) {
+  return {
+    trigger: "manual",
+    provider: result.provider,
+    companyId,
+    recordsImported: result.recordsImported,
+    dailyRowsImported: result.dailyRowsImported,
+    campaignsImported: result.campaignsImported,
+    adGroupsImported: result.adGroupsImported,
+    adsImported: result.adsImported,
+    spendImported: result.totalSpend,
+    dateFrom: result.dateFrom,
+    dateTo: result.dateTo,
+    selectedResourceId: result.selectedResourceId,
+  };
 }
 
 function metaSyncMetadata(

@@ -1,15 +1,128 @@
-import { ServerOnlyConnector } from "../base";
-import type { NormalizedMarketingMetric } from "../types";
+import "server-only";
 
-type GoogleAdsRow = Record<string, string | number | undefined>;
+import { googleAdsHeaders, googleJson } from "../google/client";
+import {
+  normalizeGoogleAdsInsight,
+  normalizeGoogleAdsResource,
+  normalizeGoogleCustomerId,
+  type GoogleAdsInsight,
+  type GoogleAdsResource,
+} from "../google/core";
 
-export class GoogleAdsConnector extends ServerOnlyConnector<GoogleAdsRow, NormalizedMarketingMetric> {
-  provider = "google_ads" as const;
-  async fetch(): Promise<GoogleAdsRow[]> {
-    this.requireSecret("GOOGLE_CLOUD_PROJECT_ID");
-    throw new Error("Google Ads authorization is prepared; API access must be enabled for the configured Google Cloud project before sync can run.");
+const GOOGLE_ADS_API_VERSION = "v25";
+const GOOGLE_ADS_ROOT =
+  `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
+
+export async function discoverGoogleAdsCustomers(
+  accessToken: string,
+): Promise<GoogleAdsResource[]> {
+  const accessible = await googleJson<{ resourceNames?: string[] }>(
+    `${GOOGLE_ADS_ROOT}/customers:listAccessibleCustomers`,
+    accessToken,
+    {},
+    googleAdsHeaders(),
+  );
+  const directIds = (accessible.resourceNames ?? [])
+    .map(name => normalizeGoogleCustomerId(name))
+    .filter(Boolean);
+  const resources = new Map<string, GoogleAdsResource>();
+  const managers: string[] = [];
+
+  for (const customerId of directIds) {
+    const rows = await googleAdsSearch(
+      accessToken,
+      customerId,
+      [
+        "SELECT customer.id, customer.descriptive_name,",
+        "customer.currency_code, customer.time_zone, customer.manager",
+        "FROM customer LIMIT 1",
+      ].join(" "),
+    );
+    const customer = record(rows[0]?.customer);
+    const resource = normalizeGoogleAdsResource({
+      id: customer.id,
+      descriptiveName: customer.descriptiveName,
+      currencyCode: customer.currencyCode,
+      timeZone: customer.timeZone,
+    });
+
+    if (customer.manager === true) managers.push(customerId);
+    else if (resource) resources.set(resource.id, resource);
   }
-  normalize(companyId: string, records: GoogleAdsRow[]): NormalizedMarketingMetric[] {
-    return records.map((row) => ({ date: String(row.date), companyId, channelExternalId: "google-ads", campaignExternalId: String(row.campaign_id ?? ""), adGroupExternalId: String(row.ad_group_id ?? ""), adExternalId: String(row.ad_id ?? ""), spend: Number(row.cost_micros ?? 0) / 1_000_000, impressions: Number(row.impressions ?? 0), reach: 0, clicks: Number(row.clicks ?? 0), landingPageViews: 0, platformConversions: Number(row.conversions ?? 0) }));
+
+  for (const managerId of managers) {
+    const rows = await googleAdsSearch(
+      accessToken,
+      managerId,
+      [
+        "SELECT customer_client.id, customer_client.descriptive_name,",
+        "customer_client.currency_code, customer_client.time_zone,",
+        "customer_client.manager, customer_client.level,",
+        "customer_client.status, customer_client.hidden",
+        "FROM customer_client",
+        "WHERE customer_client.status = 'ENABLED'",
+      ].join(" "),
+      managerId,
+    );
+
+    for (const row of rows) {
+      const client = record(row.customerClient);
+      if (client.manager === true || client.hidden === true || Number(client.level) === 0) continue;
+      const resource = normalizeGoogleAdsResource({
+        id: client.id,
+        descriptiveName: client.descriptiveName,
+        currencyCode: client.currencyCode,
+        timeZone: client.timeZone,
+      }, managerId);
+      if (resource && !resources.has(resource.id)) resources.set(resource.id, resource);
+    }
   }
+
+  return [...resources.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function fetchGoogleAdsDailyInsights(
+  accessToken: string,
+  customerId: string,
+  loginCustomerId: string | undefined,
+  from: string,
+  to: string,
+): Promise<GoogleAdsInsight[]> {
+  const rows = await googleAdsSearch(
+    accessToken,
+    normalizeGoogleCustomerId(customerId),
+    [
+      "SELECT segments.date, customer.id, campaign.id, campaign.name,",
+      "ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.name,",
+      "metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions",
+      "FROM ad_group_ad",
+      `WHERE segments.date BETWEEN '${from}' AND '${to}'`,
+    ].join(" "),
+    loginCustomerId,
+  );
+
+  return rows
+    .map(normalizeGoogleAdsInsight)
+    .filter((row): row is GoogleAdsInsight => row !== null);
+}
+
+async function googleAdsSearch(
+  accessToken: string,
+  customerId: string,
+  query: string,
+  loginCustomerId?: string,
+) {
+  const chunks = await googleJson<{ results?: Record<string, unknown>[] }[]>(
+    `${GOOGLE_ADS_ROOT}/customers/${normalizeGoogleCustomerId(customerId)}/googleAds:searchStream`,
+    accessToken,
+    { method: "POST", body: JSON.stringify({ query }) },
+    googleAdsHeaders(loginCustomerId),
+  );
+  return chunks.flatMap(chunk => chunk.results ?? []);
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return Boolean(value) && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
 }

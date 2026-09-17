@@ -43,6 +43,10 @@ export function missingProviderConfiguration(provider: IntegrationProvider) {
 
   const missing = requirements[group].filter((name) => !process.env[name]);
 
+  if (provider === "google_ads" && !process.env.GOOGLE_ADS_DEVELOPER_TOKEN) {
+    missing.push("GOOGLE_ADS_DEVELOPER_TOKEN");
+  }
+
   if (
     group === "website" &&
     !process.env.SUPABASE_SECRET_KEY &&
