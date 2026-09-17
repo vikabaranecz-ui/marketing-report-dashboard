@@ -4,6 +4,7 @@ import { createHash, createHmac } from "node:crypto";
 import type { ProviderCredential } from "./credentials";
 import type { IntegrationProvider } from "./types";
 import { providerCatalog } from "./catalog";
+import { getGoogleAppConfig } from "./google/app-config";
 
 const googleScopes = [
   "https://www.googleapis.com/auth/adwords",
@@ -17,7 +18,7 @@ const metaScopes = [
   "business_management",
 ];
 
-export function buildAuthorizationUrl(
+export async function buildAuthorizationUrl(
   provider: IntegrationProvider,
   redirectUri: string,
   state: string,
@@ -39,10 +40,11 @@ export function buildAuthorizationUrl(
   }
 
   if (group === "google") {
+    const config = await getGoogleAppConfig();
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
     url.search = new URLSearchParams({
-      client_id: required("GOOGLE_OAUTH_CLIENT_ID"),
+      client_id: config.clientId,
       redirect_uri: redirectUri,
       response_type: "code",
       state,
@@ -112,14 +114,15 @@ async function exchangeGoogleCode(
   redirectUri: string,
   existingCredential?: ProviderCredential | null,
 ): Promise<ProviderCredential> {
+  const config = await getGoogleAppConfig();
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
-      client_id: required("GOOGLE_OAUTH_CLIENT_ID"),
-      client_secret: required("GOOGLE_OAUTH_CLIENT_SECRET"),
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,

@@ -1,5 +1,6 @@
 import "server-only";
 import type { IntegrationProvider } from "./types";
+import { isGoogleAppConfigured } from "./google/app-config";
 
 type ProviderDefinition = {
   id: IntegrationProvider;
@@ -29,12 +30,18 @@ export function parseProvider(value: string): IntegrationProvider | null {
   return value in providerCatalog ? value as IntegrationProvider : null;
 }
 
-export function missingProviderConfiguration(provider: IntegrationProvider) {
+export async function missingProviderConfiguration(provider: IntegrationProvider) {
   const group = providerCatalog[provider].authorizationGroup;
+
+  if (group === "google") {
+    return await isGoogleAppConfigured()
+      ? []
+      : ["Google application configuration in Supabase Vault"];
+  }
 
   const requirements: Record<ProviderDefinition["authorizationGroup"], string[]> = {
     meta: ["META_APP_ID", "META_APP_SECRET"],
-    google: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_CLOUD_PROJECT_ID"],
+    google: [],
     monday: ["MONDAY_API_TOKEN"],
     hubspot: ["HUBSPOT_ACCESS_TOKEN"],
     robaws: ["ROBAWS_API_KEY", "ROBAWS_API_SECRET"],
@@ -42,10 +49,6 @@ export function missingProviderConfiguration(provider: IntegrationProvider) {
   };
 
   const missing = requirements[group].filter((name) => !process.env[name]);
-
-  if (provider === "google_ads" && !process.env.GOOGLE_ADS_DEVELOPER_TOKEN) {
-    missing.push("GOOGLE_ADS_DEVELOPER_TOKEN");
-  }
 
   if (
     group === "website" &&

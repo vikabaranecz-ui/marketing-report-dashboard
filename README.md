@@ -46,7 +46,7 @@ Server-only, as integrations are activated:
 - `INTEGRATION_STATE_SECRET`
 - `OAUTH_TOKEN_STORAGE_REVIEWED` (keep `false` until the credential store is approved)
 - `META_APP_ID`, `META_APP_SECRET`
-- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_CLOUD_PROJECT_ID`, `GOOGLE_ADS_DEVELOPER_TOKEN`
+- Google application credentials are stored once in Supabase Vault through the authenticated `/api/admin/integrations/google-app-config` endpoint; no Google-specific Vercel environment variables are required.
 - `MONDAY_CLIENT_ID`, `MONDAY_CLIENT_SECRET`
 - `LEAD_INGEST_SECRETS_JSON`
 
@@ -68,6 +68,32 @@ Recommended rollout:
 4. Write a `sync_logs` row for every attempt.
 5. Add idempotency keys using provider external IDs and dates.
 6. Run scheduled imports from a server-only Vercel Cron or worker.
+
+### Google application configuration
+
+After applying the migrations, sign in as a `super_admin` or `agency_admin` and send the shared Google OAuth application configuration to the protected server endpoint. The endpoint accepts the current Supabase session cookie or a verified Supabase access token, writes the payload to Vault, and returns only configuration status.
+
+```bash
+read -s SUPABASE_ADMIN_ACCESS_TOKEN
+curl --request POST "$DASHBOARD_ORIGIN/api/admin/integrations/google-app-config" \
+  --header "Authorization: Bearer $SUPABASE_ADMIN_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data-binary @-
+```
+
+Paste the following JSON at the prompt, then press `Ctrl-D`:
+
+```json
+{
+  "clientId": "...",
+  "clientSecret": "...",
+  "projectId": "..."
+}
+```
+
+The same operation rotates the configuration. `GET /api/admin/integrations/google-app-config` returns only `{ "configured": true|false }`; existing secret values are never revealed.
+
+Google Ads API access is determined by the Google Cloud project that owns the OAuth client. Developer tokens were sunset on September 9, 2026, so the integration does not store a developer token or send a `developer-token` header.
 
 ## Commands
 

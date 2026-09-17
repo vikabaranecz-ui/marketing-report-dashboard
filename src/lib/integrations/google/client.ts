@@ -2,6 +2,7 @@ import "server-only";
 
 import { credentialStore, type ProviderCredential } from "../credentials";
 import type { IntegrationProvider } from "../types";
+import { getGoogleAppConfig } from "./app-config";
 import { refreshGoogleCredential } from "./core";
 
 export type GoogleProvider =
@@ -14,6 +15,7 @@ export async function getGoogleCredential(
   connectionId: string,
   provider: GoogleProvider,
 ) {
+  const config = await getGoogleAppConfig();
   const credential = await credentialStore.read(connectionId, provider);
   if (!credential?.accessToken) {
     throw new Error("Google authorization is missing. Reconnect Google and try again.");
@@ -22,8 +24,8 @@ export async function getGoogleCredential(
   if (!isExpired(credential.expiresAt)) return credential;
 
   const refreshed = await refreshGoogleCredential(credential, {
-    clientId: required("GOOGLE_OAUTH_CLIENT_ID"),
-    clientSecret: required("GOOGLE_OAUTH_CLIENT_SECRET"),
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
   });
   await credentialStore.write(connectionId, provider, refreshed);
   return refreshed;
@@ -61,9 +63,7 @@ export async function googleJson<T>(
 }
 
 export function googleAdsHeaders(loginCustomerId?: string) {
-  const developerToken = required("GOOGLE_ADS_DEVELOPER_TOKEN");
   return {
-    "developer-token": developerToken,
     ...(loginCustomerId
       ? { "login-customer-id": loginCustomerId.replace(/\D/g, "") }
       : {}),
@@ -83,12 +83,6 @@ function isExpired(expiresAt?: string) {
   if (!expiresAt) return false;
   const expires = new Date(expiresAt).getTime();
   return !Number.isFinite(expires) || expires <= Date.now() + 60_000;
-}
-
-function required(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing ${name}.`);
-  return value;
 }
 
 export type { ProviderCredential };

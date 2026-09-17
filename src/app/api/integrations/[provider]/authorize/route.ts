@@ -41,7 +41,7 @@ export async function GET(
     );
   }
 
-  const missing = missingProviderConfiguration(provider);
+  const missing = await missingProviderConfiguration(provider);
 
   if (missing.length) {
     return NextResponse.json(
@@ -178,7 +178,7 @@ export async function GET(
   });
 
   const authorizationUrl =
-    buildAuthorizationUrl(provider, redirectUri, state);
+    await buildAuthorizationUrl(provider, redirectUri, state);
 
   const { error } = await access.supabase
     .from("reporting_integration_connections")
