@@ -21,6 +21,10 @@ export async function discoverGoogleAdsCustomers(
     accessToken,
     {},
     googleAdsHeaders(),
+    {
+      apiName: "Google Ads API",
+      resource: "the authorized Google account",
+    },
   );
   const directIds = (accessible.resourceNames ?? [])
     .map(name => normalizeGoogleCustomerId(name))
@@ -117,6 +121,10 @@ async function googleAdsSearch(
     accessToken,
     { method: "POST", body: JSON.stringify({ query }) },
     googleAdsHeaders(loginCustomerId),
+    {
+      apiName: "Google Ads API",
+      resource: `customer ${normalizeGoogleCustomerId(customerId)}`,
+    },
   );
   return chunks.flatMap(chunk => chunk.results ?? []);
 }

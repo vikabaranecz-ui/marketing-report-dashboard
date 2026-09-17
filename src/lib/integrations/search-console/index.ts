@@ -17,7 +17,10 @@ export async function discoverSearchConsoleSites(
 ): Promise<SearchConsoleResource[]> {
   const body = await googleJson<{
     siteEntry?: Array<{ siteUrl?: string; permissionLevel?: string }>;
-  }>("https://www.googleapis.com/webmasters/v3/sites", accessToken);
+  }>("https://www.googleapis.com/webmasters/v3/sites", accessToken, {}, {}, {
+    apiName: "Google Search Console API",
+    resource: "the authorized Google account",
+  });
 
   return (body.siteEntry ?? [])
     .filter(site => site.permissionLevel !== "siteUnverifiedUser")
@@ -51,6 +54,11 @@ export async function fetchSearchConsoleMetrics(
           rowLimit,
           startRow,
         }),
+      },
+      {},
+      {
+        apiName: "Google Search Console API",
+        resource: `property ${siteUrl}`,
       },
     );
     const sourceRows = body.rows ?? [];

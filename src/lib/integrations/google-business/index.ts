@@ -43,7 +43,10 @@ export async function discoverGoogleBusinessLocations(
       const body = await googleJson<{
         locations?: Array<{ name?: string; title?: string; storeCode?: string }>;
         nextPageToken?: string;
-      }>(url, accessToken);
+      }>(url, accessToken, {}, {}, gbpContext(
+        "Google Business Profile Business Information API",
+        `account ${accountId}`,
+      ));
 
       for (const location of body.locations ?? []) {
         const locationId = suffix(location.name);
@@ -81,7 +84,10 @@ export async function fetchGoogleBusinessDailyMetrics(
     multiDailyMetricTimeSeries?: Array<{
       dailyMetricTimeSeries?: Record<string, unknown>[];
     }>;
-  }>(url, accessToken);
+  }>(url, accessToken, {}, {}, gbpContext(
+    "Google Business Profile Performance API",
+    `location ${suffix(locationId)}`,
+  ));
 
   return normalizeGbpTimeSeries(
     (body.multiDailyMetricTimeSeries ?? [])
@@ -99,7 +105,10 @@ async function listAccounts(accessToken: string) {
     const body = await googleJson<{
       accounts?: Array<{ name?: string; accountName?: string }>;
       nextPageToken?: string;
-    }>(url, accessToken);
+    }>(url, accessToken, {}, {}, gbpContext(
+      "Google Business Profile Account Management API",
+      "the authorized Google account",
+    ));
     accounts.push(...(body.accounts ?? []));
     pageToken = body.nextPageToken ?? "";
   } while (pageToken);
@@ -115,4 +124,13 @@ function addDate(url: URL, prefix: string, value: string) {
 
 function suffix(value?: string) {
   return value?.split("/").at(-1)?.trim() ?? "";
+}
+
+function gbpContext(apiName: string, resource: string) {
+  return {
+    apiName,
+    resource,
+    retryQuota: true,
+    quotaHelp: "If this Cloud project has zero GBP API quota, submit Google's Application for Basic API Access; code cannot enable zero quota.",
+  };
 }

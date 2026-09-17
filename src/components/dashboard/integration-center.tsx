@@ -104,7 +104,7 @@ export function IntegrationCenter({ companyId, integrations }: { companyId: stri
       setMessages((current) => ({
         ...current,
         [item.id]: {
-          text: error instanceof Error ? error.message : "The integration request failed.",
+          text: error instanceof Error ? error.message : providerErrorFallback(item.provider, action),
           tone: "error",
         },
       }));
@@ -125,10 +125,10 @@ export function IntegrationCenter({ companyId, integrations }: { companyId: stri
     try {
       const response = await fetch(`/api/integrations/${item.provider}/resources?companyId=${encodeURIComponent(companyId)}`, { credentials: "same-origin", cache: "no-store" });
       const result = await readResponse(response) as RequestResult & { resources?: SelectableResource[] };
-      if (!response.ok) throw new Error(result.error ?? (item.provider === "meta" ? "Unable to load Meta ad accounts." : `Unable to load ${item.name} resources.`));
+      if (!response.ok) throw new Error(result.error ?? providerErrorFallback(item.provider, "resources"));
       setResources(current => ({ ...current, [item.id]: result.resources ?? [] }));
     } catch (error) {
-      setMessages(current => ({ ...current, [item.id]: { text: error instanceof Error ? error.message : item.provider === "meta" ? "Unable to load Meta ad accounts." : `Unable to load ${item.name} resources.`, tone: "error" } }));
+      setMessages(current => ({ ...current, [item.id]: { text: error instanceof Error ? error.message : providerErrorFallback(item.provider, "resources"), tone: "error" } }));
     } finally {
       requestInFlight.current = false;
       setPending(null);
@@ -242,4 +242,13 @@ async function readResponse(response: Response): Promise<RequestResult> {
 function formatTimestamp(value: string | null) {
   if (!value) return "Never";
   return new Intl.DateTimeFormat("en-BE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function providerErrorFallback(provider: Integration["provider"], action: Action) {
+  const prefix = action === "resources" ? "Resource discovery failed" : "Integration request failed";
+  if (provider === "ga4") return `${prefix}: verify access to the selected GA4 property.`;
+  if (provider === "google_business") return `${prefix}: verify Google Business Profile API access and Cloud-project quota.`;
+  if (provider === "search_console") return `${prefix}: verify access to the selected Search Console property.`;
+  if (provider === "google_ads") return `${prefix}: verify the selected Google Ads account and Cloud-project API access.`;
+  return `${prefix} for ${provider}.`;
 }

@@ -28,7 +28,10 @@ export async function discoverGa4Properties(
         propertySummaries?: Array<{ property?: string; displayName?: string }>;
       }>;
       nextPageToken?: string;
-    }>(url, accessToken);
+    }>(url, accessToken, {}, {}, {
+      apiName: "Google Analytics Admin API",
+      resource: "the authorized Google account",
+    });
 
     for (const account of body.accountSummaries ?? []) {
       const accountId = suffix(account.name);
@@ -84,6 +87,11 @@ export async function fetchGa4DailyMetrics(
           limit: String(limit),
           keepEmptyRows: false,
         }),
+      },
+      {},
+      {
+        apiName: "Google Analytics Data API",
+        resource: `property ${suffix(propertyId)}`,
       },
     );
     const sourceRows = body.rows ?? [];

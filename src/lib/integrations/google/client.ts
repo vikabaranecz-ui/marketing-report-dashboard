@@ -4,6 +4,7 @@ import { credentialStore, type ProviderCredential } from "../credentials";
 import type { IntegrationProvider } from "../types";
 import { getGoogleAppConfig } from "./app-config";
 import { refreshGoogleCredential } from "./core";
+import { requestGoogleJson, type GoogleApiContext } from "./http-core";
 
 export type GoogleProvider =
   | "google_ads"
@@ -36,30 +37,13 @@ export async function googleJson<T>(
   accessToken: string,
   options: RequestInit = {},
   extraHeaders: Record<string, string> = {},
+  context: GoogleApiContext = { apiName: "Google API" },
 ): Promise<T> {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...extraHeaders,
-      ...(options.headers ?? {}),
-    },
-    cache: "no-store",
+  return requestGoogleJson<T>(url, accessToken, {
+    request: options,
+    headers: extraHeaders,
+    context,
   });
-  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-
-  if (!response.ok) {
-    const error = body.error && typeof body.error === "object"
-      ? body.error as Record<string, unknown>
-      : {};
-    const detail = typeof error.message === "string"
-      ? error.message
-      : `HTTP ${response.status}`;
-    throw new Error(`Google API request failed: ${detail}`);
-  }
-
-  return body as T;
 }
 
 export function googleAdsHeaders(loginCustomerId?: string) {

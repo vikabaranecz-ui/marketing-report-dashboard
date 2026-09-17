@@ -61,6 +61,11 @@ export type GbpMetric = {
   ratingSum: number;
 };
 
+export type SearchConsoleSyncScope = {
+  companyId: string;
+  siteUrl: string;
+};
+
 type FetchLike = (
   input: string | URL | Request,
   init?: RequestInit,
@@ -270,6 +275,44 @@ export function findAccessibleResource<T extends { id: string }>(
   requestedId: string,
 ) {
   return resources.find(resource => resource.id === requestedId) ?? null;
+}
+
+export function searchConsoleSyncScope(
+  companyId: string,
+  configuredSiteUrl: string | undefined,
+): SearchConsoleSyncScope {
+  const siteUrl = text(configuredSiteUrl);
+  if (!companyId.trim()) throw new Error("A company is required for Search Console sync.");
+  if (!siteUrl) throw new Error("Select a Search Console property before syncing.");
+  return { companyId, siteUrl };
+}
+
+export function searchConsolePersistenceRow(
+  scope: SearchConsoleSyncScope,
+  metric: SearchConsoleMetric,
+) {
+  return {
+    company_id: scope.companyId,
+    date: metric.date,
+    query: metric.query,
+    page: metric.page,
+    is_branded: null,
+    impressions: metric.impressions,
+    clicks: metric.clicks,
+    position_sum: metric.positionSum,
+  };
+}
+
+export function searchConsoleSyncIdentity(scope: SearchConsoleSyncScope) {
+  return {
+    companyId: scope.companyId,
+    requestSiteUrl: scope.siteUrl,
+    selectedResourceId: scope.siteUrl,
+  };
+}
+
+export function searchConsoleReplacementCompanyId(scope: SearchConsoleSyncScope) {
+  return scope.companyId;
 }
 
 function emptyGbpMetric(date: string): GbpMetric {

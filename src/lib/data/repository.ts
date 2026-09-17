@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
+import { aggregateGa4WebsiteMetrics } from "@/lib/metrics/website";
 import { demoCompanies, demoDatasets } from "./demo";
 import type { CampaignMetric, ChannelMetric, Company, CompanyDataset, Integration, Lead, LocationMetric, ServiceMetric, TrendPoint } from "./types";
 
@@ -56,7 +57,7 @@ type RawCrmDeal = {
 };
 
 type RawRevenue = { attributed_revenue:number|string; channel_id:string|null; campaign_id:string|null; attributed_at:string };
-type RawWebsite = { date:string; users:number; sessions:number; new_users:number; engaged_sessions:number; form_submissions:number; whatsapp_clicks:number; phone_clicks:number; quote_requests:number };
+type RawWebsite = { company_id:string; date:string; users:number; sessions:number; new_users:number; engaged_sessions:number; form_submissions:number; whatsapp_clicks:number; phone_clicks:number; quote_requests:number };
 type RawSeo = { impressions:number; clicks:number; position_sum:number|string; is_branded:boolean|null };
 type RawIntegration = { id:string; provider:Integration["provider"]; status:"connected"|"connecting"|"not_connected"|"error"; configuration:Record<string,unknown>; error_message:string|null; last_successful_sync:string|null; last_attempted_sync:string|null; sync_logs:{records_imported:number}[]|null };
 
@@ -77,7 +78,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     supabase.from("revenue_attribution").select("attributed_revenue,channel_id,campaign_id,attributed_at").eq("company_id",company.id).gte("attributed_at",fromIso).lte("attributed_at",toIso).eq("model","first_touch"),
     supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true),
     supabase.from("campaigns").select("id,name,channel_id,marketing_channels(name)").eq("company_id",company.id),
-    supabase.from("website_metrics").select("date,users,sessions,new_users,engaged_sessions,form_submissions,whatsapp_clicks,phone_clicks,quote_requests").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
+    supabase.from("website_metrics").select("company_id,date,users,sessions,new_users,engaged_sessions,form_submissions,whatsapp_clicks,phone_clicks,quote_requests").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("seo_metrics").select("impressions,clicks,position_sum,is_branded").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("reporting_integration_connections").select("id,provider,status,configuration,error_message,last_successful_sync,last_attempted_sync,sync_logs(records_imported)").eq("company_id",company.id),
   ]);
@@ -171,7 +172,15 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const trend = buildTrend(rawMetrics,rawLeads,rawRevenue,projectByLead,rawWebsite);
   const locations = buildLocations(rawLeads,rawMetrics,projectByLead);
   const leadSources = buildLeadSources(rawLeads,quoteByLead,projectByLead);
-  const website={users:sum(rawWebsite,"users"),sessions:sum(rawWebsite,"sessions"),newUsers:sum(rawWebsite,"new_users"),engagedSessions:sum(rawWebsite,"engaged_sessions"),formSubmissions:sum(rawWebsite,"form_submissions"),whatsappClicks:sum(rawWebsite,"whatsapp_clicks"),phoneClicks:sum(rawWebsite,"phone_clicks"),quoteRequests:sum(rawWebsite,"quote_requests")};
+  const websiteTraffic = aggregateGa4WebsiteMetrics(rawWebsite.map(row => ({
+    companyId: row.company_id,
+    date: row.date,
+    users: Number(row.users),
+    sessions: Number(row.sessions),
+    newUsers: Number(row.new_users),
+    engagedSessions: Number(row.engaged_sessions),
+  })), company.id, fromDate, toDate);
+  const website={users:websiteTraffic.users,sessions:websiteTraffic.sessions,newUsers:websiteTraffic.newUsers,engagedSessions:websiteTraffic.engagedSessions,formSubmissions:sum(rawWebsite,"form_submissions"),whatsappClicks:sum(rawWebsite,"whatsapp_clicks"),phoneClicks:sum(rawWebsite,"phone_clicks"),quoteRequests:sum(rawWebsite,"quote_requests")};
   const seoImpressions=sum(rawSeo,"impressions"),seoClicks=sum(rawSeo,"clicks"),positionSum=rawSeo.reduce((s,r)=>s+Number(r.position_sum),0),branded=rawSeo.filter(r=>r.is_branded).reduce((s,r)=>s+r.clicks,0);
   const commercialDeals = rawCrmDeals.map(deal => ({
     id: deal.id,

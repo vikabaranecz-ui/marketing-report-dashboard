@@ -5,7 +5,7 @@ import { fetchGa4DailyMetrics } from "./ga4";
 import { fetchGoogleAdsDailyInsights } from "./google-ads";
 import { fetchGoogleBusinessDailyMetrics } from "./google-business";
 import { getGoogleCredential, type GoogleProvider } from "./google/client";
-import { googleAdsFactIdentity, googleAdsReplacementScope, normalizeGoogleCustomerId } from "./google/core";
+import { googleAdsFactIdentity, googleAdsReplacementScope, normalizeGoogleCustomerId, searchConsolePersistenceRow, searchConsoleReplacementCompanyId, searchConsoleSyncIdentity, searchConsoleSyncScope } from "./google/core";
 import { fetchSearchConsoleMetrics } from "./search-console";
 import type { ConnectionConfiguration } from "./types";
 
@@ -235,32 +235,28 @@ async function syncSearchConsole(
   configuration: ConnectionConfiguration,
   dateTo: string,
 ): Promise<GoogleSyncResult> {
-  const siteUrl = clean(configuration.site_url);
-  if (!siteUrl) throw new Error("Select a Search Console property before syncing.");
+  const scope = searchConsoleSyncScope(companyId, configuration.site_url);
+  const identity = searchConsoleSyncIdentity(scope);
   const metrics = await fetchSearchConsoleMetrics(
     accessToken,
-    siteUrl,
+    identity.requestSiteUrl,
     INITIAL_SYNC_FROM,
     dateTo,
   );
   const admin = createSupabaseAdminClient();
-  await replaceCompanyWindow(admin, "seo_metrics", companyId, dateTo);
+  await replaceCompanyWindow(
+    admin,
+    "seo_metrics",
+    searchConsoleReplacementCompanyId(scope),
+    dateTo,
+  );
   await upsertChunks(
     admin,
     "seo_metrics",
-    metrics.map(row => ({
-      company_id: companyId,
-      date: row.date,
-      query: row.query,
-      page: row.page,
-      is_branded: null,
-      impressions: row.impressions,
-      clicks: row.clicks,
-      position_sum: row.positionSum,
-    })),
+    metrics.map(row => searchConsolePersistenceRow(scope, row)),
     "date,company_id,query,page",
   );
-  return baseResult("search_console", metrics.length, siteUrl, dateTo);
+  return baseResult("search_console", metrics.length, identity.selectedResourceId, dateTo);
 }
 
 async function syncGoogleBusiness(
