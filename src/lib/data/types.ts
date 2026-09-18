@@ -170,7 +170,7 @@ export type LocationMetric = {
   qualified: number;
   won: number;
   revenue: number;
-  spend: number;
+  spend: number | null;
 };
 
 export type Integration = {
@@ -206,7 +206,7 @@ export type CompanyDataset = {
   trend: TrendPoint[];
   locations: LocationMetric[];
   website: { users: number; sessions: number; newUsers: number; engagedSessions: number; formSubmissions: number; whatsappClicks: number; phoneClicks: number; quoteRequests: number };
-  seo: { impressions: number; clicks: number; ctr: number; position: number; brandedShare: number };
+  seo: { impressions: number; clicks: number; ctr: number; position: number; brandedShare: number | null };
   gbp?: { profileViews: number; websiteClicks: number; calls: number; directionRequests: number; messages: number; searches: number; reviews: number; averageRating: number | null };
   integrations: Integration[];
   dataHealth: { missingSource: number; missingService: number; missingCampaign: number; wonMissingRevenue: number; duplicates: number; campaignsWithoutSpend: number; daysSinceSync: number | null };
