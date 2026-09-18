@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
-import type { CommercialInvoice, CompanyDataset } from "@/lib/data/types";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import type { CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
