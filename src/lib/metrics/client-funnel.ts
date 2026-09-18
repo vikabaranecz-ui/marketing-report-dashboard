@@ -21,6 +21,7 @@ export type JourneyRow = {
   latestOffer: CommercialOffer | null;
   projects: CommercialProject[];
   offerValue: number;
+  sentOfferValue: number;
   openOfferValue: number;
   acceptedOfferValue: number;
   projectValue: number;
@@ -37,8 +38,10 @@ export type FunnelSummary = {
   notRelevantPeople: number;
   qualified: number;
   visits: number;
+  offersCreated: number;
   offersSent: number;
   quotedValue: number;
+  sentQuotedValue: number;
   openOffers: number;
   openPipelineValue: number;
   acceptedOffers: number;
@@ -215,7 +218,8 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       latestOffer: currentOffer,
       projects: leadProjects,
       offerValue: leadOffers.reduce((sum, item) => sum + item.priceInclVat, 0),
-      openOfferValue: leadOffers.filter(item => item.isOpen).reduce((sum, item) => sum + item.priceInclVat, 0),
+      sentOfferValue: leadOffers.filter(item => Boolean(item.sentAt)).reduce((sum, item) => sum + item.priceInclVat, 0),
+      openOfferValue: leadOffers.filter(item => item.isOpen && Boolean(item.sentAt)).reduce((sum, item) => sum + item.priceInclVat, 0),
       acceptedOfferValue: leadOffers.filter(item => item.isAccepted).reduce((sum, item) => sum + item.priceInclVat, 0),
       projectValue: leadProjects.reduce((sum, item) => sum + Number(item.valueInclVat ?? 0), 0),
       hasVisit: visit,
@@ -237,8 +241,10 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     notRelevantPeople: rows.filter(row => row.isNotRelevant).length,
     qualified: rows.filter(row => row.isQualified).length,
     visits: rows.filter(row => row.hasVisit).length,
-    offersSent: rows.filter(row => row.offers.length > 0).length,
+    offersCreated: rows.filter(row => row.offers.length > 0).length,
+    offersSent: rows.filter(row => row.offers.some(item => Boolean(item.sentAt))).length,
     quotedValue: rows.reduce((sum, row) => sum + row.offerValue, 0),
+    sentQuotedValue: rows.reduce((sum, row) => sum + row.sentOfferValue, 0),
     openOffers: rows.filter(row => row.openOfferValue > 0).length,
     openPipelineValue: rows.reduce((sum, row) => sum + row.openOfferValue, 0),
     acceptedOffers: rows.filter(row => row.acceptedOfferValue > 0).length,
@@ -270,8 +276,10 @@ export function sourcePipelineRows(data: CompanyDataset) {
       leads: sourceRows.length,
       qualified: sourceRows.filter(row => row.isQualified).length,
       visits: sourceRows.filter(row => row.hasVisit).length,
-      offers: sourceRows.filter(row => row.offers.length > 0).length,
+      offersCreated: sourceRows.filter(row => row.offers.length > 0).length,
+      offers: sourceRows.filter(row => row.offers.some(item => Boolean(item.sentAt))).length,
       quotedValue: sourceRows.reduce((sum, row) => sum + row.offerValue, 0),
+      sentQuotedValue: sourceRows.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: sourceRows.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: sourceRows.filter(row => row.isSigned).length,
       verified: sourceRows.filter(row => row.stage === "verified").length,
