@@ -201,6 +201,14 @@ export async function POST(
       last_successful_sync: completedAt,
       last_attempted_sync: startedAt,
       error_message: null,
+      ...(provider === "meta" ? {
+        configuration: {
+          ...(access.connection.configuration ?? {}),
+          meta_permission_status: (result as MetaSyncResult).metaPermissionStatus,
+          meta_granted_permissions: (result as MetaSyncResult).grantedPermissions,
+          meta_missing_permissions: (result as MetaSyncResult).missingPermissions,
+        },
+      } : {}),
       updated_at: completedAt,
     })
     .eq("id", access.connection.id)
@@ -230,7 +238,13 @@ function isManualSyncProvider(provider: IntegrationProvider): provider is "meta"
 function successMessage(provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws", result: SyncResult) {
   if (provider === "meta") {
     const meta = result as MetaSyncResult;
-    return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows · ${meta.campaignsImported} campaigns · ${meta.adsetsImported} ad sets · ${meta.adsImported} ads.`;
+    if (!meta.leadAdsAvailable) {
+      return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows, but Lead Ads retrieval is unavailable because these permissions are missing: ${meta.missingPermissions.join(", ")}.`;
+    }
+    const leadSummary = meta.metaLeadAttributionWarning
+      ? `Lead Ads warning: ${meta.metaLeadAttributionWarning}`
+      : `${meta.metaLeadsImported} Meta leads · ${meta.metaLeadsMatched} CRM matches`;
+    return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows · ${meta.campaignsImported} campaigns · ${meta.adsetsImported} ad sets · ${meta.adsImported} ads · ${leadSummary}.`;
   }
 
   if (isGoogleProvider(provider)) {
@@ -295,6 +309,21 @@ function metaSyncMetadata(
     spendImported: result.totalSpend,
     firstDate: result.earliestDate,
     lastDate: result.latestDate,
+    metaLeadsImported: result.metaLeadsImported,
+    metaLeadsMatched: result.metaLeadsMatched,
+    metaLeadsUnmatched: result.metaLeadsUnmatched,
+    metaLeadsAmbiguous: result.metaLeadsAmbiguous,
+    earliestMetaLead: result.earliestMetaLead,
+    latestMetaLead: result.latestMetaLead,
+    metaLeadMatchRate: result.metaLeadMatchRate,
+    metaLeadAttributionWarning: result.metaLeadAttributionWarning,
+    metaPermissionStatus: result.metaPermissionStatus,
+    grantedPermissions: result.grantedPermissions,
+    missingPermissions: result.missingPermissions,
+    leadAdsAvailable: result.leadAdsAvailable,
+    metaLeadRetrievalScope: result.metaLeadRetrievalScope,
+    metaLeadPagesProcessed: result.metaLeadPagesProcessed,
+    metaLeadFormsProcessed: result.metaLeadFormsProcessed,
   };
 }
 

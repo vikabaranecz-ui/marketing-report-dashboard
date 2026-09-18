@@ -5,6 +5,8 @@ import type { ProviderCredential } from "./credentials";
 import type { IntegrationProvider } from "./types";
 import { providerCatalog } from "./catalog";
 import { getGoogleAppConfig } from "./google/app-config";
+import { fetchMetaPermissionState } from "./meta/client";
+import { META_REQUIRED_PERMISSIONS } from "./meta/production-core";
 
 const googleScopes = [
   "https://www.googleapis.com/auth/adwords",
@@ -13,10 +15,7 @@ const googleScopes = [
   "https://www.googleapis.com/auth/business.manage",
 ];
 
-const metaScopes = [
-  "ads_read",
-  "business_management",
-];
+const metaScopes = [...META_REQUIRED_PERMISSIONS];
 
 export async function buildAuthorizationUrl(
   provider: IntegrationProvider,
@@ -224,10 +223,13 @@ async function exchangeMetaCode(
     token = await tokenResponse(longResponse, "Meta");
   }
 
+  const permissions = await fetchMetaPermissionState(token.access_token);
+
   return {
     accessToken: token.access_token,
     expiresAt: expiresFromSeconds(token.expires_in),
-    scopes: metaScopes,
+    scopes: permissions.granted,
+    permissionStatuses: permissions.statuses,
   };
 }
 

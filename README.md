@@ -60,6 +60,12 @@ RLS allows agency-level roles to see organization companies and client roles to 
 
 Google reporting connectors call the official REST APIs on the server, normalize their responses, and upsert raw reporting facts. Meta-reported and Google-reported conversions remain separate from CRM leads and confirmed sales. Integrations fail closed until credentials, explicit resource selections, and the reviewed credential store exist. See `docs/integrations.md` for the OAuth, sync, Monday mapping, and signed lead-ingestion contracts.
 
+### Meta Lead Ads access
+
+The Meta OAuth flow keeps the existing Insights scopes and requests the current Lead Ads permissions used by Graph API v26: `ads_read`, `ads_management`, `business_management`, `leads_retrieval`, `pages_show_list`, `pages_read_engagement`, and `pages_manage_ads`. The importer uses Page/form lead retrieval and does not subscribe to webhooks, so it does not request `pages_manage_metadata`.
+
+Before production Lead Ads import can work, request App Review / Advanced Access for the restricted permissions used by the app, provide Meta's required review screencast and instructions, and assign the integration user/app access to each Page in Leads Access Manager. Existing connections must reconnect after the approved scopes are available so the stored token contains them. See Meta's [Lead Ads retrieval guide](https://developers.facebook.com/docs/marketing-api/guides/lead-ads/retrieving/) and [permission reference](https://developers.facebook.com/docs/permissions#l).
+
 Recommended rollout:
 
 1. Implement token storage/encryption outside the exposed schema.

@@ -8,6 +8,7 @@ export type ProviderCredential = {
   refreshToken?: string;
   expiresAt?: string;
   scopes: string[];
+  permissionStatuses?: Record<string, string>;
 };
 
 export interface CredentialStore {

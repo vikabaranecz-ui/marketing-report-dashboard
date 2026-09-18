@@ -66,6 +66,9 @@ export type ConnectionConfiguration = {
   portal_name?: string;
   pipeline_id?: string;
   pipeline_name?: string;
+  meta_permission_status?: "Ready" | "Missing permissions" | "App Review / Advanced Access required";
+  meta_granted_permissions?: string[];
+  meta_missing_permissions?: string[];
   monday_columns?: MondayColumnMapping;
 };
 

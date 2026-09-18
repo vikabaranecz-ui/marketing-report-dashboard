@@ -181,6 +181,8 @@ export type Integration = {
   records: number;
   resource: string;
   errorMessage: string | null;
+  metaPermissionStatus?: "Ready" | "Missing permissions" | "App Review / Advanced Access required" | null;
+  metaMissingPermissions?: string[];
 };
 
 export type CompanyDataset = {

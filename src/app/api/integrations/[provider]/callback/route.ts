@@ -12,6 +12,7 @@ import {
 import {
   verifyOAuthState,
 } from "@/lib/integrations/oauth-state";
+import { parseMetaPermissionRows } from "@/lib/integrations/meta/production-core";
 
 export const runtime = "nodejs";
 
@@ -197,11 +198,25 @@ export async function GET(
         credential,
       );
 
+      const metaReadiness = provider === "meta"
+        ? parseMetaPermissionRows(Object.entries(credential.permissionStatuses ?? {}).map(
+            ([permission, status]) => ({ permission, status }),
+          ))
+        : null;
+
       const { error } = await access.supabase
         .from("reporting_integration_connections")
         .update({
           status: "connected",
           error_message: null,
+          ...(metaReadiness ? {
+            configuration: {
+              ...(access.connection.configuration ?? {}),
+              meta_permission_status: metaReadiness.status,
+              meta_granted_permissions: metaReadiness.granted,
+              meta_missing_permissions: metaReadiness.missing,
+            },
+          } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq("id", access.connection.id);

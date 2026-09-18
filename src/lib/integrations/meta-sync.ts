@@ -2,8 +2,11 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { credentialStore } from "./credentials";
-import { fetchMetaDailyInsights } from "./meta/client";
+import { syncMetaLeadAttribution, type MetaLeadSyncResult } from "./meta-lead-sync";
+import { fetchMetaDailyInsights, fetchMetaLeadAds, fetchMetaPermissionState } from "./meta/client";
 import { normalizeMetaAdAccountId, type MetaInsight } from "./meta/core";
+import type { MetaLeadRecord } from "./meta/lead-attribution-core";
+import { optionalMetaLeadPhase, parseMetaPermissionRows, readMetaSyncSources, type MetaReadinessStatus } from "./meta/production-core";
 import type { ConnectionConfiguration } from "./types";
 
 const INITIAL_SYNC_FROM = "2026-01-01";
@@ -22,6 +25,21 @@ export type MetaSyncResult = {
   selectedAdAccountId: string;
   monthlySpend: { month: string; spend: number; rowCount: number }[];
   missingMonths: string[];
+  metaLeadsImported: number;
+  metaLeadsMatched: number;
+  metaLeadsUnmatched: number;
+  metaLeadsAmbiguous: number;
+  earliestMetaLead: string | null;
+  latestMetaLead: string | null;
+  metaLeadMatchRate: number;
+  metaLeadAttributionWarning: string | null;
+  metaPermissionStatus: MetaReadinessStatus;
+  grantedPermissions: string[];
+  missingPermissions: string[];
+  leadAdsAvailable: boolean;
+  metaLeadRetrievalScope: "direct_forms" | "selected_pages" | "accessible_pages_fallback" | null;
+  metaLeadPagesProcessed: number;
+  metaLeadFormsProcessed: number;
 };
 
 export async function syncMetaProvider(
@@ -39,13 +57,51 @@ export async function syncMetaProvider(
     throw new Error("Meta authorization is missing. Reconnect Meta and try again.");
   }
 
-  const dateTo = brusselsDate(new Date());
-  const insights = await fetchMetaDailyInsights(
-    credential.accessToken,
-    adAccountId,
-    INITIAL_SYNC_FROM,
-    dateTo,
+  const permissionCheck = await optionalMetaLeadPhase(
+    () => fetchMetaPermissionState(credential.accessToken),
+    "Meta permission verification is unavailable.",
   );
+  const storedPermissionRows = Object.entries(credential.permissionStatuses ?? {}).map(
+    ([permission, status]) => ({ permission, status }),
+  );
+  const permissions = permissionCheck.value ?? parseMetaPermissionRows(storedPermissionRows);
+  const leadWarnings = permissionCheck.warning ? [permissionCheck.warning] : [];
+  if (permissionCheck.value) {
+    const credentialUpdate = await optionalMetaLeadPhase(
+      () => credentialStore.write(connectionId, "meta", {
+        ...credential,
+        scopes: permissions.granted,
+        permissionStatuses: permissions.statuses,
+      }),
+      "Verified Meta permissions could not be saved to secure credential storage.",
+    );
+    if (credentialUpdate.warning) leadWarnings.push(credentialUpdate.warning);
+  }
+
+  const dateTo = brusselsDate(new Date());
+  const sources = await readMetaSyncSources({
+    fetchInsights: () => fetchMetaDailyInsights(
+      credential.accessToken,
+      adAccountId,
+      INITIAL_SYNC_FROM,
+      dateTo,
+    ),
+    fetchLeads: () => fetchMetaLeadAds(credential.accessToken, adAccountId),
+    leadAdsAvailable: permissions.leadAdsAvailable,
+    unavailableWarning: `Lead Ads retrieval is unavailable because these Meta permissions are missing: ${permissions.missing.join(", ")}.`,
+  });
+  const insights = sources.insights;
+  let metaLeads: MetaLeadRecord[] = [];
+  let metaLeadRetrievalScope: MetaSyncResult["metaLeadRetrievalScope"] = null;
+  let metaLeadPagesProcessed = 0;
+  let metaLeadFormsProcessed = 0;
+  if (sources.leads) {
+    metaLeads = sources.leads.records;
+    metaLeadRetrievalScope = sources.leads.retrievalScope;
+    metaLeadPagesProcessed = sources.leads.pagesProcessed;
+    metaLeadFormsProcessed = sources.leads.formsProcessed;
+  }
+  if (sources.warning) leadWarnings.push(sources.warning);
   const admin = createSupabaseAdminClient();
   const companyResult = await admin
     .from("companies")
@@ -67,42 +123,45 @@ export async function syncMetaProvider(
   if (channelResult.error) throw new Error(`Unable to prepare the Meta channel: ${channelResult.error.message}`);
 
   const channelId = channelResult.data.id;
-  const campaigns = uniqueBy(insights, row => row.campaignId);
+  const campaignSources = insights.map(row => ({ id: row.campaignId, name: row.campaignName }));
+  const campaigns = uniqueBy(campaignSources, row => row.id);
   const campaignRows = await upsertEntities(
     admin,
     "campaigns",
     campaigns.map(row => ({
       company_id: companyId,
       channel_id: channelId,
-      external_id: row.campaignId,
-      name: row.campaignName,
+      external_id: row.id,
+      name: row.name,
     })),
     "company_id,channel_id,external_id",
   );
   const campaignIds = new Map(campaignRows.map(row => [String(row.external_id), String(row.id)]));
 
-  const adsets = uniqueBy(insights, row => row.adsetId);
+  const adsetSources = insights.map(row => ({ id: row.adsetId, name: row.adsetName, campaignId: row.campaignId }));
+  const adsets = uniqueBy(adsetSources, row => row.id);
   const adsetRows = await upsertEntities(
     admin,
     "ad_groups",
     adsets.map(row => ({
       campaign_id: requiredMap(campaignIds, row.campaignId, "campaign"),
-      external_id: row.adsetId,
-      name: row.adsetName,
+      external_id: row.id,
+      name: row.name,
       group_type: "ad_set",
     })),
     "campaign_id,external_id",
   );
   const adsetIds = new Map(adsetRows.map(row => [String(row.external_id), String(row.id)]));
 
-  const ads = uniqueBy(insights, row => row.adId);
+  const adSources = insights.map(row => ({ id: row.adId, name: row.adName, adsetId: row.adsetId }));
+  const ads = uniqueBy(adSources, row => row.id);
   const adRows = await upsertEntities(
     admin,
     "ads",
     ads.map(row => ({
       ad_group_id: requiredMap(adsetIds, row.adsetId, "ad set"),
-      external_id: row.adId,
-      name: row.adName,
+      external_id: row.id,
+      name: row.name,
     })),
     "ad_group_id,external_id",
   );
@@ -143,10 +202,27 @@ export async function syncMetaProvider(
     "company_id,date,ad_account_id,channel_id,campaign_id,ad_group_id,ad_id,service_id",
   );
 
+  let leadSync = emptyMetaLeadSync();
+  if (metaLeads.length) {
+    const attribution = await optionalMetaLeadPhase(
+      () => syncMetaLeadAttribution(
+        admin,
+        companyId,
+        metaLeads,
+        campaignIds,
+        adsetIds,
+        adIds,
+      ),
+      "Meta Lead Ads attribution could not be persisted.",
+    );
+    if (attribution.value) leadSync = attribution.value;
+    if (attribution.warning) leadWarnings.push(attribution.warning);
+  }
+
   const dates = insights.map(row => row.date).sort();
   const monthlySpend = monthlySummary(insights);
   return {
-    recordsImported: insights.length,
+    recordsImported: insights.length + leadSync.imported,
     dailyRowsImported: insights.length,
     campaignsImported: campaigns.length,
     adsetsImported: adsets.length,
@@ -161,6 +237,21 @@ export async function syncMetaProvider(
     missingMonths: calendarMonths(INITIAL_SYNC_FROM, dateTo).filter(
       month => !monthlySpend.some(row => row.month === month),
     ),
+    metaLeadsImported: leadSync.imported,
+    metaLeadsMatched: leadSync.matched,
+    metaLeadsUnmatched: leadSync.unmatched,
+    metaLeadsAmbiguous: leadSync.ambiguous,
+    earliestMetaLead: leadSync.earliest,
+    latestMetaLead: leadSync.latest,
+    metaLeadMatchRate: leadSync.matchRate,
+    metaLeadAttributionWarning: leadWarnings.length ? leadWarnings.join(" ") : null,
+    metaPermissionStatus: permissions.status,
+    grantedPermissions: permissions.granted,
+    missingPermissions: permissions.missing,
+    leadAdsAvailable: permissions.leadAdsAvailable,
+    metaLeadRetrievalScope,
+    metaLeadPagesProcessed,
+    metaLeadFormsProcessed,
   };
 }
 
@@ -191,8 +282,20 @@ async function upsertInChunks(
   }
 }
 
-function uniqueBy(rows: MetaInsight[], key: (row: MetaInsight) => string) {
+function uniqueBy<T>(rows: T[], key: (row: T) => string) {
   return [...new Map(rows.map(row => [key(row), row])).values()];
+}
+
+function emptyMetaLeadSync(): MetaLeadSyncResult {
+  return {
+    imported: 0,
+    matched: 0,
+    unmatched: 0,
+    ambiguous: 0,
+    earliest: null,
+    latest: null,
+    matchRate: 0,
+  };
 }
 
 function requiredMap(map: Map<string, string>, key: string, label: string) {
