@@ -9,7 +9,7 @@ export const journeyStageMeta: Array<{ key: JourneyStage; label: string; descrip
   { key: "offer", label: "Offer", description: "Open ROBAWS offer; sent status is shown separately" },
   { key: "accepted", label: "Offer accepted", description: "Offer accepted, not yet commercially verified" },
   { key: "signed", label: "CRM signed", description: "CRM says signed, project not yet commercially verified" },
-  { key: "verified", label: "Verified project", description: "Commercial project verified" },
+  { key: "verified", label: "Commercial client", description: "ROBAWS confirms the person became a client" },
   { key: "lost", label: "Lost / not relevant", description: "Rejected, lost or explicitly not relevant" },
 ];
 
@@ -30,6 +30,8 @@ export type JourneyRow = {
   hasVisit: boolean;
   isQualified: boolean;
   isSigned: boolean;
+  isCommercialClient: boolean;
+  isAttributableClient: boolean;
   isNotRelevant: boolean;
   lostReason: string;
 };
@@ -49,6 +51,8 @@ export type FunnelSummary = {
   acceptedOffers: number;
   acceptedOfferValue: number;
   crmSigned: number;
+  commercialClients: number;
+  attributableClients: number;
   verifiedProjects: number;
   verifiedRevenue: number;
 };
@@ -194,17 +198,19 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       || normalized(project.status).includes("project"),
     );
     const signed = group.some(isSigned);
+    const commercialClient = group.some(item => item.commercialStatus === "CLIENT_WON") || verifiedProject;
+    const attributableClient = commercialClient && !group.some(item => hasDateConflict(item.attributionLevel));
     const visit = leadAppointments.length > 0 || group.some(item => hasVisitEvidence(data, item));
     const accepted = leadOffers.some(offer => offer.isAccepted);
     const hasOffer = leadOffers.length > 0;
-    const qualified = group.some(isQualified) || visit || hasOffer || accepted || signed || verifiedProject;
+    const qualified = group.some(isQualified) || visit || hasOffer || accepted || signed || commercialClient;
     const explicitNotRelevant = group.some(isExplicitlyNotRelevant);
     const currentRejected = Boolean(currentOffer?.isRejected) || lead.commercialStatus === "OFFER_LOST";
-    const lost = !verifiedProject && !signed && !accepted && !currentOffer?.isOpen
+    const lost = !commercialClient && !signed && !accepted && !currentOffer?.isOpen
       && (currentRejected || (!visit && !hasOffer && explicitNotRelevant));
 
     let stage: JourneyStage = "new";
-    if (verifiedProject) stage = "verified";
+    if (commercialClient) stage = "verified";
     else if (signed) stage = "signed";
     else if (accepted) stage = "accepted";
     else if (currentOffer?.isOpen) stage = "offer";
@@ -229,6 +235,8 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       hasVisit: visit,
       isQualified: qualified,
       isSigned: signed,
+      isCommercialClient: commercialClient,
+      isAttributableClient: attributableClient,
       isNotRelevant: lost && explicitNotRelevant,
       lostReason: lost
         ? (currentRejected ? (currentOffer?.status ?? lead.quoteStatus) : group.find(isExplicitlyNotRelevant)?.crmStatus ?? "Lost")
@@ -254,7 +262,9 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     acceptedOffers: rows.filter(row => row.acceptedOfferValue > 0).length,
     acceptedOfferValue: rows.reduce((sum, row) => sum + row.acceptedOfferValue, 0),
     crmSigned: rows.filter(row => row.isSigned).length,
-    verifiedProjects: rows.filter(row => row.stage === "verified").length,
+    commercialClients: rows.filter(row => row.isCommercialClient).length,
+    attributableClients: rows.filter(row => row.isAttributableClient).length,
+    verifiedProjects: rows.filter(row => row.projects.length > 0).length,
     verifiedRevenue: rows.reduce((sum, row) => sum + row.projectValue, 0),
   };
 }
@@ -294,7 +304,7 @@ function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => str
       sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: group.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: group.filter(row => row.isSigned).length,
-      verified: group.filter(row => row.stage === "verified").length,
+      verified: group.filter(row => row.isAttributableClient).length,
       revenue: group.reduce((sum, row) => sum + row.projectValue, 0),
     };
   }).sort((a,b) => b.revenue - a.revenue || b.openPipeline - a.openPipeline || b.leads - a.leads);
@@ -335,7 +345,7 @@ export function sourcePipelineRows(data: CompanyDataset) {
       sentQuotedValue: sourceRows.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: sourceRows.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: sourceRows.filter(row => row.isSigned).length,
-      verified: sourceRows.filter(row => row.stage === "verified").length,
+      verified: sourceRows.filter(row => row.isAttributableClient).length,
       revenue: sourceRows.reduce((sum, row) => sum + row.projectValue, 0),
       notRelevant: sourceRows.filter(row => row.isNotRelevant).length,
     };

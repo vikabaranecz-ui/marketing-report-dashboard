@@ -67,6 +67,9 @@ type RobawsInvoice = {
 
 export type RobawsSyncResult = {
   recordsImported: number;
+  clientsImported: number;
+  clientsMatched: number;
+  clientsUnmatched: number;
   leadsImported: number;
   leadsMatched: number;
   dealsImported: number;
@@ -202,6 +205,64 @@ export async function syncRobawsProvider(
   const invoicesByClient =
     indexByClient(invoices);
 
+  const candidatesByClient = new Map<string, Array<(typeof candidates)[number]>>();
+  for (const candidate of candidates) {
+    if (!candidate.clientId) continue;
+    const current = candidatesByClient.get(candidate.clientId) ?? [];
+    current.push(candidate);
+    candidatesByClient.set(candidate.clientId, current);
+  }
+
+  const clientRows: Record<string, unknown>[] = clients.map(client => {
+    const clientOffers = offersByClient.get(client.id) ?? [];
+    const clientProjects = projectsByClient.get(client.id) ?? [];
+    const clientInvoices = invoicesByClient.get(client.id) ?? [];
+    const acceptedOffers = clientOffers.filter(isAccepted);
+    const openOffers = clientOffers.filter(offer => !isAccepted(offer) && !isRejected(offer));
+    const hasInvoice = clientInvoices.some(invoice =>
+      normalize(invoice.status) !== "gecrediteerd" &&
+      Number(invoice.totalInclVat ?? 0) > 0
+    );
+    const isClient = acceptedOffers.length > 0 || clientProjects.length > 0 || hasInvoice;
+    const commercialStatus = isClient
+      ? "CLIENT_WON"
+      : openOffers.length
+        ? "OFFER_SENT"
+        : clientOffers.length
+          ? "OFFER_LOST"
+          : "ROBAWS_CONTACT";
+
+    const matches = candidatesByClient.get(client.id) ?? [];
+    const uniqueMatch = matches.length === 1 && (leadsByClient.get(client.id)?.length ?? 0) === 1;
+    const matched = uniqueMatch ? matches[0] : null;
+
+    return {
+      company_id: companyId,
+      external_source: "robaws",
+      external_id: client.id,
+      name:
+        client.name ||
+        client.companyName ||
+        [client.firstName, client.lastName].filter(Boolean).join(" ") ||
+        `ROBAWS client ${client.id}`,
+      email: client.email || client.invoiceEmail || null,
+      phone: client.gsm || client.tel || null,
+      client_since: toTimestamp(client.clientSince),
+      matched_lead_id: matched?.lead.id ?? null,
+      match_method: matched?.method ?? (matches.length > 1 ? "MULTIPLE_LEADS_SAME_CLIENT" : "NONE"),
+      commercial_status: commercialStatus,
+      offer_count: clientOffers.length,
+      project_count: clientProjects.length,
+      invoice_count: clientInvoices.length,
+      invoiced_total: clientInvoices.reduce(
+        (sum, invoice) => sum + Math.max(0, Number(invoice.totalInclVat ?? 0) - Number(invoice.creditedTotal ?? 0)),
+        0,
+      ),
+      paid_total: clientInvoices.reduce((sum, invoice) => sum + Number(invoice.paidTotal ?? 0), 0),
+      updated_at: new Date().toISOString(),
+    };
+  });
+
   const leadIds = leads.map((lead) => lead.id);
 
   if (leadIds.length) {
@@ -220,6 +281,12 @@ export async function syncRobawsProvider(
 
       admin
         .from("commercial_invoices")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("external_source", "robaws"),
+
+      admin
+        .from("commercial_clients")
         .delete()
         .eq("company_id", companyId)
         .eq("external_source", "robaws"),
@@ -526,6 +593,18 @@ export async function syncRobawsProvider(
     );
   }
 
+  if (clientRows.length) {
+    const result = await admin
+      .from("commercial_clients")
+      .upsert(clientRows, {
+        onConflict: "company_id,external_source,external_id",
+      });
+
+    if (result.error) {
+      throw new Error(`ROBAWS clients: ${result.error.message}`);
+    }
+  }
+
   if (quoteRows.length) {
     const result = await admin
       .from("quotes")
@@ -573,9 +652,13 @@ export async function syncRobawsProvider(
 
   return {
     recordsImported:
+      clientRows.length +
       quoteRows.length +
       projectRows.length +
       invoiceRows.length,
+    clientsImported: clientRows.length,
+    clientsMatched: clientRows.filter(row => typeof row.matched_lead_id === "string").length,
+    clientsUnmatched: clientRows.filter(row => !row.matched_lead_id).length,
     leadsImported:
       updates.length,
     leadsMatched:
