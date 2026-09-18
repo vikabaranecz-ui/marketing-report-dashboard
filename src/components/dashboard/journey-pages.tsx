@@ -37,7 +37,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
         })}
       </div></div>
     </Card>
-    <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-6"><Mini label="Unique people" value={formatNumber(summary.uniquePeople)}/><Mini label="Offers created" value={formatNumber(summary.offersCreated)}/><Mini label="Offers sent" value={formatNumber(summary.offersSent)}/><Mini label="Sent quote value" value={formatCurrency(summary.sentQuotedValue)}/><Mini label="Open pipeline" value={formatCurrency(summary.openPipelineValue)}/><Mini label="Verified revenue" value={formatCurrency(summary.verifiedRevenue)}/></div>
+    <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-7"><Mini label="Unique people" value={formatNumber(summary.uniquePeople)}/><Mini label="Offers created" value={formatNumber(summary.offersCreated)}/><Mini label="Offers sent" value={formatNumber(summary.offersSent)}/><Mini label="Sent quote value" value={formatCurrency(summary.sentQuotedValue)}/><Mini label="Open pipeline" value={formatCurrency(summary.openPipelineValue)}/><Mini label="Commercial clients" value={formatNumber(summary.commercialClients)}/><Mini label="Project value" value={formatCurrency(summary.verifiedRevenue)}/></div>
     {selected&&<ClientDrawer row={selected} onClose={()=>setSelected(null)}/>}
   </div>;
 }
@@ -86,7 +86,7 @@ export function SalesTeamPage({ data }: { data: CompanyDataset }) {
 
 function Funnel({ data }: { data: CompanyDataset }) {
   const s=buildFunnelSummary(data);
-  const stages=[["Leads",s.leads],["Unique",s.uniquePeople],["Qualified",s.qualified],["Visits",s.visits],["Offers created",s.offersCreated],["Sent",s.offersSent],["Open",s.openOffers],["Accepted",s.acceptedOffers],["Signed",s.crmSigned],["Verified",s.verifiedProjects]] as const;
+  const stages=[["Leads",s.leads],["Unique",s.uniquePeople],["Qualified",s.qualified],["Visits",s.visits],["Offers created",s.offersCreated],["Sent",s.offersSent],["Open",s.openOffers],["Accepted",s.acceptedOffers],["Signed",s.crmSigned],["Commercial clients",s.commercialClients]] as const;
   return <Card className="overflow-hidden"><div className="overflow-x-auto"><div className="flex min-w-[1320px] divide-x divide-[var(--line)]"><div className="min-w-[150px] bg-[var(--ink)] p-4 text-white"><span className="text-xs uppercase text-white/60">Spend</span><strong className="mt-2 block text-xl">{formatCurrency(data.metrics.spend,true)}</strong></div>{stages.map(([label,value])=><div key={label} className="min-w-[130px] flex-1 bg-white p-4"><span className="text-xs uppercase text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{value}</strong></div>)}</div></div></Card>;
 }
 
