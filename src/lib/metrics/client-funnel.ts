@@ -34,6 +34,7 @@ export type JourneyRow = {
 export type FunnelSummary = {
   leads: number;
   uniquePeople: number;
+  notRelevantPeople: number;
   qualified: number;
   visits: number;
   offersSent: number;
@@ -233,6 +234,7 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
   return {
     leads: data.leads.length,
     uniquePeople: rows.length,
+    notRelevantPeople: rows.filter(row => row.isNotRelevant).length,
     qualified: rows.filter(row => row.isQualified).length,
     visits: rows.filter(row => row.hasVisit).length,
     offersSent: rows.filter(row => row.offers.length > 0).length,
