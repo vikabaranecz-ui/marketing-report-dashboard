@@ -214,8 +214,8 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
   }
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   return [...groups.entries()].map(([source,group])=>{
-    const rawSources=new Set(group.map(item=>item.lead.source));
-    const sourceInvoices=invoices.filter(item=>rawSources.has(item.source));
+    const leadIds=new Set(group.flatMap(item=>item.leadIds));
+    const sourceInvoices=invoices.filter(item=>item.leadId!==null&&leadIds.has(item.leadId));
     const spend=spendForSource(data,source,group);
     const nonPaid=!paidSources.has(source);
     return {
@@ -265,7 +265,7 @@ function RevenueClientTable({data}:{data:CompanyDataset}) {
   if(!rows.length) return <EmptyState title="No commercial records" body="Commercial rows appear after CRM / ROBAWS data is synced."/>;
   return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>CRM signed</th><th>ROBAWS client</th><th>Sent offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid €</th><th>Attribution</th></tr></thead><tbody>
     {rows.sort((a,b)=>b.projectValue-a.projectValue).map(row=>{
-      const ids=new Set([row.lead.id]);
+      const ids=new Set(row.leadIds);
       const clientInvoices=invoices.filter(item=>item.leadId&&ids.has(item.leadId));
       const invoiced=sum(clientInvoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
       const paid=sum(clientInvoices.map(item=>item.paidTotal));
