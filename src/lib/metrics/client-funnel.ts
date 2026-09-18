@@ -263,6 +263,55 @@ export function stageConversion(current: number, previous: number) {
   return previous > 0 ? current / previous * 100 : null;
 }
 
+export type PipelineDimensionRow = {
+  key: string;
+  leads: number;
+  notRelevant: number;
+  qualified: number;
+  visits: number;
+  offersCreated: number;
+  offersSent: number;
+  sentQuotedValue: number;
+  openPipeline: number;
+  signed: number;
+  verified: number;
+  revenue: number;
+};
+
+function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => string): PipelineDimensionRow[] {
+  const rows = buildJourneyRows(data);
+  const keys = [...new Set(rows.map(row => selector(row) || "Unassigned"))];
+  return keys.map(key => {
+    const group = rows.filter(row => (selector(row) || "Unassigned") === key);
+    return {
+      key,
+      leads: group.length,
+      notRelevant: group.filter(row => row.isNotRelevant).length,
+      qualified: group.filter(row => row.isQualified).length,
+      visits: group.filter(row => row.hasVisit).length,
+      offersCreated: group.filter(row => row.offers.length > 0).length,
+      offersSent: group.filter(row => row.offers.some(item => Boolean(item.sentAt))).length,
+      sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
+      openPipeline: group.reduce((sum, row) => sum + row.openOfferValue, 0),
+      signed: group.filter(row => row.isSigned).length,
+      verified: group.filter(row => row.stage === "verified").length,
+      revenue: group.reduce((sum, row) => sum + row.projectValue, 0),
+    };
+  }).sort((a,b) => b.revenue - a.revenue || b.openPipeline - a.openPipeline || b.leads - a.leads);
+}
+
+export function servicePipelineRows(data: CompanyDataset) {
+  return pipelineRowsBy(data, row => row.lead.service || "Unassigned");
+}
+
+export function locationPipelineRows(data: CompanyDataset) {
+  return pipelineRowsBy(data, row => row.lead.municipality || "Unknown");
+}
+
+export function campaignPipelineRows(data: CompanyDataset) {
+  return pipelineRowsBy(data, row => row.lead.campaign || "Unattributed");
+}
+
 export function sourcePipelineRows(data: CompanyDataset) {
   const rows = buildJourneyRows(data);
   const sources = [...new Set(rows.map(row => row.lead.source || "Unattributed"))];
