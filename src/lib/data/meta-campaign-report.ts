@@ -90,6 +90,8 @@ type ProjectRow = { id: string; lead_id: string | null; status: string | null; p
 type InvoiceRow = { id: string; lead_id: string | null; total_incl_vat: number | string | null; paid_total: number | string | null; attribution_status: string | null };
 type AdRow = { id: string; name: string };
 
+const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
+
 export async function getMetaCampaignReportBootstrap(): Promise<MetaCampaignReportBootstrap> {
   if (!hasSupabaseConfig()) return { mode: "unavailable", companies: [], datasets: {} };
   const supabase = await createSupabaseServerClient();
@@ -109,25 +111,43 @@ async function loadCompany(
   const dateFrom = `${dateTo.slice(0, 4)}-01-01`;
   const fromIso = `${dateFrom}T00:00:00.000Z`;
   const toIso = `${dateTo}T23:59:59.999Z`;
-  const [campaignsRes, metricsRes, attributionRes, leadsRes, adsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes] = await Promise.all([
+  // Phase 1: load only tables that are directly company-scoped. Quotes,
+  // projects, appointments and ads do not have a company_id column, so they
+  // must never be queried with a guessed company filter or left unscoped.
+  const [campaignsRes, metricsRes, attributionRes, leadsRes] = await Promise.all([
     supabase.from("campaigns").select("id,name,status").eq("company_id", company.id),
     supabase.from("daily_marketing_metrics").select("campaign_id,spend,impressions,clicks,platform_conversions,marketing_channels!inner(name)").eq("company_id", company.id).eq("marketing_channels.name", "Meta Ads").gte("date", dateFrom).lte("date", dateTo),
     supabase.from("meta_lead_attribution").select("created_time,campaign_id,ad_id,matched_lead_id,match_method,match_status").eq("company_id", company.id).gte("created_time", fromIso).lte("created_time", toIso),
     supabase.from("leads").select("id,created_at,name,source,sales_stage,crm_status,campaign_id,ad_id").eq("company_id", company.id),
-    supabase.from("ads").select("id,name"),
-    supabase.from("appointments").select("lead_id,scheduled_at,status"),
-    supabase.from("quotes").select("id,lead_id,status,quote_value,quote_value_incl_vat,created_at").eq("company_id", company.id),
-    supabase.from("projects").select("id,lead_id,status,project_value,attribution_status").eq("company_id", company.id),
-    supabase.from("commercial_invoices").select("id,lead_id,total_incl_vat,paid_total,attribution_status").eq("company_id", company.id),
   ]);
-  const results = [campaignsRes, metricsRes, attributionRes, leadsRes, adsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes];
-  const firstError = results.find(result => result.error)?.error;
-  if (firstError) throw new Error(`Unable to load Meta campaign attribution: ${firstError.message}`);
+  const phaseOne = [campaignsRes, metricsRes, attributionRes, leadsRes];
+  const phaseOneError = phaseOne.find(result => result.error)?.error;
+  if (phaseOneError) throw new Error(`Unable to load Meta campaign attribution: ${phaseOneError.message}`);
 
   const campaignRows = (campaignsRes.data ?? []) as CampaignRow[];
   const metricRows = (metricsRes.data ?? []) as unknown as MetricRow[];
   const attributionRows = (attributionRes.data ?? []) as AttributionRow[];
   const leads = (leadsRes.data ?? []) as LeadRow[];
+
+  // Phase 2: scope dependent tables through the exact company lead IDs and
+  // attribution ad IDs. The impossible UUID keeps empty scopes empty instead
+  // of accidentally turning them into unfiltered reads.
+  const companyLeadIds = [...new Set(leads.map(row => row.id).filter(Boolean))];
+  const relevantAdIds = [...new Set(attributionRows.flatMap(row => row.ad_id ? [row.ad_id] : []))];
+  const leadScope = companyLeadIds.length ? companyLeadIds : [EMPTY_UUID];
+  const adScope = relevantAdIds.length ? relevantAdIds : [EMPTY_UUID];
+
+  const [adsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes] = await Promise.all([
+    supabase.from("ads").select("id,name").in("id", adScope),
+    supabase.from("appointments").select("lead_id,scheduled_at,status").in("lead_id", leadScope),
+    supabase.from("quotes").select("id,lead_id,status,quote_value,quote_value_incl_vat,created_at").in("lead_id", leadScope),
+    supabase.from("projects").select("id,lead_id,status,project_value,attribution_status").in("lead_id", leadScope),
+    supabase.from("commercial_invoices").select("id,lead_id,total_incl_vat,paid_total,attribution_status").eq("company_id", company.id).in("lead_id", leadScope),
+  ]);
+  const phaseTwo = [adsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes];
+  const phaseTwoError = phaseTwo.find(result => result.error)?.error;
+  if (phaseTwoError) throw new Error(`Unable to load Meta campaign attribution: ${phaseTwoError.message}`);
+
   const ads = (adsRes.data ?? []) as AdRow[];
   const appointments = (appointmentsRes.data ?? []) as AppointmentRow[];
   const quotes = (quotesRes.data ?? []) as QuoteRow[];
@@ -220,7 +240,7 @@ async function loadCompany(
       matchRate: attributionRows.length ? matched / attributionRows.length : null,
       earliest: dates[0] ?? null,
       latest: dates.at(-1) ?? null,
-      unattributedFacebookLeads: leads.filter(lead => isFacebookSource(lead.source) && !lead.campaign_id).length,
+      unattributedFacebookLeads: leads.filter(lead => isFacebookSource(lead.source) && !lead.campaign_id && lead.created_at.slice(0, 10) >= dateFrom && lead.created_at.slice(0, 10) <= dateTo).length,
     },
   };
 }
