@@ -53,6 +53,7 @@ export type CommercialOffer = {
   source: string;
   date: string;
   sentAt: string | null;
+  followUpAt: string | null;
   number: string;
   status: string;
   priceInclVat: number;
