@@ -34,6 +34,24 @@ export type SourceMetric = {
   revenue: number;
 };
 
+export type CommercialClient = {
+  id: string;
+  externalSource: string;
+  externalId: string;
+  name: string;
+  email: string;
+  phone: string;
+  clientSince: string | null;
+  matchedLeadId: string | null;
+  matchMethod: string;
+  commercialStatus: string;
+  offerCount: number;
+  projectCount: number;
+  invoiceCount: number;
+  invoicedTotal: number;
+  paidTotal: number;
+};
+
 export type CommercialDeal = {
   id: string;
   name: string;
@@ -207,6 +225,7 @@ export type CompanyDataset = {
   channels: ChannelMetric[];
   leadSources: SourceMetric[];
   commercialDeals?: CommercialDeal[];
+  commercialClients?: CommercialClient[];
   commercialOffers?: CommercialOffer[];
   commercialProjects?: CommercialProject[];
   commercialInvoices?: CommercialInvoice[];
