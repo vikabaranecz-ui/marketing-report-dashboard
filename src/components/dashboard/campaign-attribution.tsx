@@ -1,13 +1,25 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { MetaCampaignMetric, MetaCampaignReportBootstrap } from "@/lib/data/meta-campaign-report";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
 import { Sidebar } from "./sidebar";
 
 export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCampaignReportBootstrap }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [companyId, setCompanyId] = useState(bootstrap.companies[0]?.id ?? "");
+
+  function setMonth(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "ytd") params.delete("month");
+    else params.set("month", value);
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const data = bootstrap.datasets[companyId];
   const totals = useMemo(() => data ? totalCampaigns(data.campaigns) : null, [data]);
@@ -17,12 +29,20 @@ export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCam
     <main className="main-shell">
       <div className="flex min-h-[72px] items-center justify-between border-b border-[var(--border)] bg-white px-6">
         <div><p className="eyebrow">Meta Lead Ads attribution</p><p className="mt-1 text-sm text-[var(--muted)]">Exact campaign → CRM → ROBAWS outcomes</p></div>
-        <label className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[.12em] text-[var(--muted)]">
-          Company
-          <select className="h-10 border border-[var(--border)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]" value={companyId} onChange={event => { setCompanyId(event.target.value); setExpandedCampaignId(null); }}>
-            {bootstrap.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[.12em] text-[var(--muted)]">
+            Period
+            <select className="h-10 border border-[var(--border)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]" value={bootstrap.selectedMonth} onChange={event => setMonth(event.target.value)}>
+              {bootstrap.availableMonths.map(value => <option key={value} value={value}>{campaignMonthLabel(value)}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[.12em] text-[var(--muted)]">
+            Company
+            <select className="h-10 border border-[var(--border)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]" value={companyId} onChange={event => { setCompanyId(event.target.value); setExpandedCampaignId(null); }}>
+              {bootstrap.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
       <div className="page-wrap">
         <header className="page-header">
@@ -116,4 +136,11 @@ function totalCampaigns(campaigns: MetaCampaignMetric[]) {
     invoiced: total.invoiced + campaign.invoiced,
     paid: total.paid + campaign.paid,
   }), { spend: 0, platformLeads: 0, crmLeads: 0, offers: 0, pipelineValue: 0, wonValue: 0, invoiced: 0, paid: 0 });
+}
+
+
+function campaignMonthLabel(value: string) {
+  if (value === "ytd") return "Year to date";
+  const [year, month] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-BE", { month: "long", year: "numeric" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
