@@ -9,11 +9,22 @@ export type DashboardBootstrap = {
   mode: "demo" | "live";
   companies: Company[];
   datasets: Record<string, CompanyDataset>;
+  selectedMonth: string;
+  availableMonths: string[];
 };
 
-export async function getDashboardBootstrap(): Promise<DashboardBootstrap> {
+type DashboardPeriod = {
+  selectedMonth: string;
+  fromDate: string;
+  toDate: string;
+  fromIso: string;
+  toIso: string;
+};
+
+export async function getDashboardBootstrap(month = "ytd"): Promise<DashboardBootstrap> {
+  const period = dashboardPeriod(month);
   if (!hasSupabaseConfig()) {
-    return { mode: "demo", companies: demoCompanies, datasets: demoDatasets };
+    return { mode: "demo", companies: demoCompanies, datasets: demoDatasets, selectedMonth: period.selectedMonth, availableMonths: availableDashboardMonths() };
   }
 
   const supabase = await createSupabaseServerClient();
@@ -32,9 +43,9 @@ export async function getDashboardBootstrap(): Promise<DashboardBootstrap> {
     accent: "#ceff3d",
   }));
 
-  const loaded = await Promise.all(companies.map(async (company) => [company.id, await loadLiveDataset(supabase, company)] as const));
+  const loaded = await Promise.all(companies.map(async (company) => [company.id, await loadLiveDataset(supabase, company, period)] as const));
   const datasets = Object.fromEntries(loaded);
-  return { mode: "live", companies, datasets };
+  return { mode: "live", companies, datasets, selectedMonth: period.selectedMonth, availableMonths: availableDashboardMonths() };
 }
 
 type RawMetric = { date:string; spend:number|string; impressions:number; clicks:number; platform_conversions:number|string; channel_id:string; campaign_id:string|null; service_id:string|null; marketing_channels:{name:string}|null; campaigns:{name:string}|null; services:{name:string}|null };
@@ -58,14 +69,11 @@ type RawCrmDeal = {
 
 type RawWebsite = { company_id:string; date:string; users:number; sessions:number; new_users:number; engaged_sessions:number; form_submissions:number; whatsapp_clicks:number; phone_clicks:number; quote_requests:number };
 type RawSeo = { impressions:number; clicks:number; position_sum:number|string; is_branded:boolean|null };
+type RawGbp = { profile_views:number; website_clicks:number; calls:number; direction_requests:number; messages:number; searches:number; reviews:number; rating_sum:number|string };
 type RawIntegration = { id:string; provider:Integration["provider"]; status:"connected"|"connecting"|"not_connected"|"error"; configuration:Record<string,unknown>; error_message:string|null; last_successful_sync:string|null; last_attempted_sync:string|null; sync_logs:{records_imported:number}[]|null };
 
-async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, company: Company): Promise<CompanyDataset> {
-  const to = new Date();
-  const from = new Date(
-    Date.UTC(to.getUTCFullYear(), 0, 1),
-  );
-  const fromIso = from.toISOString(); const toIso = to.toISOString(); const fromDate = fromIso.slice(0,10); const toDate = toIso.slice(0,10);
+async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, company: Company, period: DashboardPeriod): Promise<CompanyDataset> {
+  const { fromIso, toIso, fromDate, toDate } = period;
   const [metricsRes, leadsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, integrationsRes] = await Promise.all([
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
