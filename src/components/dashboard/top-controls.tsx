@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, ChevronDown, Download, Filter, Printer } from "lucide-react";
+import { CalendarDays, ChevronDown, Download, Printer } from "lucide-react";
 import type { Company } from "@/lib/data/types";
 
 export function TopControls({
@@ -37,7 +37,7 @@ export function TopControls({
         <label className="control control-company"><span className="h-2 w-2 bg-[var(--accent)]"/><select aria-label="Company" value={companyId} onChange={(e) => onCompanyChange(e.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select><ChevronDown size={14}/></label>
         <label className="control"><CalendarDays size={15}/><select aria-label="Reporting month" value={selectedMonth} onChange={(e) => setMonth(e.target.value)}>{availableMonths.map(value => <option key={value} value={value}>{monthLabel(value)}</option>)}</select><ChevronDown size={14}/></label>
         <span className="control text-xs text-[var(--muted)]">Cohort by lead creation month</span>
-        <button className="control" type="button"><Filter size={15}/> Filters <span className="count-badge">{selectedMonth === "ytd" ? 0 : 1}</span></button>
+        <span className="control text-xs text-[var(--muted)]">All sources · all services · all campaigns</span>
         <div className="ml-auto flex gap-2"><button className="icon-button" type="button" onClick={onExport} aria-label="Export table to CSV"><Download size={16}/></button><button className="icon-button" type="button" onClick={() => window.print()} aria-label="Print report"><Printer size={16}/></button></div>
       </div>
     </div>
