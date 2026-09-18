@@ -22,14 +22,14 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
 
   return <div className="space-y-6">
     <div className="kpi-grid border-l border-t border-[var(--line)]">
-      <KpiCard label="Marketing spend" value={formatCurrency(metrics.spend, true)} delta={delta(metrics.spend, previous.spend)} meta="All tracked channels"/>
-      <KpiCard label="Qualified leads" value={formatNumber(metrics.qualified)} delta={delta(metrics.qualified, previous.qualified)} meta={`${formatPercent(percentage(metrics.qualified, metrics.leads))} of leads`}/>
-      <KpiCard label="Won projects" value={formatNumber(metrics.won)} delta={delta(metrics.won, previous.won)} meta={`${formatPercent(kpi.leadToSaleRate)} lead → sale`}/>
-      <KpiCard label="Attributed revenue" value={formatCurrency(metrics.revenue, true)} delta={delta(metrics.revenue, previous.revenue)} meta="CRM-confirmed"/>
-      <KpiCard label="Cost per lead" value={formatCurrency(kpi.cpl)} meta={`${formatCurrency(kpi.qualifiedCpl)} per qualified`}/>
-      <KpiCard label="Customer acquisition" value={formatCurrency(kpi.cac)} meta={`${formatCurrency(kpi.costPerVisit)} per visit`}/>
-      <KpiCard label="ROAS" value={kpi.roas === null ? "—" : `${formatNumber(kpi.roas)}×`} meta="Attributed revenue / spend"/>
-      <KpiCard label="Est. gross profit" value={formatCurrency(metrics.grossProfit, true)} meta="Using service margin data"/>
+      <KpiCard label="Ad spend" value={formatCurrency(metrics.spend, true)} delta={delta(metrics.spend, previous.spend)} meta="Tracked paid media"/>
+      <KpiCard label="CRM leads" value={formatNumber(metrics.leads)} meta="People recorded in CRM"/>
+      <KpiCard label="Not relevant" value={formatNumber(metrics.notRelevant ?? 0)} meta={`${formatPercent(percentage(metrics.notRelevant ?? 0, metrics.leads))} of leads`}/>
+      <KpiCard label="Visited" value={formatNumber(metrics.visits)} meta={`${formatPercent(percentage(metrics.visits, metrics.leads))} reached visit / offer stage`}/>
+      <KpiCard label="Clients" value={formatNumber(metrics.won)} delta={delta(metrics.won, previous.won)} meta={`${formatPercent(kpi.leadToSaleRate)} lead → client`}/>
+      <KpiCard label="Cost per lead" value={formatCurrency(kpi.cpl)} meta="Tracked spend / CRM leads"/>
+      <KpiCard label="Cost per client" value={formatCurrency(kpi.cac)} meta="Tracked spend / verified clients"/>
+      <KpiCard label="Attributed revenue" value={formatCurrency(metrics.revenue, true)} delta={delta(metrics.revenue, previous.revenue)} meta={kpi.roas === null ? "No ROAS yet" : `${formatNumber(kpi.roas)}× ROAS`}/>
     </div>
 
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,.8fr)]">
@@ -40,7 +40,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
       <Card className="p-5">
         <SectionHeader title="Deterministic insights" description="Only rules supported by the selected data"/>
         <div className="space-y-5">
-          <Insight icon={<CheckCircle2 size={16}/>} label="Revenue efficiency" text={`ROAS is ${kpi.roas?.toFixed(1) ?? "—"}×; revenue changed ${delta(metrics.revenue, previous.revenue)?.toFixed(1) ?? "—"}% versus the previous period.`}/>
+          <Insight icon={<CheckCircle2 size={16}/>} label="Lead quality" text={`${formatNumber(metrics.notRelevant ?? 0)} of ${formatNumber(metrics.leads)} leads are explicitly marked as not relevant (${formatPercent(percentage(metrics.notRelevant ?? 0, metrics.leads))}). ${formatNumber(metrics.visits)} reached the visit / offer stage and ${formatNumber(metrics.won)} became verified clients.`}/>
           {meta && (
             <Insight icon={<ArrowRight size={16}/>} label="Channel quality" text={`Meta generated ${formatPercent(percentage(meta.leads, metrics.leads))} of leads and ${formatPercent(percentage(meta.won, metrics.won))} of won projects.`}/>
           )}
