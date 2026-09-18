@@ -533,6 +533,52 @@ async function syncHubSpot(
       .map((lead) => [String(lead.crm_external_id), lead]),
   );
 
+  const dealRows = deals
+    .filter(deal => !isSampleDeal(deal))
+    .map(deal => {
+      const contactId = deal.associations?.contacts?.results?.[0]?.id;
+      const linkedLead = contactId ? leadByExternalId.get(contactId) : undefined;
+      const stage = hubSpotStage({}, deal);
+
+      return {
+        company_id: companyId,
+        crm_source: "hubspot",
+        crm_external_id: deal.id,
+        name: clean(deal.properties.dealname) || `HubSpot deal ${deal.id}`,
+        stage,
+        pipeline_group: clean(deal.properties.pipeline) || null,
+        deal_value: numberOrNull(deal.properties.amount_in_home_currency),
+        offer_status: null,
+        offer_number: null,
+        lost_reason: stage === "lost"
+          ? clean(deal.properties.closed_lost_reason) || null
+          : null,
+        linked_lead_id: linkedLead?.id ?? null,
+        created_at_external:
+          clean(deal.properties.createdate) ||
+          new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+  let dealsImported = 0;
+  if (dealRows.length) {
+    const dealResult = await admin
+      .from("crm_deals")
+      .upsert(dealRows, {
+        onConflict: "company_id,crm_source,crm_external_id",
+      })
+      .select("id");
+
+    if (dealResult.error) {
+      throw new Error(
+        `Unable to import HubSpot deals: ${dealResult.error.message}`,
+      );
+    }
+
+    dealsImported = dealResult.data?.length ?? 0;
+  }
+
   const projects = [];
 
   for (const deal of deals) {
@@ -630,9 +676,10 @@ async function syncHubSpot(
   return {
     recordsImported:
       importedLeads.length +
+      dealsImported +
       importedProjects.length,
     leadsImported: importedLeads.length,
-    dealsImported: 0,
+    dealsImported,
     projectsImported: importedProjects.length,
     revenueImported: revenueRows.length,
   };
