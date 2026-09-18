@@ -92,6 +92,15 @@ export type CommercialInvoice = {
   attributionStatus: string;
 };
 
+export type CommercialAppointment = {
+  leadId: string;
+  leadName: string;
+  scheduledAt: string;
+  completedAt: string | null;
+  status: string;
+  noShow: boolean;
+};
+
 export type Lead = {
   id: string;
   date: string;
@@ -200,6 +209,7 @@ export type CompanyDataset = {
   commercialProjects?: CommercialProject[];
   commercialInvoices?: CommercialInvoice[];
   appointmentLeadIds?: string[];
+  commercialAppointments?: CommercialAppointment[];
   leads: Lead[];
   services: ServiceMetric[];
   campaigns: CampaignMetric[];
