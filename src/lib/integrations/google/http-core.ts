@@ -39,7 +39,12 @@ export async function requestGoogleJson<T>(
     const body = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (response.ok) return body as T;
 
-    const parsed = parseGoogleApiError(response.status, body, options.context);
+    const parsed = parseGoogleApiError(
+      response.status,
+      body,
+      options.context,
+      response.headers.get("request-id") ?? response.headers.get("x-request-id"),
+    );
     const quotaFailure = response.status === 429 || parsed.canonicalStatus === "RESOURCE_EXHAUSTED";
     if (!options.context.retryQuota || !quotaFailure || attempt === maxRetries) {
       throw new Error(formatGoogleApiError(parsed, options.context, quotaFailure && attempt === maxRetries, maxRetries));
@@ -55,11 +60,20 @@ export function parseGoogleApiError(
   httpStatus: number,
   body: Record<string, unknown>,
   context: GoogleApiContext,
+  headerRequestId: string | null = null,
 ) {
   const error = record(body.error);
   const canonicalStatus = text(error.status);
   const message = text(error.message) || `Request failed for ${context.resource ?? "the selected resource"}.`;
-  return { httpStatus, canonicalStatus, message };
+  const nested = nestedGoogleFailure(error.details);
+  return {
+    httpStatus,
+    canonicalStatus,
+    message,
+    nestedCode: nested.code,
+    nestedMessage: nested.message,
+    requestId: nested.requestId || text(headerRequestId),
+  };
 }
 
 export function retryDelayMilliseconds(
@@ -85,10 +99,42 @@ function formatGoogleApiError(
 ) {
   const status = [String(error.httpStatus), error.canonicalStatus].filter(Boolean).join(" ");
   const resource = context.resource ? ` [${context.resource}]` : "";
+  const nested = error.nestedCode
+    ? ` ${error.nestedCode}${error.nestedMessage ? ` — ${error.nestedMessage.replace(/[.\s]+$/, "")}` : ""}.`
+    : "";
+  const requestId = error.requestId ? ` request-id=${error.requestId}.` : "";
   const suffix = exhausted
     ? ` Quota remained exhausted after ${maxRetries} retries.${context.quotaHelp ? ` ${context.quotaHelp}` : ""}`
     : "";
-  return `${context.apiName} failed: HTTP ${status} — ${error.message.replace(/[.\s]+$/, "")}${resource}.${suffix}`;
+  return `${context.apiName} failed: HTTP ${status} — ${error.message.replace(/[.\s]+$/, "")}${resource}.${nested}${requestId}${suffix}`;
+}
+
+function nestedGoogleFailure(value: unknown) {
+  if (!Array.isArray(value)) return { code: "", message: "", requestId: "" };
+
+  for (const detailValue of value) {
+    const detail = record(detailValue);
+    const requestId = text(detail.requestId);
+    const errors = Array.isArray(detail.errors) ? detail.errors : [];
+
+    for (const errorValue of errors) {
+      const nestedError = record(errorValue);
+      const errorCode = record(nestedError.errorCode);
+      const codeEntry = Object.entries(errorCode)
+        .find(([, code]) => typeof code === "string" && code.trim());
+      if (codeEntry) {
+        return {
+          code: `${codeEntry[0]}.${String(codeEntry[1]).trim()}`,
+          message: text(nestedError.message),
+          requestId,
+        };
+      }
+    }
+
+    if (requestId) return { code: "", message: "", requestId };
+  }
+
+  return { code: "", message: "", requestId: "" };
 }
 
 function record(value: unknown): Record<string, unknown> {
