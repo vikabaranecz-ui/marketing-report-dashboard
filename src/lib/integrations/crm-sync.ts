@@ -104,10 +104,21 @@ async function loadLookups(
   admin: AdminClient,
   companyId: string,
 ): Promise<LookupMaps> {
+  const companyResult = await admin
+    .from("companies")
+    .select("organization_id")
+    .eq("id", companyId)
+    .single();
+
+  if (companyResult.error) {
+    throw new Error(companyResult.error.message);
+  }
+
   const [channelsResult, servicesResult] = await Promise.all([
     admin
       .from("marketing_channels")
-      .select("id,name"),
+      .select("id,name")
+      .eq("organization_id", companyResult.data.organization_id),
     admin
       .from("services")
       .select("id,name")
