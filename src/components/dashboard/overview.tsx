@@ -26,7 +26,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
     <div className="kpi-grid border-l border-t border-[var(--line)]">
       <KpiCard label="Ad spend" value={formatCurrency(metrics.spend, true)} delta={delta(metrics.spend, previous.spend)} meta="Tracked paid media"/>
       <KpiCard label="CRM leads" value={formatNumber(commercial.leads)} meta={formatNumber(commercial.uniquePeople) + " unique people"}/>
-      <KpiCard label="Not relevant" value={formatNumber(metrics.notRelevant ?? 0)} meta={formatPercent(percentage(metrics.notRelevant ?? 0, commercial.leads)) + " of leads"}/>
+      <KpiCard label="Not relevant" value={formatNumber(commercial.notRelevantPeople)} meta={formatPercent(percentage(commercial.notRelevantPeople, commercial.uniquePeople)) + " of unique people"}/>
       <KpiCard label="Visits" value={formatNumber(commercial.visits)} meta={formatPercent(percentage(commercial.visits, commercial.leads)) + " of leads"}/>
       <KpiCard label="Offers sent" value={formatNumber(commercial.offersSent)} meta={formatCurrency(commercial.quotedValue) + " quoted"}/>
       <KpiCard label="Open pipeline" value={formatCurrency(commercial.openPipelineValue, true)} meta={formatNumber(commercial.openOffers) + " open offers"}/>
@@ -42,7 +42,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
       <Card className="p-5">
         <SectionHeader title="Deterministic insights" description="Only rules supported by the selected data"/>
         <div className="space-y-5">
-          <Insight icon={<CheckCircle2 size={16}/>} label="Lead quality" text={`${formatNumber(metrics.notRelevant ?? 0)} of ${formatNumber(metrics.leads)} leads are explicitly marked as not relevant (${formatPercent(percentage(metrics.notRelevant ?? 0, metrics.leads))}). ${formatNumber(metrics.visits)} reached the visit / offer stage and ${formatNumber(metrics.won)} became verified clients.`}/>
+          <Insight icon={<CheckCircle2 size={16}/>} label="Lead quality" text={`${formatNumber(commercial.notRelevantPeople)} of ${formatNumber(commercial.uniquePeople)} unique people are currently explicitly not relevant (${formatPercent(percentage(commercial.notRelevantPeople, commercial.uniquePeople))}). ${formatNumber(commercial.visits)} reached visit evidence, ${formatNumber(commercial.offersSent)} received a linked commercial offer, and ${formatNumber(commercial.verifiedProjects)} have a verified project.`}/>
           {meta && (
             <Insight icon={<ArrowRight size={16}/>} label="Channel quality" text={`Meta generated ${formatPercent(percentage(meta.leads, metrics.leads))} of leads and ${formatPercent(percentage(meta.won, metrics.won))} of won projects.`}/>
           )}
@@ -59,7 +59,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
       <div className="funnel-grid">
         <div className="funnel-step funnel-spend"><p>Spend</p><strong>{formatCurrency(metrics.spend, true)}</strong><span>Investment</span></div>
         {funnel.map(([label, value], index) => { const prev = index === 0 ? metrics.leads : funnel[index - 1][1]; const conversion = index === 0 ? null : percentage(value, Number(prev)); return <div className="funnel-step" key={label}><p>{label}</p><strong>{formatNumber(value)}</strong><span>{conversion === null ? "Entry volume" : `${formatPercent(conversion)} converted · ${formatPercent(conversion === null ? null : 100 - conversion)} drop-off`}</span></div>; })}
-        <div className="funnel-step funnel-revenue"><p>Revenue</p><strong>{formatCurrency(metrics.revenue, true)}</strong><span>{kpi.roas === null ? "—" : `${formatNumber(kpi.roas)}× ROAS`}</span></div>
+        <div className="funnel-step funnel-revenue"><p>Revenue</p><strong>{formatCurrency(commercial.verifiedRevenue, true)}</strong><span>{kpi.roas === null ? "—" : `${formatNumber(kpi.roas)}× ROAS`}</span></div>
       </div>
     </Card>
 
