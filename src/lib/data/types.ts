@@ -52,6 +52,8 @@ export type CommercialOffer = {
   leadName: string;
   source: string;
   date: string;
+  sentAt: string | null;
+  followUpAt: string | null;
   number: string;
   status: string;
   priceInclVat: number;
@@ -90,6 +92,15 @@ export type CommercialInvoice = {
   creditedTotal: number;
   projectExternalId: string | null;
   attributionStatus: string;
+};
+
+export type CommercialAppointment = {
+  leadId: string;
+  leadName: string;
+  scheduledAt: string;
+  completedAt: string | null;
+  status: string;
+  noShow: boolean;
 };
 
 export type Lead = {
@@ -200,6 +211,7 @@ export type CompanyDataset = {
   commercialProjects?: CommercialProject[];
   commercialInvoices?: CommercialInvoice[];
   appointmentLeadIds?: string[];
+  commercialAppointments?: CommercialAppointment[];
   leads: Lead[];
   services: ServiceMetric[];
   campaigns: CampaignMetric[];
