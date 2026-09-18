@@ -28,7 +28,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
       <KpiCard label="CRM leads" value={formatNumber(commercial.leads)} meta={formatNumber(commercial.uniquePeople) + " unique people"}/>
       <KpiCard label="Not relevant" value={formatNumber(commercial.notRelevantPeople)} meta={formatPercent(percentage(commercial.notRelevantPeople, commercial.uniquePeople)) + " of unique people"}/>
       <KpiCard label="Visits" value={formatNumber(commercial.visits)} meta={formatPercent(percentage(commercial.visits, commercial.leads)) + " of leads"}/>
-      <KpiCard label="Offers sent" value={formatNumber(commercial.offersSent)} meta={formatCurrency(commercial.quotedValue) + " quoted"}/>
+      <KpiCard label="Offers sent" value={formatNumber(commercial.offersSent)} meta={formatCurrency(commercial.sentQuotedValue) + " verified sent value"}/>
       <KpiCard label="Open pipeline" value={formatCurrency(commercial.openPipelineValue, true)} meta={formatNumber(commercial.openOffers) + " open offers"}/>
       <KpiCard label="Verified clients" value={formatNumber(commercial.verifiedProjects)} meta={formatPercent(percentage(commercial.verifiedProjects, commercial.leads)) + " lead → verified"}/>
       <KpiCard label="Attributed revenue" value={formatCurrency(commercial.verifiedRevenue, true)} meta={kpi.roas === null ? "No ROAS yet" : formatNumber(kpi.roas) + "× ROAS"}/>
@@ -42,7 +42,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
       <Card className="p-5">
         <SectionHeader title="Deterministic insights" description="Only rules supported by the selected data"/>
         <div className="space-y-5">
-          <Insight icon={<CheckCircle2 size={16}/>} label="Lead quality" text={`${formatNumber(commercial.notRelevantPeople)} of ${formatNumber(commercial.uniquePeople)} unique people are currently explicitly not relevant (${formatPercent(percentage(commercial.notRelevantPeople, commercial.uniquePeople))}). ${formatNumber(commercial.visits)} reached visit evidence, ${formatNumber(commercial.offersSent)} received a linked commercial offer, and ${formatNumber(commercial.verifiedProjects)} have a verified project.`}/>
+          <Insight icon={<CheckCircle2 size={16}/>} label="Lead quality" text={`${formatNumber(commercial.notRelevantPeople)} of ${formatNumber(commercial.uniquePeople)} unique people are currently explicitly not relevant (${formatPercent(percentage(commercial.notRelevantPeople, commercial.uniquePeople))}). ${formatNumber(commercial.visits)} reached visit evidence, ${formatNumber(commercial.offersSent)} have a verified sent offer, and ${formatNumber(commercial.verifiedProjects)} have a verified project.`}/>
           {meta && (
             <Insight icon={<ArrowRight size={16}/>} label="Channel quality" text={`Meta generated ${formatPercent(percentage(meta.leads, metrics.leads))} of leads and ${formatPercent(percentage(meta.won, metrics.won))} of won projects.`}/>
           )}
