@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertCircle, Check, ChevronDown, ShieldCheck } from "lucide-react";
 import type { CampaignMetric, CompanyDataset } from "@/lib/data/types";
 import { calculateKpis, formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
+import { buildJourneyRows, sourcePipelineRows } from "@/lib/metrics/client-funnel";
 import { ComparisonBars, TrendChart } from "./charts";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
@@ -19,6 +20,7 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   const visits = paid.reduce((s,c)=>s+c.visits,0);
   const won = paid.reduce((s,c)=>s+c.won,0);
   const revenue = paid.reduce((s,c)=>s+c.revenue,0);
+  const sourceRows = sourcePipelineRows(data);
   const googleAds = data.integrations.find(item => item.provider === "google_ads");
   const googleSpendMissing = googleAds?.status === "Connected" && !googleAds.lastSuccess;
 
@@ -51,10 +53,10 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
     </Card>
 
     <Card className="p-5">
-      <SectionHeader title="CRM lead sources" description="Exact source in CRM — source quality is not guessed from ad platforms"/>
+      <SectionHeader title="CRM source → pipeline → revenue" description="Every source uses the same client-funnel definitions. Offer counts and € values come from commercial offer evidence, not inferred CRM labels."/>
       <div className="table-scroll"><table>
-        <thead><tr><th>CRM source</th><th>Leads</th><th>Share</th><th>Not relevant</th><th>Not relevant %</th><th>Qualified</th><th>Visits</th><th>Quotes</th><th>Clients</th><th>Lead → client</th><th>Revenue</th></tr></thead>
-        <tbody>{data.leadSources.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{formatPercent(percentage(row.leads,data.metrics.leads))}</td><td>{row.notRelevant ?? 0}</td><td>{formatPercent(percentage(row.notRelevant ?? 0,row.leads))}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.quotes}</td><td>{row.won}</td><td>{formatPercent(percentage(row.won,row.leads))}</td><td>{formatCurrency(row.revenue)}</td></tr>)}</tbody>
+        <thead><tr><th>CRM source</th><th>Leads</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Quoted €</th><th>Open €</th><th>CRM signed</th><th>Verified clients</th><th>Revenue</th></tr></thead>
+        <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{formatCurrency(row.quotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.signed}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
       </table></div>
     </Card>
   </div>;
