@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Clock3, Database, TrendingUp } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, type JourneyRow } from "@/lib/metrics/client-funnel";
@@ -11,6 +12,9 @@ import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
 function delta(current:number,previous:number){return previous===0?null:((current-previous)/previous)*100}
 
 export function OverviewPage({data}:{data:CompanyDataset}) {
+  const searchParams=useSearchParams();
+  const month=searchParams.get("month");
+  const scopedHref=(href:string)=>month?`${href}?month=${encodeURIComponent(month)}`:href;
   const rows=buildJourneyRows(data);
   const summary=buildFunnelSummary(data);
   const sources=sourceBusinessRows(data,rows);
@@ -87,7 +91,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <Card className="p-5">
         <SectionHeader title="What requires action?" description="The dashboard states the issue; management should not have to calculate it manually."/>
         <div className="space-y-3">
-          {actionItems.length?actionItems.map(item=><ActionItem key={item.title} {...item}/>):<div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 size={18}/><strong>No critical action rule is triggered by the current evidence.</strong></div>}
+          {actionItems.length?actionItems.map(item=><ActionItem key={item.title} {...item} href={scopedHref(item.href)}/>):<div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 size={18}/><strong>No critical action rule is triggered by the current evidence.</strong></div>}
         </div>
       </Card>
 
@@ -101,7 +105,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
           <MoneyRow label="Invoiced" value={invoiced}/>
           <MoneyRow label="Paid" value={paid} accent/>
         </div>
-        <Link href="/revenue" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open revenue evidence <ArrowRight size={14}/></Link>
+        <Link href={scopedHref("/revenue")} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open revenue evidence <ArrowRight size={14}/></Link>
       </Card>
     </div>
 
@@ -110,7 +114,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <div className="grid gap-4 lg:grid-cols-3">
         {budgetCards.map(card=><BudgetCard key={card.source} {...card}/>)}
       </div>
-      <Link href="/campaigns" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open full source & campaign economics <ArrowRight size={14}/></Link>
+      <Link href={scopedHref("/campaigns")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open full source & campaign economics <ArrowRight size={14}/></Link>
     </Card>
 
     <Card className="p-5">
@@ -121,7 +125,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         <Trust label="Potential duplicates" ok={data.dataHealth.duplicates===0} detail={data.dataHealth.duplicates+" flagged"}/>
         <Trust label="Signed reconciliation" ok={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length===0} detail={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length+" signed not ROBAWS-confirmed"}/>
       </div>
-      <Link href="/data-health" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
+      <Link href={scopedHref("/data-health")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
     </Card>
   </div>;
 }
