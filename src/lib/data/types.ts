@@ -15,7 +15,7 @@ export type ChannelMetric = {
   clicks: number;
   platformConversions: number;
   leads: number;
-  notRelevant: number;
+  notRelevant?: number;
   qualified: number;
   visits: number;
   quotes: number;
@@ -26,7 +26,7 @@ export type ChannelMetric = {
 export type SourceMetric = {
   source: string;
   leads: number;
-  notRelevant: number;
+  notRelevant?: number;
   qualified: number;
   visits: number;
   quotes: number;
@@ -191,8 +191,8 @@ export type CompanyDataset = {
   company: Company;
   periodLabel: string;
   comparisonLabel: string;
-  metrics: { spend: number; leads: number; notRelevant: number; qualified: number; visits: number; quotes: number; won: number; revenue: number; grossProfit: number | null };
-  previous: { spend: number; leads: number; notRelevant: number; qualified: number; visits: number; quotes: number; won: number; revenue: number };
+  metrics: { spend: number; leads: number; notRelevant?: number; qualified: number; visits: number; quotes: number; won: number; revenue: number; grossProfit: number | null };
+  previous: { spend: number; leads: number; notRelevant?: number; qualified: number; visits: number; quotes: number; won: number; revenue: number };
   channels: ChannelMetric[];
   leadSources: SourceMetric[];
   commercialDeals?: CommercialDeal[];
@@ -207,7 +207,7 @@ export type CompanyDataset = {
   locations: LocationMetric[];
   website: { users: number; sessions: number; newUsers: number; engagedSessions: number; formSubmissions: number; whatsappClicks: number; phoneClicks: number; quoteRequests: number };
   seo: { impressions: number; clicks: number; ctr: number; position: number; brandedShare: number };
-  gbp: { profileViews: number; websiteClicks: number; calls: number; directionRequests: number; messages: number; searches: number; reviews: number; averageRating: number | null };
+  gbp?: { profileViews: number; websiteClicks: number; calls: number; directionRequests: number; messages: number; searches: number; reviews: number; averageRating: number | null };
   integrations: Integration[];
   dataHealth: { missingSource: number; missingService: number; missingCampaign: number; wonMissingRevenue: number; duplicates: number; campaignsWithoutSpend: number; daysSinceSync: number | null };
 };
