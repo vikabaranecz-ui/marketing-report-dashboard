@@ -199,6 +199,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   })), company.id, fromDate, toDate);
   const website={users:websiteTraffic.users,sessions:websiteTraffic.sessions,newUsers:websiteTraffic.newUsers,engagedSessions:websiteTraffic.engagedSessions,formSubmissions:sum(rawWebsite,"form_submissions"),whatsappClicks:sum(rawWebsite,"whatsapp_clicks"),phoneClicks:sum(rawWebsite,"phone_clicks"),quoteRequests:sum(rawWebsite,"quote_requests")};
   const seoImpressions=sum(rawSeo,"impressions"),seoClicks=sum(rawSeo,"clicks"),positionSum=rawSeo.reduce((s,r)=>s+Number(r.position_sum),0),branded=rawSeo.filter(r=>r.is_branded).reduce((s,r)=>s+r.clicks,0);
+  const gbpReviews=sum(rawGbp,"reviews"),gbpRatingSum=sum(rawGbp,"rating_sum");
+  const gbp={profileViews:sum(rawGbp,"profile_views"),websiteClicks:sum(rawGbp,"website_clicks"),calls:sum(rawGbp,"calls"),directionRequests:sum(rawGbp,"direction_requests"),messages:sum(rawGbp,"messages"),searches:sum(rawGbp,"searches"),reviews:gbpReviews,averageRating:gbpReviews?gbpRatingSum/gbpReviews:null};
   const commercialDeals = rawCrmDeals.map(deal => ({
     id: deal.id,
     name: deal.name,
@@ -243,7 +245,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   );
 
   const revenue=attributableProjects.reduce((sum, project) => sum + Number(project.project_value ?? 0), 0), grossProfit=attributableProjects.every(p=>p.gross_margin!==null)?attributableProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
-  return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"vs previous period",metrics:{spend:total("spend"),leads:rawLeads.length,qualified:total("qualified"),visits:total("visits"),quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous:{spend:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leadSources,commercialDeals,commercialOffers,commercialProjects,commercialInvoices,appointmentLeadIds,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:rawProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:0,campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
+  return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"selected acquisition period",metrics:{spend:total("spend"),leads:rawLeads.length,notRelevant:rawLeads.filter(isNotRelevantLead).length,qualified:total("qualified"),visits:total("visits"),quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous:{spend:0,leads:0,notRelevant:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leadSources,commercialDeals,commercialOffers,commercialProjects,commercialInvoices,appointmentLeadIds,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},gbp,integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:attributableProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:potentialDuplicateCount(rawLeads),campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
 }
 
 function isDateConflict(status: string | null | undefined) {
@@ -459,6 +461,7 @@ function buildLeadSources(
     const row = map.get(source) ?? {
       source,
       leads: 0,
+      notRelevant: 0,
       qualified: 0,
       visits: 0,
       quotes: 0,
@@ -467,6 +470,7 @@ function buildLeadSources(
     };
 
     row.leads += 1;
+    if (isNotRelevantLead(lead)) row.notRelevant = (row.notRelevant ?? 0) + 1;
 
     if (
       [
@@ -480,13 +484,7 @@ function buildLeadSources(
       row.qualified += 1;
     }
 
-    if (
-      [
-        "visit_completed",
-        "quote_sent",
-        "won",
-      ].includes(lead.sales_stage)
-    ) {
+    if (hasReachedVisit(lead)) {
       row.visits += 1;
     }
 
