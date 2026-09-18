@@ -55,8 +55,8 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
     <Card className="p-5">
       <SectionHeader title="CRM source → pipeline → revenue" description="Every source uses the same client-funnel definitions. Offer counts and € values come from commercial offer evidence, not inferred CRM labels."/>
       <div className="table-scroll"><table>
-        <thead><tr><th>CRM source</th><th>Leads</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Quoted €</th><th>Open €</th><th>CRM signed</th><th>Verified clients</th><th>Revenue</th></tr></thead>
-        <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{formatCurrency(row.quotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.signed}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
+        <thead><tr><th>CRM source</th><th>Unique people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified clients</th><th>Revenue</th></tr></thead>
+        <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offers}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.signed}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
       </table></div>
     </Card>
   </div>;
