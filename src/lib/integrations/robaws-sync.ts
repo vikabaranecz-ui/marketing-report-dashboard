@@ -5,6 +5,7 @@ import { fetchAllRobaws } from "@/lib/integrations/robaws-client";
 
 type LeadRow = {
   id: string;
+  name: string;
   created_at: string;
   email: string | null;
   phone: string | null;
@@ -16,6 +17,10 @@ type LeadRow = {
 
 type RobawsClient = {
   id: string;
+  name?: string | null;
+  companyName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   email?: string | null;
   invoiceEmail?: string | null;
   tel?: string | null;
@@ -95,7 +100,7 @@ export async function syncRobawsProvider(
       admin
         .from("leads")
         .select(
-          "id,created_at,email,phone,source,service_id,channel_id,campaign_id",
+          "id,name,created_at,email,phone,source,service_id,channel_id,campaign_id",
         )
         .eq("company_id", companyId)
         .eq("crm_source", "monday"),
@@ -109,10 +114,21 @@ export async function syncRobawsProvider(
 
   const emailMap = new Map<string, Set<string>>();
   const phoneMap = new Map<string, Set<string>>();
+  const nameMap = new Map<string, Set<string>>();
 
   for (const client of clients) {
     const emails = new Set<string>();
     const phones = new Set<string>();
+    const names = new Set<string>();
+
+    for (const value of [
+      client.name,
+      client.companyName,
+      [client.firstName, client.lastName].filter(Boolean).join(" "),
+    ]) {
+      const normalized = normalizeName(value);
+      if (normalized) names.add(normalized);
+    }
 
     for (const value of [
       client.email,
@@ -135,6 +151,7 @@ export async function syncRobawsProvider(
       emails,
       phones,
     );
+    collectContactNames(client.contacts, names);
 
     for (const value of emails) {
       addIndex(emailMap, value, client.id);
@@ -142,6 +159,10 @@ export async function syncRobawsProvider(
 
     for (const value of phones) {
       addIndex(phoneMap, value, client.id);
+    }
+
+    for (const value of names) {
+      addIndex(nameMap, value, client.id);
     }
   }
 
@@ -151,6 +172,7 @@ export async function syncRobawsProvider(
       lead,
       emailMap,
       phoneMap,
+      nameMap,
     ),
   }));
 
@@ -573,6 +595,7 @@ function matchClient(
   lead: LeadRow,
   emailMap: Map<string, Set<string>>,
   phoneMap: Map<string, Set<string>>,
+  nameMap: Map<string, Set<string>>,
 ) {
   const emailIds =
     emailMap.get(
@@ -628,6 +651,23 @@ function matchClient(
       clientId: null,
       method: "AMBIGUOUS",
     };
+  }
+
+  const normalizedName = normalizeName(lead.name);
+  if (normalizedName) {
+    const nameIds = nameMap.get(normalizedName) ?? new Set<string>();
+    if (nameIds.size === 1) {
+      return {
+        clientId: [...nameIds][0],
+        method: "NAME",
+      };
+    }
+    if (nameIds.size > 1) {
+      return {
+        clientId: null,
+        method: "AMBIGUOUS",
+      };
+    }
   }
 
   return {
@@ -709,6 +749,52 @@ function collectContactIdentifiers(
       );
     }
   }
+}
+
+function collectContactNames(
+  value: unknown,
+  names: Set<string>,
+  depth = 0,
+) {
+  if (!value || depth > 4) return;
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectContactNames(item, names, depth + 1);
+    return;
+  }
+
+  if (typeof value !== "object") return;
+
+  const row = value as Record<string, unknown>;
+  const direct = [
+    row.name,
+    row.fullName,
+    row.companyName,
+    [row.firstName, row.lastName].filter(Boolean).join(" "),
+  ];
+
+  for (const candidate of direct) {
+    const normalized = normalizeName(candidate);
+    if (normalized) names.add(normalized);
+  }
+
+  for (const child of Object.values(row)) {
+    if (child && typeof child === "object") collectContactNames(child, names, depth + 1);
+  }
+}
+
+function normalizeName(value: unknown) {
+  const text = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const tokens = text.split(" ").filter(Boolean);
+  if (tokens.length < 2 || text.length < 6) return "";
+  return text;
 }
 
 function addIndex(
