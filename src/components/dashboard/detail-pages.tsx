@@ -112,6 +112,11 @@ export function WebsiteSeoPage({ data }: { data: CompanyDataset }) {
     </div>
 
     <Card className="p-5">
+      <SectionHeader title="Content performance" description="Organic / social content needs its own connected performance source before it can be judged."/>
+      <EmptyState title="Content performance is not connected yet" body="The current reporting model has website, Search Console and Google Business data, but no trustworthy post/reel/content-performance feed. No engagement or content ROI is fabricated."/>
+    </Card>
+
+    <Card className="p-5">
       <SectionHeader title="Google Business Profile" description="Only metrics actually returned by the GBP Performance API"/>
       {hasGbpPerformance && data.gbp ? <div className="grid grid-cols-2 gap-px bg-[var(--line)] md:grid-cols-4"><Mini label="Profile views" value={formatNumber(data.gbp.profileViews)}/><Mini label="Website clicks" value={formatNumber(data.gbp.websiteClicks)}/><Mini label="Calls" value={formatNumber(data.gbp.calls)}/><Mini label="Directions" value={formatNumber(data.gbp.directionRequests)}/></div> : <EmptyState title={gbpConnection?.status === "Connected" ? "Google Business Profile connected — no reportable data yet" : "Google Business Profile not connected"} body={gbpConnection?.resource === "Not selected" ? "No Business Profile location is selected. Account/location discovery must succeed before data can be synced." : gbpConnection?.errorMessage ?? "Connect and sync a Business Profile location to load profile views, website clicks, calls and directions."}/>}
     </Card>
