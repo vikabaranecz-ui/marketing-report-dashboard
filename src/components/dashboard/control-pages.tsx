@@ -222,10 +222,11 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     const sourceInvoices=invoices.filter(item=>item.leadId!==null&&leadIds.has(item.leadId));
     const spend=spendForSource(data,source,group);
     const nonPaid=!paidSources.has(source);
+    const costState: SourceBusinessRow["costState"] = nonPaid ? "not-applicable" : spend === null ? "missing" : "known";
     return {
       source,
       spend,
-      costState: nonPaid?"not-applicable":spend===null?"missing":"known",
+      costState,
       leads:group.length,
       qualified:group.filter(item=>item.isQualified).length,
       visits:group.filter(hasCompletedVisitEvidence).length,
