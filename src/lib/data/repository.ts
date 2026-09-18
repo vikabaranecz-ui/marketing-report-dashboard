@@ -134,7 +134,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
         isOpen: outcome === "open",
         isAccepted: outcome === "accepted",
         isRejected: outcome === "rejected",
-        daysWaiting: outcome === "open" ? daysBetween(offerDate, toIso) : null,
+        daysWaiting: outcome === "open" ? daysBetween(quote.sent_at?.slice(0, 10) ?? offerDate, toIso) : null,
       };
     });
   const commercialProjects = rawProjects
