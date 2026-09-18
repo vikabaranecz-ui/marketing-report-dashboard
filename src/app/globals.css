@@ -135,7 +135,7 @@ tbody tr:hover { background: #f8f8f4; }
 .money-row span { color:var(--muted); }.money-row strong{font-size:.95rem}.money-row-accent{background:var(--accent-soft);margin:0 -.5rem;padding:.8rem .6rem;color:var(--ink)}.money-row-accent span{color:var(--ink)}
 .trust-card { border:1px solid var(--line); background:white; padding:.9rem; }.trust-card strong{font-size:.78rem}.trust-card p{margin-top:.45rem;color:var(--muted);font-size:.7rem;line-height:1.45}
 
-.control-funnel { display:grid; grid-template-columns:repeat(7,minmax(145px,1fr)); overflow-x:auto; background:white; }
+.control-funnel { display:grid; grid-template-columns:repeat(8,minmax(145px,1fr)); overflow-x:auto; background:white; }
 .control-funnel-stage { min-height:155px; border-right:1px solid var(--line); padding:1rem; }.control-funnel-stage:last-child{border-right:0}
 .control-funnel-stage > span { color:var(--muted); font-size:.66rem; font-weight:800; letter-spacing:.075em; text-transform:uppercase; }
 .control-funnel-stage > strong { display:block; margin-top:1rem; font-size:1.7rem; letter-spacing:-.05em; }
