@@ -95,8 +95,12 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawRevenue = (revenueRes.data ?? []) as unknown as RawRevenue[];
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? []) as unknown as RawSeo[];
-  const quoteByLead = new Map<string,RawQuote>(); rawQuotes.forEach(q=>quoteByLead.set(q.lead_id,q));
-  const projectByLead = new Map<string,RawProject>(); rawProjects.forEach(p=>projectByLead.set(p.lead_id,p));
+  // Keep commercial truth visible, but only use documents that are safe to
+  // attribute to the CRM lead for marketing/source performance.
+  const attributableQuotes = rawQuotes.filter(quote => !isDateConflict(quote.attribution_status));
+  const attributableProjects = rawProjects.filter(project => !isDateConflict(project.attribution_status));
+  const quoteByLead = latestQuoteByLead(attributableQuotes);
+  const projectByLead = aggregateProjectsByLead(attributableProjects);
   const leads = mapLeads(rawLeads,quoteByLead,projectByLead);
   const leadById = new Map(leads.map(lead => [lead.id, lead]));
   const commercialOffers = rawQuotes
@@ -167,7 +171,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   for(const revenue of rawRevenue){ if(!revenue.channel_id)continue; const item=channelMap.get(revenue.channel_id); if(item)item.revenue+=Number(revenue.attributed_revenue); }
   const channels=[...channelMap.values()];
   const total=(key:keyof Pick<ChannelMetric,"spend"|"leads"|"qualified"|"visits"|"quotes"|"won"|"revenue">)=>channels.reduce((s,r)=>s+Number(r[key]),0);
-  const services = buildServices((servicesRes.data??[]) as unknown as {id:string;name:string;default_gross_margin:number|null}[],rawMetrics,rawLeads,rawProjects,quoteByLead);
+  const services = buildServices((servicesRes.data??[]) as unknown as {id:string;name:string;default_gross_margin:number|null}[],rawMetrics,rawLeads,attributableProjects,quoteByLead);
   const campaigns = buildCampaigns((campaignsRes.data??[]) as unknown as {id:string;name:string;channel_id:string;marketing_channels:{name:string}|null}[],rawMetrics,rawLeads,rawRevenue,projectByLead);
   const trend = buildTrend(rawMetrics,rawLeads,rawRevenue,projectByLead,rawWebsite);
   const locations = buildLocations(rawLeads,rawMetrics,projectByLead);
@@ -202,14 +206,14 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
       .filter(lead => lead.sales_stage === "won")
       .map(lead => lead.id)
       .concat(
-        rawProjects
+        attributableProjects
           .filter(project => project.status === "won")
           .map(project => project.lead_id),
       ),
   );
 
   const quoteLeadIds = new Set(
-    rawQuotes.map(quote => quote.lead_id)
+    attributableQuotes.map(quote => quote.lead_id)
       .concat(
         rawLeads
           .filter(
@@ -225,8 +229,53 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
       ),
   );
 
-  const revenue=total("revenue"), grossProfit=rawProjects.every(p=>p.gross_margin!==null)?rawProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
+  const revenue=total("revenue"), grossProfit=attributableProjects.every(p=>p.gross_margin!==null)?attributableProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
   return {company,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:"vs previous period",metrics:{spend:total("spend"),leads:rawLeads.length,qualified:total("qualified"),visits:total("visits"),quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous:{spend:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0},channels,leadSources,commercialDeals,commercialOffers,commercialProjects,commercialInvoices,appointmentLeadIds,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:seoClicks?branded/seoClicks*100:0},integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[]).reduce((s,l)=>s+l.records_imported,0),resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:rawProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:0,campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
+}
+
+function isDateConflict(status: string | null | undefined) {
+  return String(status ?? "").trim().toLowerCase().includes("date_conflict");
+}
+
+function latestQuoteByLead(rows: RawQuote[]) {
+  const map = new Map<string, RawQuote>();
+
+  for (const row of rows) {
+    const existing = map.get(row.lead_id);
+    if (!existing || (row.created_at ?? "").localeCompare(existing.created_at ?? "") > 0) {
+      map.set(row.lead_id, row);
+    }
+  }
+
+  return map;
+}
+
+function aggregateProjectsByLead(rows: RawProject[]) {
+  const map = new Map<string, RawProject>();
+
+  for (const row of rows) {
+    const existing = map.get(row.lead_id);
+    if (!existing) {
+      map.set(row.lead_id, { ...row });
+      continue;
+    }
+
+    const existingWonAt = existing.won_at ?? "";
+    const rowWonAt = row.won_at ?? "";
+    const newest = rowWonAt.localeCompare(existingWonAt) > 0 ? row : existing;
+
+    map.set(row.lead_id, {
+      ...newest,
+      id: existing.id,
+      lead_id: row.lead_id,
+      project_value: Number(existing.project_value ?? 0) + Number(row.project_value ?? 0),
+      project_value_excl_vat: Number(existing.project_value_excl_vat ?? 0) + Number(row.project_value_excl_vat ?? 0),
+      status: existing.status === "won" || row.status === "won" ? "won" : newest.status,
+      gross_margin: null,
+    });
+  }
+
+  return map;
 }
 
 function offerOutcome(status: string) {
