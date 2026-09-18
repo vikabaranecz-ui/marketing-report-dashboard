@@ -87,7 +87,7 @@ type LeadRow = { id: string; created_at: string; name: string; source: string | 
 type AppointmentRow = { lead_id: string; scheduled_at: string; status: string };
 type QuoteRow = { id: string; lead_id: string | null; status: string | null; quote_value: number | string; quote_value_incl_vat: number | string | null; created_at: string | null };
 type ProjectRow = { id: string; lead_id: string | null; status: string | null; project_value: number | string | null; attribution_status: string | null };
-type InvoiceRow = { id: string; lead_id: string | null; total_incl_vat: number | string | null; paid_total: number | string | null; attribution_status: string | null };
+type InvoiceRow = { id: string; lead_id: string | null; total_incl_vat: number | string | null; paid_total: number | string | null; credited_total: number | string | null; attribution_status: string | null };
 type AdRow = { id: string; name: string };
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
@@ -142,7 +142,7 @@ async function loadCompany(
     supabase.from("appointments").select("lead_id,scheduled_at,status").in("lead_id", leadScope),
     supabase.from("quotes").select("id,lead_id,status,quote_value,quote_value_incl_vat,created_at").in("lead_id", leadScope),
     supabase.from("projects").select("id,lead_id,status,project_value,attribution_status").in("lead_id", leadScope),
-    supabase.from("commercial_invoices").select("id,lead_id,total_incl_vat,paid_total,attribution_status").eq("company_id", company.id).in("lead_id", leadScope),
+    supabase.from("commercial_invoices").select("id,lead_id,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id", company.id).in("lead_id", leadScope),
   ]);
   const phaseTwo = [adsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes];
   const phaseTwoError = phaseTwo.find(result => result.error)?.error;
@@ -187,7 +187,7 @@ async function loadCompany(
     });
     const campaignQuotes = quotes.filter(row => row.lead_id && leadIds.has(row.lead_id)).map(row => ({ id: row.id, leadId: row.lead_id as string, status: row.status, valueInclVat: number(row.quote_value_incl_vat ?? row.quote_value) }));
     const campaignProjects = projects.filter(row => row.lead_id && leadIds.has(row.lead_id)).map(row => ({ id: row.id, leadId: row.lead_id as string, valueInclVat: number(row.project_value), attributionStatus: row.attribution_status }));
-    const campaignInvoices = invoices.filter(row => row.lead_id && leadIds.has(row.lead_id)).map(row => ({ id: row.id, leadId: row.lead_id as string, invoicedInclVat: number(row.total_incl_vat), paid: number(row.paid_total), attributionStatus: row.attribution_status }));
+    const campaignInvoices = invoices.filter(row => row.lead_id && leadIds.has(row.lead_id)).map(row => ({ id: row.id, leadId: row.lead_id as string, invoicedInclVat: netInvoiced(row), paid: number(row.paid_total), attributionStatus: row.attribution_status }));
     const funnel = commercialFunnelTotals(leadIds, campaignQuotes, campaignProjects, campaignInvoices);
     const spend = sum(campaignMetrics, row => number(row.spend));
     const platformLeads = sum(campaignMetrics, row => number(row.platform_conversions));
@@ -273,7 +273,7 @@ function buildLeadDetail(
     latestOfferValue: number(latestQuote?.quote_value_incl_vat ?? latestQuote?.quote_value),
     projectStatus: attributableProjects[0]?.status ?? null,
     projectValue: sum(attributableProjects, row => number(row.project_value)),
-    invoiced: sum(attributableInvoices, row => number(row.total_incl_vat)),
+    invoiced: sum(attributableInvoices, netInvoiced),
     paid: sum(attributableInvoices, row => number(row.paid_total)),
     attributionMethod: method,
     attributionConfidence: ["META_LEAD_ID", "EMAIL+PHONE"].includes(method) ? "High" : "Medium",
@@ -296,6 +296,10 @@ function sum<T>(rows: T[], value: (row: T) => number) {
 function number(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function netInvoiced(invoice: Pick<InvoiceRow, "total_incl_vat" | "credited_total">) {
+  return Math.max(0, number(invoice.total_incl_vat) - number(invoice.credited_total));
 }
 
 function divide(numerator: number, denominator: number) {
