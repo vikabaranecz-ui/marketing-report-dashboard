@@ -123,7 +123,9 @@ async function googleAdsSearch(
     googleAdsHeaders(loginCustomerId),
     {
       apiName: "Google Ads API",
-      resource: `customer ${normalizeGoogleCustomerId(customerId)}`,
+      resource: loginCustomerId
+        ? `customer ${normalizeGoogleCustomerId(customerId)} via login customer ${normalizeGoogleCustomerId(loginCustomerId)}`
+        : `customer ${normalizeGoogleCustomerId(customerId)}`,
     },
   );
   return chunks.flatMap(chunk => chunk.results ?? []);
