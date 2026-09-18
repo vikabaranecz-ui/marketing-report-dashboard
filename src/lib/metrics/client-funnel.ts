@@ -15,6 +15,8 @@ export const journeyStageMeta: Array<{ key: JourneyStage; label: string; descrip
 
 export type JourneyRow = {
   lead: Lead;
+  crmRecordCount: number;
+  sourcesSeen: string[];
   stage: JourneyStage;
   appointments: CommercialAppointment[];
   offers: CommercialOffer[];
@@ -212,6 +214,8 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
 
     return {
       lead,
+      crmRecordCount: group.length,
+      sourcesSeen: [...new Set(group.map(item => item.source || "Unattributed"))],
       stage,
       appointments: leadAppointments,
       offers: leadOffers,
