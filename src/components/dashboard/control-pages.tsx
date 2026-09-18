@@ -119,7 +119,10 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       </table></div> : <EmptyState title="No campaign attribution" body="Campaign-level rows appear when CRM leads retain a campaign relationship."/>}
     </Card>
 
-    <div className="callout"><AlertTriangle size={18}/><div><strong>Ad set / ad / creative economics are not shown unless the lead-to-ad join exists.</strong><p>The schema can store ad-level data, but this page will not infer creative winners from CTR or campaign totals when person-level commercial attribution is missing.</p></div></div>
+    <div className="grid gap-3 lg:grid-cols-2">
+      <div className="callout"><AlertTriangle size={18}/><div><strong>Spend scope matters.</strong><p>Channel spend is the tracked spend for the selected period. If a channel also ran awareness or non-lead campaigns, that spend remains included rather than being silently removed from CAC.</p></div></div>
+      <div className="callout"><AlertTriangle size={18}/><div><strong>Ad set / ad / creative economics need the lead-to-ad join.</strong><p>The schema can store ad-level data, but this page will not infer creative winners from CTR or campaign totals when person-level commercial attribution is missing.</p></div></div>
+    </div>
   </div>;
 }
 
