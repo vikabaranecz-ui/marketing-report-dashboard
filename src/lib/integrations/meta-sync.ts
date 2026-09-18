@@ -123,7 +123,12 @@ export async function syncMetaProvider(
   if (channelResult.error) throw new Error(`Unable to prepare the Meta channel: ${channelResult.error.message}`);
 
   const channelId = channelResult.data.id;
-  const campaignSources = insights.map(row => ({ id: row.campaignId, name: row.campaignName }));
+  const campaignSources = [
+    ...insights.map(row => ({ id: row.campaignId, name: row.campaignName })),
+    ...metaLeads.flatMap(row => row.campaignExternalId
+      ? [{ id: row.campaignExternalId, name: row.campaignName ?? row.campaignExternalId }]
+      : []),
+  ];
   const campaigns = uniqueBy(campaignSources, row => row.id);
   const campaignRows = await upsertEntities(
     admin,
@@ -138,7 +143,16 @@ export async function syncMetaProvider(
   );
   const campaignIds = new Map(campaignRows.map(row => [String(row.external_id), String(row.id)]));
 
-  const adsetSources = insights.map(row => ({ id: row.adsetId, name: row.adsetName, campaignId: row.campaignId }));
+  const adsetSources = [
+    ...insights.map(row => ({ id: row.adsetId, name: row.adsetName, campaignId: row.campaignId })),
+    ...metaLeads.flatMap(row => row.adsetExternalId && row.campaignExternalId
+      ? [{
+          id: row.adsetExternalId,
+          name: row.adsetName ?? row.adsetExternalId,
+          campaignId: row.campaignExternalId,
+        }]
+      : []),
+  ];
   const adsets = uniqueBy(adsetSources, row => row.id);
   const adsetRows = await upsertEntities(
     admin,
@@ -153,7 +167,16 @@ export async function syncMetaProvider(
   );
   const adsetIds = new Map(adsetRows.map(row => [String(row.external_id), String(row.id)]));
 
-  const adSources = insights.map(row => ({ id: row.adId, name: row.adName, adsetId: row.adsetId }));
+  const adSources = [
+    ...insights.map(row => ({ id: row.adId, name: row.adName, adsetId: row.adsetId })),
+    ...metaLeads.flatMap(row => row.adExternalId && row.adsetExternalId
+      ? [{
+          id: row.adExternalId,
+          name: row.adName ?? row.adExternalId,
+          adsetId: row.adsetExternalId,
+        }]
+      : []),
+  ];
   const ads = uniqueBy(adSources, row => row.id);
   const adRows = await upsertEntities(
     admin,
