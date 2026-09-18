@@ -16,7 +16,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
   const kpi = calculateKpis(metrics);
   const commercial = buildFunnelSummary(data);
   const funnel = [
-    ["Leads", commercial.leads], ["Unique", commercial.uniquePeople], ["Qualified", commercial.qualified], ["Visits", commercial.visits], ["Offers", commercial.offersSent], ["Accepted", commercial.acceptedOffers], ["CRM signed", commercial.crmSigned], ["Verified", commercial.verifiedProjects],
+    ["Leads", commercial.leads], ["Unique", commercial.uniquePeople], ["Qualified", commercial.qualified], ["Visits", commercial.visits], ["Sent offers", commercial.offersSent], ["Accepted", commercial.acceptedOffers], ["CRM signed", commercial.crmSigned], ["Verified", commercial.verifiedProjects],
   ] as const;
   const attributionMissing = data.dataHealth.missingCampaign;
   const meta = data.channels.find(c => c.channel === "Meta Ads");
@@ -73,7 +73,7 @@ function Insight({ icon, label, text, warn = false }: { icon: React.ReactNode; l
 }
 
 function ChannelTable({ data }: { data: CompanyDataset }) {
-  return <Card className="p-5"><SectionHeader title="Channel comparison" description="Platform activity reconciled with CRM outcomes"/><div className="table-scroll"><table><thead><tr><th>Channel</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Quotes</th><th>Won</th><th>Revenue</th><th>CPL</th><th>Qual. CPL</th><th>CAC</th><th>ROAS</th></tr></thead><tbody>{data.channels.map(row => { const kpi = calculateKpis(row); return <tr key={row.id}><td className="font-semibold text-[var(--ink)]">{row.channel}</td><td>{formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.quotes}</td><td>{row.won}</td><td>{formatCurrency(row.revenue)}</td><td>{formatCurrency(kpi.cpl)}</td><td>{formatCurrency(kpi.qualifiedCpl)}</td><td>{formatCurrency(kpi.cac)}</td><td className="font-semibold">{kpi.roas === null ? "—" : `${formatNumber(kpi.roas)}×`}</td></tr>; })}</tbody></table></div></Card>;
+  return <Card className="p-5"><SectionHeader title="Channel comparison" description="Platform activity reconciled with CRM outcomes"/><div className="table-scroll"><table><thead><tr><th>Channel</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>CRM quote-stage</th><th>Won</th><th>Revenue</th><th>CPL</th><th>Qual. CPL</th><th>CAC</th><th>ROAS</th></tr></thead><tbody>{data.channels.map(row => { const kpi = calculateKpis(row); return <tr key={row.id}><td className="font-semibold text-[var(--ink)]">{row.channel}</td><td>{formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.quotes}</td><td>{row.won}</td><td>{formatCurrency(row.revenue)}</td><td>{formatCurrency(kpi.cpl)}</td><td>{formatCurrency(kpi.qualifiedCpl)}</td><td>{formatCurrency(kpi.cac)}</td><td className="font-semibold">{kpi.roas === null ? "—" : `${formatNumber(kpi.roas)}×`}</td></tr>; })}</tbody></table></div></Card>;
 }
 
 function DataHealth({ data }: { data: CompanyDataset }) {
