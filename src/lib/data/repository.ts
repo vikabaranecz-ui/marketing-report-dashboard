@@ -174,8 +174,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   });
   const appointmentLeadIds = [...new Set(rawAppointments.map(row => row.lead_id))];
   const channelMap = new Map<string,ChannelMetric>();
-  for (const row of rawMetrics) { const id=row.channel_id; const item=channelMap.get(id)??{id,channel:row.marketing_channels?.name??"Unknown",spend:0,impressions:0,clicks:0,platformConversions:0,leads:0,qualified:0,visits:0,quotes:0,won:0,revenue:0}; item.spend+=Number(row.spend); item.impressions+=row.impressions; item.clicks+=row.clicks; item.platformConversions+=Number(row.platform_conversions); channelMap.set(id,item); }
-  for (const lead of rawLeads) { if(!lead.channel_id) continue; const item=channelMap.get(lead.channel_id); if(!item) continue; item.leads++; if(["qualified","visit_booked","visit_completed","quote_sent","won"].includes(lead.sales_stage)) item.qualified++; if(["visit_completed","quote_sent","won"].includes(lead.sales_stage)) item.visits++; if(["quote_sent","won"].includes(lead.sales_stage)||quoteByLead.has(lead.id)) item.quotes++; if(projectByLead.get(lead.id)?.status==="won"||lead.sales_stage==="won") item.won++; }
+  for (const row of rawMetrics) { const id=row.channel_id; const item=channelMap.get(id)??{id,channel:row.marketing_channels?.name??"Unknown",spend:0,impressions:0,clicks:0,platformConversions:0,leads:0,notRelevant:0,qualified:0,visits:0,quotes:0,won:0,revenue:0}; item.spend+=Number(row.spend); item.impressions+=row.impressions; item.clicks+=row.clicks; item.platformConversions+=Number(row.platform_conversions); channelMap.set(id,item); }
+  for (const lead of rawLeads) { if(!lead.channel_id) continue; const item=channelMap.get(lead.channel_id); if(!item) continue; item.leads++; if(isNotRelevantLead(lead)) item.notRelevant=(item.notRelevant??0)+1; if(isQualifiedLead(lead)) item.qualified++; if(hasReachedVisit(lead)) item.visits++; if(["quote_sent","won"].includes(lead.sales_stage)||isQuoteOutcomeStatus(lead.crm_status)||quoteByLead.has(lead.id)) item.quotes++; if(projectByLead.get(lead.id)?.status==="won"||lead.sales_stage==="won"||isSignedStatus(lead.crm_status)) item.won++; }
   for (const project of attributableProjects) {
     const lead = rawLeadById.get(project.lead_id);
     if (!lead?.channel_id) continue;
@@ -183,7 +183,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     if (item) item.revenue += Number(project.project_value ?? 0);
   }
   const channels=[...channelMap.values()];
-  const total=(key:keyof Pick<ChannelMetric,"spend"|"leads"|"qualified"|"visits"|"quotes"|"won"|"revenue">)=>channels.reduce((s,r)=>s+Number(r[key]),0);
+  const total=(key:keyof Pick<ChannelMetric,"spend"|"leads"|"notRelevant"|"qualified"|"visits"|"quotes"|"won"|"revenue">)=>channels.reduce((s,r)=>s+Number(r[key]??0),0);
   const services = buildServices((servicesRes.data??[]) as unknown as {id:string;name:string;default_gross_margin:number|null}[],rawMetrics,rawLeads,attributableProjects,quoteByLead);
   const campaigns = buildCampaigns((campaignsRes.data??[]) as unknown as {id:string;name:string;channel_id:string;marketing_channels:{name:string}|null}[],rawMetrics,rawLeads,projectByLead);
   const trend = buildTrend(rawMetrics,rawLeads,attributableProjects,projectByLead,rawWebsite);
