@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AlertCircle, Check, ChevronDown, ShieldCheck } from "lucide-react";
 import type { CampaignMetric, CompanyDataset } from "@/lib/data/types";
 import { calculateKpis, formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
-import { buildJourneyRows, sourcePipelineRows } from "@/lib/metrics/client-funnel";
+import { sourcePipelineRows } from "@/lib/metrics/client-funnel";
 import { ComparisonBars, TrendChart } from "./charts";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
