@@ -33,6 +33,7 @@ type RobawsOffer = {
   id: string;
   logicId?: string | null;
   date?: string | null;
+  sentDate?: string | null;
   clientId?: string | null;
   projectId?: string | null;
   totalInclVat?: number | null;
@@ -368,6 +369,8 @@ export async function syncRobawsProvider(
           Number(offer.totalInclVat ?? 0),
         created_at:
           toTimestamp(offer.date),
+        sent_at:
+          toTimestamp(offer.sentDate),
         status:
           offer.status || "unknown",
         accepted_at: null,
