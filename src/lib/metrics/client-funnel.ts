@@ -1,4 +1,4 @@
-import type { CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
+import type { CommercialAppointment, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
 
 export type JourneyStage = "new" | "qualified" | "visit" | "offer" | "accepted" | "signed" | "verified" | "lost";
 
@@ -16,6 +16,7 @@ export const journeyStageMeta: Array<{ key: JourneyStage; label: string; descrip
 export type JourneyRow = {
   lead: Lead;
   stage: JourneyStage;
+  appointments: CommercialAppointment[];
   offers: CommercialOffer[];
   latestOffer: CommercialOffer | null;
   projects: CommercialProject[];
@@ -114,10 +115,12 @@ function uniquePersonCount(leads: Lead[]) {
 }
 
 export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
+  const appointments = data.commercialAppointments ?? [];
   const offers = (data.commercialOffers ?? []).filter(item => !hasDateConflict(item.attributionStatus));
   const projects = (data.commercialProjects ?? []).filter(item => !hasDateConflict(item.attributionStatus));
 
   return data.leads.map(lead => {
+    const leadAppointments = appointments.filter(item => item.leadId === lead.id);
     const leadOffers = offers.filter(item => item.leadId === lead.id);
     const leadProjects = projects.filter(item => item.leadId === lead.id);
     const currentOffer = latestOffer(leadOffers);
@@ -140,6 +143,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
     return {
       lead,
       stage,
+      appointments: leadAppointments,
       offers: leadOffers,
       latestOffer: currentOffer,
       projects: leadProjects,
