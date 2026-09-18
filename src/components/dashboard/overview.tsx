@@ -20,7 +20,7 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
   const commercialClients = data.commercialClients ?? [];
   const unmatchedRobaws = commercialClients.filter(client => !client.matchedLeadId);
   const unmatchedWon = unmatchedRobaws.filter(client => client.commercialStatus === "CLIENT_WON");
-  const metaDecision = decisions.find(row => row.source.toLowerCase().includes("facebook"));
+  const metaDecision = decisions.find(row => row.source === "Meta Ads / Facebook");
   const metaRoas = metaDecision?.roas ?? null;
 
   return <div className="space-y-6">
@@ -145,38 +145,52 @@ type DecisionRow = {
 
 function sourceDecisionRows(data:CompanyDataset, rows:JourneyRow[]):DecisionRow[] {
   const invoices=(data.commercialInvoices??[]).filter(invoice=>!hasDateConflict(invoice.attributionStatus));
-  const sources=[...new Set(rows.map(row=>row.lead.source||"Unattributed"))];
+  const groups=new Map<string,JourneyRow[]>();
 
-  return sources.map(source=>{
-    const group=rows.filter(row=>(row.lead.source||"Unattributed")===source);
-    const sourceInvoices=invoices.filter(invoice=>invoice.source===source);
+  for(const row of rows){
+    const key=decisionSource(row.lead.source);
+    const current=groups.get(key)??[];
+    current.push(row);
+    groups.set(key,current);
+  }
+
+  return [...groups.entries()].map(([source,group])=>{
+    const rawSources=new Set(group.map(row=>row.lead.source));
+    const sourceInvoices=invoices.filter(invoice=>rawSources.has(invoice.source));
     const paid=sourceInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
     const openValue=group.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isOpen).reduce((s,offer)=>s+offer.priceInclVat,0),0);
-    const spend=spendForSource(data,source,group);
+    const spend=spendForDecisionSource(data,source,group);
     const attributableClients=group.filter(row=>row.isAttributableClient).length;
     const commercialClients=group.filter(row=>row.isCommercialClient).length;
     const signed=group.filter(row=>row.isSigned).length;
     const cpl=spend===null||group.length===0?null:spend/group.length;
     const cac=spend===null||attributableClients===0?null:spend/attributableClients;
     const roas=spend===null||spend===0?null:paid/spend;
-    const lower=source.toLowerCase();
-    const paidSource=lower.includes("facebook")||lower.includes("meta")||lower.includes("google ads")||lower.includes("leadangel");
+    const paidSource=["Meta Ads / Facebook","Google Ads","LeadAngel"].includes(source);
     let action:DecisionRow["action"]="Monitor";
     if (paidSource&&spend===null) action="Fix spend tracking";
+    else if (signed>0&&commercialClients===0) action="Fix matching";
     else if (spend!==null&&attributableClients===0&&openValue>0) action="Hold";
     else if (spend!==null&&attributableClients===0) action="Do not increase";
-    else if (spend!==null&&roas!==null&&roas>=3&&attributableClients===1) action="Scale cautiously";
-    else if (spend!==null&&roas!==null&&roas>=3&&attributableClients>1) action="Scale cautiously";
-    else if (signed>0&&commercialClients===0) action="Fix matching";
+    else if (spend!==null&&roas!==null&&roas>=3) action="Scale cautiously";
     return {source,spend,leads:group.length,signed,commercialClients,attributableClients,openValue,paid,cpl,cac,roas,action};
   }).sort((a,b)=>(b.paid-a.paid)||(b.openValue-a.openValue)||(b.leads-a.leads));
 }
 
-function spendForSource(data:CompanyDataset,source:string,rows:JourneyRow[]) {
+function decisionSource(source:string){
   const lower=source.toLowerCase();
-  const channelName=lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")
+  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")) return "Meta Ads / Facebook";
+  if(lower.includes("google ads")) return "Google Ads";
+  if(lower.includes("leadangel")) return "LeadAngel";
+  if(lower.includes("web calculator")) return "Web calculator";
+  if(lower==="web"||lower.includes("website")) return "Web";
+  return source||"Unattributed";
+}
+
+function spendForDecisionSource(data:CompanyDataset,source:string,rows:JourneyRow[]) {
+  const channelName=source==="Meta Ads / Facebook"
     ?"Meta Ads"
-    : lower.includes("google ads")
+    : source==="Google Ads"
       ?"Google Ads"
       : null;
   if(channelName){
