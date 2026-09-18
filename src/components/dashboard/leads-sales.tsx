@@ -8,7 +8,7 @@ import { EmptyState, StatusPill } from "./ui";
 
 type OfferTab = "open" | "accepted" | "rejected" | "all";
 type SourceRow = { source: string; leads: number; matched: number; offers: number; openValue: number; rejectedValue: number; acceptedValue: number; clients: number; invoiced: number; paid: number; cost: number | null };
-const verifiedMethods = new Set(["EMAIL+PHONE", "EMAIL", "PHONE"]);
+const verifiedMethods = new Set(["EMAIL+PHONE", "EMAIL", "PHONE", "NAME"]);
 const emptyOffers: CommercialOffer[] = [];
 const emptyProjects: CommercialProject[] = [];
 const emptyInvoices: CommercialInvoice[] = [];
@@ -29,7 +29,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
   const filteredInvoices = source ? invoices.filter(invoice => invoice.source === source) : invoices;
   const attributedProjects = filteredProjects.filter(project => !hasDateConflict(project.attributionStatus));
   const attributedInvoices = filteredInvoices.filter(invoice => !hasDateConflict(invoice.attributionStatus));
-  const verifiedClients = filteredLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON");
+  const verifiedClients = filteredLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON" && !hasDateConflict(lead.attributionLevel));
   const matchedLeads = filteredLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod));
   const openOffers = filteredOffers.filter(offer => offer.isOpen).sort((a, b) => b.priceInclVat - a.priceInclVat);
   const acceptedOffers = filteredOffers.filter(offer => offer.isAccepted);
@@ -51,7 +51,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
 
   const pipeline = [
     { label: "Leads", count: filteredLeads.length, value: null },
-    { label: "Site visit", count: filteredLeads.filter(lead => appointmentLeadIds.has(lead.id)).length, value: null },
+    { label: "Site visit", count: filteredLeads.filter(lead => appointmentLeadIds.has(lead.id) || hasReachedVisit(lead)).length, value: null },
     { label: "Offer", count: new Set(filteredOffers.map(offer => offer.leadId)).size, value: sum(filteredOffers, "priceInclVat") },
     { label: "Waiting", count: new Set(openOffers.map(offer => offer.leadId)).size, value: sum(openOffers, "priceInclVat") },
     { label: "Accepted", count: new Set(acceptedOffers.map(offer => offer.leadId)).size, value: sum(acceptedOffers, "priceInclVat") },
@@ -72,7 +72,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
     {robaws?.status !== "Connected" && <div className="sales-data-notice"><AlertTriangle size={17} /><div><strong>ROBAWS commercial data is not connected yet.</strong><p>Lead sources are live. Offers, project values, invoices and payments remain empty until ROBAWS is connected and synced.</p></div></div>}
 
     <section aria-labelledby="executive-snapshot"><SectionTitle id="executive-snapshot" eyebrow="01 · Executive snapshot" title="Money and movement" description={source ? `Filtered to ${source}` : "All real CRM leads and verified ROBAWS evidence"} /><div className="sales-kpi-grid">
-      <Metric label="Leads" value={formatNumber(filteredLeads.length)} note="CRM records" /><Metric label="ROBAWS matched" value={formatNumber(matchedLeads.length)} note="Email and/or phone" /><Metric label="Offers sent" value={formatNumber(filteredOffers.length)} note="Individual offers" /><Metric label="Open offer value" value={formatCurrency(sum(openOffers, "priceInclVat"), true)} note={`${openOffers.length} waiting`} money /><Metric label="Accepted project value" value={formatCurrency(sum(attributedProjects, "valueInclVat"), true)} note="Date conflicts excluded" money /><Metric label="Verified clients" value={formatNumber(verifiedClients.length)} note="ROBAWS evidence" /><Metric label="Invoiced" value={formatCurrency(invoiced, true)} note="Net of credits · incl. VAT" money /><Metric label="Paid" value={formatCurrency(paid, true)} note="Verified attribution" money accent />
+      <Metric label="Leads" value={formatNumber(filteredLeads.length)} note="CRM records" /><Metric label="ROBAWS matched" value={formatNumber(matchedLeads.length)} note="Email, phone or unique exact name" /><Metric label="Offers sent" value={formatNumber(filteredOffers.length)} note="Individual offers" /><Metric label="Open offer value" value={formatCurrency(sum(openOffers, "priceInclVat"), true)} note={`${openOffers.length} waiting`} money /><Metric label="Accepted project value" value={formatCurrency(sum(attributedProjects, "valueInclVat"), true)} note="Date conflicts excluded" money /><Metric label="Verified clients" value={formatNumber(verifiedClients.length)} note="ROBAWS evidence" /><Metric label="Invoiced" value={formatCurrency(invoiced, true)} note="Net of credits · incl. VAT" money /><Metric label="Paid" value={formatCurrency(paid, true)} note="Verified attribution" money accent />
     </div></section>
 
     <section aria-labelledby="pipeline-value"><SectionTitle id="pipeline-value" eyebrow="02 · Sales pipeline value" title="From lead to cash" description="Counts use distinct leads at each evidence-backed stage; values use the underlying commercial documents." /><div className="pipeline-flow">{pipeline.map((stage, index) => <div className={`pipeline-node ${stage.label === "Paid" ? "pipeline-node-paid" : ""}`} key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index < pipeline.length - 1 && <ArrowRight size={14} className="pipeline-arrow" />}</div><strong>{formatNumber(stage.count)}</strong><small>{rate(stage.count, filteredLeads.length)} of leads</small>{stage.value !== null && <em>{formatCurrency(stage.value, true)}</em>}</div>)}</div></section>
@@ -88,7 +88,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
     </section>
 
     <section aria-labelledby="verified-clients"><SectionTitle id="verified-clients" eyebrow="06 · Verified clients" title="Commercially confirmed customers" description="Confirmed by ROBAWS evidence. Date-conflict values stay visible in the drawer but are excluded from source revenue." />
-      {verifiedClients.length ? <div className="analytics-table-wrap"><table className="analytics-table"><thead><tr><th>Lead</th><th>Original source</th><th>Match method</th><th>Accepted project value</th><th>Project status</th><th>Invoiced</th><th>Paid</th><th>Attribution status</th></tr></thead><tbody>{verifiedClients.map(lead => { const leadProjects = projects.filter(project => project.leadId === lead.id && !hasDateConflict(project.attributionStatus)); const leadInvoices = invoices.filter(invoice => invoice.leadId === lead.id && !hasDateConflict(invoice.attributionStatus)); return <tr key={lead.id}><td><button className="lead-link" onClick={() => setSelected(lead)}>{lead.name}</button></td><td>{lead.source}</td><td><StatusPill tone="good">{lead.robawsMatchMethod}</StatusPill></td><td>{formatCurrency(sum(leadProjects, "valueInclVat"))}</td><td>{leadProjects.map(project => project.status).filter(Boolean).join(", ") || "—"}</td><td>{formatCurrency(leadInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0))}</td><td>{formatCurrency(sum(leadInvoices, "paidTotal"))}</td><td><Attribution value={lead.attributionLevel} /></td></tr>; })}</tbody></table></div> : <EmptyState title="No verified clients yet" body="A lead appears here only after an EMAIL+PHONE, EMAIL or PHONE match and commercial evidence in ROBAWS." />}
+      {verifiedClients.length ? <div className="analytics-table-wrap"><table className="analytics-table"><thead><tr><th>Lead</th><th>Original source</th><th>Match method</th><th>Accepted project value</th><th>Project status</th><th>Invoiced</th><th>Paid</th><th>Attribution status</th></tr></thead><tbody>{verifiedClients.map(lead => { const leadProjects = projects.filter(project => project.leadId === lead.id && !hasDateConflict(project.attributionStatus)); const leadInvoices = invoices.filter(invoice => invoice.leadId === lead.id && !hasDateConflict(invoice.attributionStatus)); return <tr key={lead.id}><td><button className="lead-link" onClick={() => setSelected(lead)}>{lead.name}</button></td><td>{lead.source}</td><td><StatusPill tone="good">{lead.robawsMatchMethod}</StatusPill></td><td>{formatCurrency(sum(leadProjects, "valueInclVat"))}</td><td>{leadProjects.map(project => project.status).filter(Boolean).join(", ") || "—"}</td><td>{formatCurrency(leadInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0))}</td><td>{formatCurrency(sum(leadInvoices, "paidTotal"))}</td><td><Attribution value={lead.attributionLevel} /></td></tr>; })}</tbody></table></div> : <EmptyState title="No verified clients yet" body="A lead appears here after an EMAIL+PHONE, EMAIL, PHONE or unique exact NAME match plus commercial evidence in ROBAWS. Date-conflict clients stay outside marketing attribution." />}
     </section>
 
     <section className="attribution-strip" aria-labelledby="attribution-quality"><div><p className="sales-kicker">07 · Attribution quality</p><h2 id="attribution-quality">Can this revenue be trusted?</h2></div><Diagnostic label="Total CRM leads" value={filteredLeads.length} /><Diagnostic label="Matched to ROBAWS" value={matchedLeads.length} /><Diagnostic label="Unmatched" value={filteredLeads.filter(lead => !verifiedMethods.has(lead.robawsMatchMethod) && lead.robawsMatchMethod !== "AMBIGUOUS").length} /><Diagnostic label="Ambiguous" value={ambiguous} /><Diagnostic label="Verified clients" value={verifiedClients.length} /><Diagnostic label="Date conflicts" value={dateConflicts} warn={dateConflicts > 0} /></section>
@@ -106,7 +106,7 @@ function buildSourceRows(leads: Lead[], offers: CommercialOffer[], projects: Com
     const sourceInvoices = invoices.filter(invoice => invoice.source === source && !hasDateConflict(invoice.attributionStatus));
     const costs = sourceLeads.map(lead => lead.acquisitionCost);
     const cost = costs.length > 0 && costs.every(value => value !== null) ? costs.reduce<number>((total, value) => total + Number(value), 0) : null;
-    return { source, leads: sourceLeads.length, matched: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod)).length, offers: sourceOffers.length, openValue: sum(sourceOffers.filter(offer => offer.isOpen), "priceInclVat"), rejectedValue: sum(sourceOffers.filter(offer => offer.isRejected), "priceInclVat"), acceptedValue: sum(sourceProjects, "valueInclVat"), clients: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON").length, invoiced: sourceInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0), paid: sum(sourceInvoices, "paidTotal"), cost };
+    return { source, leads: sourceLeads.length, matched: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod)).length, offers: sourceOffers.length, openValue: sum(sourceOffers.filter(offer => offer.isOpen), "priceInclVat"), rejectedValue: sum(sourceOffers.filter(offer => offer.isRejected), "priceInclVat"), acceptedValue: sum(sourceProjects, "valueInclVat"), clients: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON" && !hasDateConflict(lead.attributionLevel)).length, invoiced: sourceInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0), paid: sum(sourceInvoices, "paidTotal"), cost };
   }).sort((a, b) => b.paid - a.paid || b.acceptedValue - a.acceptedValue || b.leads - a.leads);
 }
 
@@ -133,6 +133,12 @@ function LeadDrawer({ lead, offers, projects, invoices, onClose }: { lead: Lead;
 
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="drawer-section"><h3>{title}</h3><div>{children}</div></section>; }
 function DrawerRow({ label, value }: { label: string; value: string }) { return <div className="drawer-row"><span>{label}</span><strong>{value || "—"}</strong></div>; }
+function hasReachedVisit(lead: Lead) {
+  const status = lead.crmStatus.trim().toLowerCase().replace(/\s+/g, " ");
+  const stage = lead.stage.trim().toLowerCase();
+  return ["visit completed", "quote sent", "won"].includes(stage) ||
+    ["visited offerte to be done", "offer sent", "email offerte", "signed", "offerte afgekeurd"].includes(status);
+}
 function hasDateConflict(value: string) { return value.includes("DATE_CONFLICT"); }
 function sum<T>(rows: T[], key: keyof T) { return rows.reduce((total, row) => total + Number(row[key] ?? 0), 0); }
 function rate(part: number, total: number) { return total ? `${new Intl.NumberFormat("nl-BE", { maximumFractionDigits: 1 }).format((part / total) * 100)}%` : "—"; }
