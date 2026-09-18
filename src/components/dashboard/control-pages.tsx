@@ -23,6 +23,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
     { label:"Appointments", value:appointments, note:"Booked appointment evidence" },
     { label:"Visits", value:completedVisits, note:"Completed / post-visit evidence" },
     { label:"Offers sent", value:sentOffers, note:"ROBAWS sent date present" },
+    { label:"Accepted", value:summary.acceptedOffers, note:"Accepted commercial offer" },
     { label:"CRM signed", value:summary.crmSigned, note:"Monday status = signed" },
     { label:"ROBAWS clients", value:commercialClients, note:"Commercially confirmed" },
   ];
