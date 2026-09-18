@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { calculateKpis, formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
+import { buildFunnelSummary } from "@/lib/metrics/client-funnel";
 import { TrendChart } from "./charts";
 import { Card, KpiCard, SectionHeader } from "./ui";
 
@@ -13,8 +14,9 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
   const [metric, setMetric] = useState<"spend" | "leads" | "qualified" | "revenue" | "cpl" | "cac" | "roas">("revenue");
   const { metrics, previous } = data;
   const kpi = calculateKpis(metrics);
+  const commercial = buildFunnelSummary(data);
   const funnel = [
-    ["Leads", metrics.leads], ["Qualified", metrics.qualified], ["Visits", metrics.visits], ["Quotes", metrics.quotes], ["Won", metrics.won],
+    ["Leads", commercial.leads], ["Unique", commercial.uniquePeople], ["Qualified", commercial.qualified], ["Visits", commercial.visits], ["Offers", commercial.offersSent], ["Accepted", commercial.acceptedOffers], ["CRM signed", commercial.crmSigned], ["Verified", commercial.verifiedProjects],
   ] as const;
   const attributionMissing = data.dataHealth.missingCampaign;
   const meta = data.channels.find(c => c.channel === "Meta Ads");
@@ -23,13 +25,13 @@ export function OverviewPage({ data }: { data: CompanyDataset }) {
   return <div className="space-y-6">
     <div className="kpi-grid border-l border-t border-[var(--line)]">
       <KpiCard label="Ad spend" value={formatCurrency(metrics.spend, true)} delta={delta(metrics.spend, previous.spend)} meta="Tracked paid media"/>
-      <KpiCard label="CRM leads" value={formatNumber(metrics.leads)} meta="People recorded in CRM"/>
-      <KpiCard label="Not relevant" value={formatNumber(metrics.notRelevant ?? 0)} meta={`${formatPercent(percentage(metrics.notRelevant ?? 0, metrics.leads))} of leads`}/>
-      <KpiCard label="Visited" value={formatNumber(metrics.visits)} meta={`${formatPercent(percentage(metrics.visits, metrics.leads))} reached visit / offer stage`}/>
-      <KpiCard label="Clients" value={formatNumber(metrics.won)} delta={delta(metrics.won, previous.won)} meta={`${formatPercent(kpi.leadToSaleRate)} lead → client`}/>
-      <KpiCard label="Cost per lead" value={formatCurrency(kpi.cpl)} meta="Tracked spend / CRM leads"/>
-      <KpiCard label="Cost per client" value={formatCurrency(kpi.cac)} meta="Tracked spend / verified clients"/>
-      <KpiCard label="Attributed revenue" value={formatCurrency(metrics.revenue, true)} delta={delta(metrics.revenue, previous.revenue)} meta={kpi.roas === null ? "No ROAS yet" : `${formatNumber(kpi.roas)}× ROAS`}/>
+      <KpiCard label="CRM leads" value={formatNumber(commercial.leads)} meta={formatNumber(commercial.uniquePeople) + " unique people"}/>
+      <KpiCard label="Not relevant" value={formatNumber(metrics.notRelevant ?? 0)} meta={formatPercent(percentage(metrics.notRelevant ?? 0, commercial.leads)) + " of leads"}/>
+      <KpiCard label="Visits" value={formatNumber(commercial.visits)} meta={formatPercent(percentage(commercial.visits, commercial.leads)) + " of leads"}/>
+      <KpiCard label="Offers sent" value={formatNumber(commercial.offersSent)} meta={formatCurrency(commercial.quotedValue) + " quoted"}/>
+      <KpiCard label="Open pipeline" value={formatCurrency(commercial.openPipelineValue, true)} meta={formatNumber(commercial.openOffers) + " open offers"}/>
+      <KpiCard label="Verified clients" value={formatNumber(commercial.verifiedProjects)} meta={formatPercent(percentage(commercial.verifiedProjects, commercial.leads)) + " lead → verified"}/>
+      <KpiCard label="Attributed revenue" value={formatCurrency(commercial.verifiedRevenue, true)} meta={kpi.roas === null ? "No ROAS yet" : formatNumber(kpi.roas) + "× ROAS"}/>
     </div>
 
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,.8fr)]">
