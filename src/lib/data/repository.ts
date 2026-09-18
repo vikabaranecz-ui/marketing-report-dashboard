@@ -423,6 +423,67 @@ function mapLeads(
   });
 }
 
+function statusKey(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isNotRelevantLead(lead: Pick<RawLead, "crm_status" | "sales_stage">) {
+  const status = statusKey(lead.crm_status);
+  return [
+    "verkeerde regio",
+    "wrong region",
+    "onjuiste contactgegevens",
+    "verkeerde nummer",
+    "niet interessant",
+    "geen interesse",
+  ].includes(status);
+}
+
+function hasReachedVisit(lead: Pick<RawLead, "crm_status" | "sales_stage">) {
+  if (["visit_completed", "quote_sent", "won"].includes(lead.sales_stage)) return true;
+  return [
+    "visited offerte to be done",
+    "offer sent",
+    "email offerte",
+    "signed",
+    "offerte afgekeurd",
+  ].includes(statusKey(lead.crm_status));
+}
+
+function isSignedStatus(value: string | null | undefined) {
+  return statusKey(value) === "signed";
+}
+
+function isQualifiedLead(lead: Pick<RawLead, "crm_status" | "sales_stage">) {
+  return !isNotRelevantLead(lead) && [
+    "qualified",
+    "visit_booked",
+    "visit_completed",
+    "quote_sent",
+    "won",
+  ].includes(lead.sales_stage);
+}
+
+function potentialDuplicateCount(rows: RawLead[]) {
+  const seenEmails = new Set<string>();
+  const seenPhones = new Set<string>();
+  let duplicates = 0;
+
+  for (const row of [...rows].sort((a,b)=>a.created_at.localeCompare(b.created_at))) {
+    const email = String(row.email ?? "").trim().toLowerCase();
+    const phone = String(row.phone ?? "").replace(/\D/g, "");
+    const duplicate = Boolean(
+      (email && seenEmails.has(email)) ||
+      (phone.length >= 8 && seenPhones.has(phone))
+    );
+    if (duplicate) duplicates += 1;
+    if (email) seenEmails.add(email);
+    if (phone.length >= 8) seenPhones.add(phone);
+  }
+
+  return duplicates;
+}
+
 function isQuoteOutcomeStatus(
   value: string | null,
 ) {
@@ -524,3 +585,55 @@ function providerName(provider:string){return({meta:"Meta Ads",google_ads:"Googl
 function integrationResource(provider:string,configuration:Record<string,unknown>){const keys=({meta:["ad_account_name","ad_account_id"],google_ads:["customer_name","customer_id"],ga4:["property_name","property_id"],search_console:["site_url"],google_business:["location_name","location_id"],monday:["board_name","board_id"],hubspot:["portal_name","portal_id"],robaws:["account_name"],website_forms:["endpoint_name"]} as Record<string,string[]>)[provider]??[];for(const key of keys){const value=configuration?.[key];if(typeof value==="string"&&value.trim())return value;}return "Not selected";}
 function metaPermissionStatus(provider:string,configuration:Record<string,unknown>):Integration["metaPermissionStatus"]{if(provider!=="meta")return null;const value=configuration?.meta_permission_status;return value==="Ready"||value==="Missing permissions"||value==="App Review / Advanced Access required"?value:null;}
 function metaMissingPermissions(provider:string,configuration:Record<string,unknown>){if(provider!=="meta"||!Array.isArray(configuration?.meta_missing_permissions))return[];return configuration.meta_missing_permissions.filter((value):value is string=>typeof value==="string");}
+function dashboardPeriod(month: string): DashboardPeriod {
+  const today = brusselsDate(new Date());
+  const year = today.slice(0,4);
+  const normalized = /^\d{4}-\d{2}$/.test(month) ? month : "ytd";
+
+  if (normalized === "ytd") {
+    return {
+      selectedMonth: "ytd",
+      fromDate: `${year}-01-01`,
+      toDate: today,
+      fromIso: `${year}-01-01T00:00:00.000Z`,
+      toIso: `${today}T23:59:59.999Z`,
+    };
+  }
+
+  const [selectedYear, selectedMonth] = normalized.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(selectedYear, selectedMonth, 0)).getUTCDate();
+  const fromDate = `${normalized}-01`;
+  const monthEnd = `${normalized}-${String(lastDay).padStart(2,"0")}`;
+  const toDate = monthEnd > today ? today : monthEnd;
+
+  return {
+    selectedMonth: normalized,
+    fromDate,
+    toDate,
+    fromIso: `${fromDate}T00:00:00.000Z`,
+    toIso: `${toDate}T23:59:59.999Z`,
+  };
+}
+
+function availableDashboardMonths() {
+  const today = brusselsDate(new Date());
+  const year = Number(today.slice(0,4));
+  const currentMonth = Number(today.slice(5,7));
+  const months = ["ytd"];
+  for (let month = 1; month <= currentMonth; month += 1) {
+    months.push(`${year}-${String(month).padStart(2,"0")}`);
+  }
+  return months.reverse();
+}
+
+function brusselsDate(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Brussels",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
