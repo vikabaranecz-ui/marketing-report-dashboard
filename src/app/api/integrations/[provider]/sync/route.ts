@@ -15,6 +15,9 @@ export const runtime = "nodejs";
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 type StandardSyncResult = {
   recordsImported: number;
+  clientsImported?: number;
+  clientsMatched?: number;
+  clientsUnmatched?: number;
   leadsImported: number;
   leadsMatched?: number;
   dealsImported: number;
@@ -260,7 +263,7 @@ function successMessage(provider: "meta" | "google_ads" | "ga4" | "search_consol
   const standard = result as StandardSyncResult;
 
   if (provider === "robaws") {
-    return `ROBAWS synced successfully: ${standard.leadsMatched ?? standard.leadsImported} matched leads · ${standard.quotesImported ?? 0} offers · ${standard.projectsImported} projects · ${standard.invoicesImported ?? 0} invoices · ${standard.revenueImported} revenue records.`;
+    return `ROBAWS synced successfully: ${standard.clientsImported ?? 0} clients (${standard.clientsMatched ?? 0} matched, ${standard.clientsUnmatched ?? 0} unmatched) · ${standard.leadsMatched ?? standard.leadsImported} matched CRM leads · ${standard.quotesImported ?? 0} offers · ${standard.projectsImported} projects · ${standard.invoicesImported ?? 0} invoices.`;
   }
 
   return `${providerCatalog[provider].name} synced successfully: ${standard.leadsImported} leads · ${standard.dealsImported} deals · ${standard.projectsImported} projects · ${standard.revenueImported} revenue records.`;
@@ -334,6 +337,9 @@ function standardSyncMetadata(
   return {
     trigger: "manual",
     provider,
+    clientsImported: result.clientsImported ?? 0,
+    clientsMatched: result.clientsMatched ?? 0,
+    clientsUnmatched: result.clientsUnmatched ?? 0,
     leadsImported: result.leadsImported,
     leadsMatched:
       result.leadsMatched ?? result.leadsImported,
