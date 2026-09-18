@@ -74,7 +74,7 @@ type RawIntegration = { id:string; provider:Integration["provider"]; status:"con
 
 async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, company: Company, period: DashboardPeriod): Promise<CompanyDataset> {
   const { fromIso, toIso, fromDate, toDate } = period;
-  const [metricsRes, leadsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, integrationsRes] = await Promise.all([
+  const [metricsRes, leadsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes] = await Promise.all([
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
     supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", await accessibleLeadIds(supabase, company.id, fromIso, toIso)),
@@ -86,9 +86,10 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     supabase.from("campaigns").select("id,name,channel_id,marketing_channels(name)").eq("company_id",company.id),
     supabase.from("website_metrics").select("company_id,date,users,sessions,new_users,engaged_sessions,form_submissions,whatsapp_clicks,phone_clicks,quote_requests").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("seo_metrics").select("impressions,clicks,position_sum,is_branded").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
+    supabase.from("gbp_metrics").select("profile_views,website_clicks,calls,direction_requests,messages,searches,reviews,rating_sum").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("reporting_integration_connections").select("id,provider,status,configuration,error_message,last_successful_sync,last_attempted_sync,sync_logs(records_imported)").eq("company_id",company.id),
   ]);
-  const firstError = [metricsRes,leadsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,integrationsRes].find(result => result.error)?.error;
+  const firstError = [metricsRes,leadsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
@@ -100,6 +101,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawCrmDeals = (crmDealsRes.data ?? []) as unknown as RawCrmDeal[];
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? []) as unknown as RawSeo[];
+  const rawGbp = (gbpRes.data ?? []) as unknown as RawGbp[];
   // Keep commercial truth visible, but only use documents that are safe to
   // attribute to the CRM lead for marketing/source performance.
   const attributableQuotes = rawQuotes.filter(quote => !isDateConflict(quote.attribution_status));
