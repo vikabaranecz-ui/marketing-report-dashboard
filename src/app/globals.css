@@ -116,8 +116,51 @@ tbody tr:hover { background: #f8f8f4; }
 .drawer-section{padding:1.35rem 0;border-bottom:1px solid var(--line)}.drawer-section h3{margin-bottom:.8rem;color:var(--muted);font-size:.67rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.drawer-row{display:grid;grid-template-columns:135px minmax(0,1fr);gap:1rem;padding:.35rem 0;font-size:.78rem}.drawer-row span{color:var(--muted)}.drawer-row strong{overflow-wrap:anywhere;font-weight:650}.drawer-empty{color:var(--muted);font-size:.78rem}
 .evidence-record{border-top:1px solid var(--line);padding:.8rem 0}.evidence-record:first-child{border-top:0;padding-top:0}.evidence-record > div{display:flex;align-items:center;justify-content:space-between;gap:.7rem}.evidence-record > p{margin:.45rem 0;color:var(--muted);font-size:.73rem;line-height:1.5}
 
+
+/* Marketing control center */
+.story-chain { display:grid; grid-template-columns:repeat(8,minmax(130px,1fr)); overflow-x:auto; background:white; }
+.story-stage { min-height:138px; border-right:1px solid var(--line); padding:1rem; }.story-stage:last-child{border-right:0}
+.story-stage span { color:var(--muted); font-size:.66rem; font-weight:800; letter-spacing:.075em; text-transform:uppercase; }
+.story-stage svg { color:var(--line-strong); }
+.story-stage strong { display:block; margin-top:1.15rem; font-size:1.55rem; font-weight:720; letter-spacing:-.05em; white-space:nowrap; }
+.story-stage small { display:block; margin-top:.5rem; color:var(--muted); font-size:.68rem; line-height:1.4; }
+
+.economics-grid { display:grid; grid-template-columns:repeat(7,minmax(120px,1fr)); overflow-x:auto; border:1px solid var(--line); }
+.economy-cell { min-height:118px; border-right:1px solid var(--line); background:white; padding:.9rem; }.economy-cell:last-child{border-right:0}
+.economy-cell span { color:var(--muted); font-size:.65rem; font-weight:800; letter-spacing:.07em; text-transform:uppercase; }
+.economy-cell strong { display:block; margin-top:.9rem; font-size:1.25rem; letter-spacing:-.04em; }
+.economy-cell small { display:block; margin-top:.4rem; color:var(--muted); font-size:.65rem; line-height:1.4; }
+
+.money-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; border-bottom:1px solid var(--line); padding:.75rem .1rem; font-size:.82rem; }
+.money-row span { color:var(--muted); }.money-row strong{font-size:.95rem}.money-row-accent{background:var(--accent-soft);margin:0 -.5rem;padding:.8rem .6rem;color:var(--ink)}.money-row-accent span{color:var(--ink)}
+.trust-card { border:1px solid var(--line); background:white; padding:.9rem; }.trust-card strong{font-size:.78rem}.trust-card p{margin-top:.45rem;color:var(--muted);font-size:.7rem;line-height:1.45}
+
+.control-funnel { display:grid; grid-template-columns:repeat(7,minmax(145px,1fr)); overflow-x:auto; background:white; }
+.control-funnel-stage { min-height:155px; border-right:1px solid var(--line); padding:1rem; }.control-funnel-stage:last-child{border-right:0}
+.control-funnel-stage > span { color:var(--muted); font-size:.66rem; font-weight:800; letter-spacing:.075em; text-transform:uppercase; }
+.control-funnel-stage > strong { display:block; margin-top:1rem; font-size:1.7rem; letter-spacing:-.05em; }
+.control-funnel-stage > small { display:block; margin-top:.4rem; min-height:30px; color:var(--muted); font-size:.67rem; line-height:1.35; }
+.control-funnel-stage > em { display:block; margin-top:.8rem; color:var(--ink); font-size:.72rem; font-style:normal; font-weight:750; }
+.transition-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; border-bottom:1px solid var(--line); padding:.78rem .2rem; }
+.transition-row div{display:flex;flex-direction:column;gap:.2rem}.transition-row strong{font-size:.8rem}.transition-row span{color:var(--muted);font-size:.68rem}.transition-row b{font-size:.9rem}
+.boundary-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line); border:1px solid var(--line); }
+.boundary-grid > div { background:white; padding:1.2rem; }.boundary-grid p{color:var(--muted);font-size:.66rem;font-weight:800;letter-spacing:.09em}.boundary-grid strong{display:block;margin-top:.6rem;font-size:1rem}.boundary-grid span{display:block;margin-top:.45rem;color:var(--muted);font-size:.74rem;line-height:1.5}
+
+.revenue-stage-grid { display:grid; grid-template-columns:repeat(6,minmax(150px,1fr)); overflow-x:auto; border:1px solid var(--line); background:white; }
+.revenue-stage { min-height:126px; border-right:1px solid var(--line); padding:1rem; }.revenue-stage:last-child{border-right:0;background:var(--accent-soft)}
+.revenue-stage span { color:var(--muted); font-size:.66rem; font-weight:800; letter-spacing:.075em; text-transform:uppercase; }
+.revenue-stage strong { display:block; margin-top:1rem; font-size:1.5rem; letter-spacing:-.05em; }
+.revenue-stage small { display:block; margin-top:.45rem; color:var(--muted); font-size:.68rem; }
+
+.trust-score { display:flex; align-items:end; gap:.8rem; border-bottom:1px solid var(--line); padding-bottom:1rem; }
+.trust-score strong { font-size:3rem; letter-spacing:-.07em; line-height:.9; }.trust-score span{max-width:130px;color:var(--muted);font-size:.72rem;line-height:1.35}
+.health-check { display:flex; align-items:flex-start; gap:.7rem; border-bottom:1px solid var(--line); padding:.7rem 0; }.health-check:last-child{border-bottom:0}
+.health-check svg { margin-top:.1rem; color:#a97812; }.health-check strong{display:block;font-size:.78rem}.health-check span{display:block;margin-top:.2rem;color:var(--muted);font-size:.68rem}
+.wide-decision-table { min-width:1850px; }
+
 @media (max-width: 1180px) { .kpi-grid-six{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
 @media (max-width: 1280px) { .sales-metric{grid-column:span 3}.sales-metric-money{grid-column:span 3}.attribution-strip{grid-template-columns:repeat(3,1fr)}.attribution-strip>div{border-bottom:1px solid var(--line)} }
+@media (max-width: 900px) { .boundary-grid{grid-template-columns:1fr}.story-chain,.control-funnel,.revenue-stage-grid,.economics-grid{scroll-snap-type:x proximity}.story-stage,.control-funnel-stage,.revenue-stage,.economy-cell{scroll-snap-align:start} }
 @media (max-width: 760px) {
   .sidebar { position: sticky; top: 0; width: 100%; height: auto; max-height: none; flex-direction: row; overflow-x: auto; }
   .sidebar > div:first-child,.sidebar > div:last-child { display:none; }.sidebar nav{display:flex;flex:none;padding:.45rem}.nav-link{min-height:38px;white-space:nowrap}.nav-link span:last-child{display:none}
