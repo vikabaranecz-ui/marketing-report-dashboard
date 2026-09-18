@@ -41,8 +41,8 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
   const stages=[
     {label:"Spend",value:formatCurrency(data.metrics.spend,true),note:"Tracked paid media"},
-    {label:"CRM leads",value:formatNumber(data.metrics.leads),note:formatPercent(percentage(data.metrics.qualified,data.metrics.leads))+" qualified"},
-    {label:"Qualified",value:formatNumber(data.metrics.qualified),note:"Marketing quality boundary"},
+    {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows"},
+    {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
     {label:"Visits",value:formatNumber(rows.filter(hasCompletedVisitEvidence).length),note:"Completed / post-visit evidence"},
     {label:"Offers sent",value:formatNumber(summary.offersSent),note:formatCurrency(summary.sentQuotedValue,true)+" sent value"},
     {label:"CRM signed",value:formatNumber(summary.crmSigned),note:"Monday status"},
@@ -65,9 +65,9 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
     <div className="kpi-grid border-l border-t border-[var(--line)]">
       <KpiCard label="Marketing spend" value={formatCurrency(data.metrics.spend,true)} delta={delta(data.metrics.spend,data.previous.spend)} meta="Target: not configured"/>
-      <KpiCard label="CRM leads" value={formatNumber(data.metrics.leads)} delta={delta(data.metrics.leads,data.previous.leads)} meta="Target: not configured"/>
-      <KpiCard label="Qualified leads" value={formatNumber(data.metrics.qualified)} delta={delta(data.metrics.qualified,data.previous.qualified)} meta={formatPercent(percentage(data.metrics.qualified,data.metrics.leads))+" of CRM leads"}/>
-      <KpiCard label="Visits" value={formatNumber(data.metrics.visits)} delta={delta(data.metrics.visits,data.previous.visits)} meta="Target: not configured"/>
+      <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(data.metrics.leads)+" CRM rows · target not configured"}/>
+      <KpiCard label="Qualified people" value={formatNumber(summary.qualified)} meta={formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"}/>
+      <KpiCard label="Visits" value={formatNumber(rows.filter(hasCompletedVisitEvidence).length)} meta="Deduplicated visit evidence"/>
       <KpiCard label="Won project value" value={formatCurrency(projectValue,true)} delta={delta(projectValue,data.previous.revenue)} meta={formatNumber(summary.attributableClients)+" attributable clients"}/>
       <KpiCard label="Open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" sent + open offers"}/>
       <KpiCard label="Invoiced" value={formatCurrency(invoiced,true)} meta="Net of credits"/>
