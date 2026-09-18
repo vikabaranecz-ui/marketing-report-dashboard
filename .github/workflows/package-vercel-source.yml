@@ -1,0 +1,42 @@
+name: Package Vercel Source
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build deployment manifest
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+          const tracked = execSync('git ls-files', { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+          const wanted = tracked.filter((file) =>
+            file.startsWith('src/') ||
+            file.startsWith('public/') ||
+            ['package.json','package-lock.json','tsconfig.json','next.config.ts','postcss.config.mjs','eslint.config.mjs'].includes(file)
+          ).filter((file) => file !== 'src/app/favicon.ico');
+          const files = wanted.map((file) => ({ file, data: fs.readFileSync(file, 'utf8') }));
+          fs.writeFileSync('/tmp/deploy-manifest.json', JSON.stringify({ commit: process.env.GITHUB_SHA, files }));
+          NODE
+      - name: Publish manifest branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B deploy-manifest
+          cp /tmp/deploy-manifest.json .deploy-manifest.json
+          git add .deploy-manifest.json
+          git commit -m "Package production source for direct deploy" || true
+          git push origin deploy-manifest --force
