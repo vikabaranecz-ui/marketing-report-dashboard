@@ -1,4 +1,4 @@
-import type { CommercialAppointment, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
+import type { CommercialAppointment, CommercialInvoice, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
 
 export type JourneyStage = "new" | "qualified" | "visit" | "offer" | "accepted" | "signed" | "verified" | "lost";
 
@@ -15,6 +15,7 @@ export const journeyStageMeta: Array<{ key: JourneyStage; label: string; descrip
 
 export type JourneyRow = {
   lead: Lead;
+  leadIds: string[];
   crmRecordCount: number;
   sourcesSeen: string[];
   stage: JourneyStage;
@@ -22,6 +23,7 @@ export type JourneyRow = {
   offers: CommercialOffer[];
   latestOffer: CommercialOffer | null;
   projects: CommercialProject[];
+  invoices: CommercialInvoice[];
   offerValue: number;
   sentOfferValue: number;
   openOfferValue: number;
@@ -184,6 +186,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   const appointments = data.commercialAppointments ?? [];
   const offers = (data.commercialOffers ?? []).filter(item => !hasDateConflict(item.attributionStatus));
   const projects = (data.commercialProjects ?? []).filter(item => !hasDateConflict(item.attributionStatus));
+  const invoices = (data.commercialInvoices ?? []).filter(item => !hasDateConflict(item.attributionStatus));
 
   return groupLeadsByIdentity(data.leads).map(group => {
     const lead = masterLead(group);
@@ -191,6 +194,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
     const leadAppointments = appointments.filter(item => leadIds.has(item.leadId));
     const leadOffers = offers.filter(item => leadIds.has(item.leadId));
     const leadProjects = projects.filter(item => leadIds.has(item.leadId));
+    const leadInvoices = invoices.filter(item => item.leadId !== null && leadIds.has(item.leadId));
     const currentOffer = latestOffer(leadOffers);
     const verifiedProject = leadProjects.some(project =>
       Number(project.valueInclVat ?? 0) > 0
@@ -220,6 +224,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
 
     return {
       lead,
+      leadIds: group.map(item => item.id),
       crmRecordCount: group.length,
       sourcesSeen: [...new Set(group.map(item => item.source || "Unattributed"))],
       stage,
@@ -227,6 +232,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       offers: leadOffers,
       latestOffer: currentOffer,
       projects: leadProjects,
+      invoices: leadInvoices,
       offerValue: leadOffers.reduce((sum, item) => sum + item.priceInclVat, 0),
       sentOfferValue: leadOffers.filter(item => Boolean(item.sentAt)).reduce((sum, item) => sum + item.priceInclVat, 0),
       openOfferValue: leadOffers.filter(item => item.isOpen && Boolean(item.sentAt)).reduce((sum, item) => sum + item.priceInclVat, 0),

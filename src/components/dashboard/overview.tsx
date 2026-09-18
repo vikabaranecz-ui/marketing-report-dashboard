@@ -1,215 +1,195 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Clock3, Database, TrendingUp } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
-import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
+import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
 import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
 
-export function OverviewPage({ data }: { data: CompanyDataset }) {
-  const rows = buildJourneyRows(data);
-  const summary = buildFunnelSummary(data);
-  const decisions = sourceDecisionRows(data, rows);
-  const signed = rows.filter(row => row.isSigned);
-  const offers = (data.commercialOffers ?? []).filter(offer => !hasDateConflict(offer.attributionStatus));
-  const openOffers = offers.filter(offer => offer.isOpen).sort((a,b) => b.priceInclVat - a.priceInclVat);
-  const openValue = openOffers.reduce((sum,offer) => sum + offer.priceInclVat,0);
-  const invoices = (data.commercialInvoices ?? []).filter(invoice => !hasDateConflict(invoice.attributionStatus));
-  const paid = invoices.reduce((sum,invoice) => sum + invoice.paidTotal,0);
-  const matchedPeople = rows.filter(row => row.lead.robawsClientId !== "—").length;
-  const commercialClients = data.commercialClients ?? [];
-  const unmatchedRobaws = commercialClients.filter(client => !client.matchedLeadId);
-  const unmatchedWon = unmatchedRobaws.filter(client => client.commercialStatus === "CLIENT_WON");
-  const metaDecision = decisions.find(row => row.source === "Meta Ads / Facebook");
-  const metaRoas = metaDecision?.roas ?? null;
+function delta(current:number,previous:number){return previous===0?null:((current-previous)/previous)*100}
+
+export function OverviewPage({data}:{data:CompanyDataset}) {
+  const searchParams=useSearchParams();
+  const month=searchParams.get("month");
+  const scopedHref=(href:string)=>month?`${href}?month=${encodeURIComponent(month)}`:href;
+  const rows=buildJourneyRows(data);
+  const summary=buildFunnelSummary(data);
+  const sources=sourceBusinessRows(data,rows);
+  const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel"].includes(row.source));
+  const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
+  const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
+  const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
+  const sentOffers=offers.filter(item=>Boolean(item.sentAt));
+  const openOffers=sentOffers.filter(item=>item.isOpen);
+  const acceptedOffers=offers.filter(item=>item.isAccepted);
+  const paid=invoices.reduce((sum,item)=>sum+item.paidTotal,0);
+  const invoiced=invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0);
+  const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
+  const openValue=openOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
+  const acceptedValue=acceptedOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
+  const knownSpendRows=paidSources.filter(row=>row.spend!==null);
+  const coveredSpend=knownSpendRows.reduce((sum,row)=>sum+Number(row.spend??0),0);
+  const coveredLeads=knownSpendRows.reduce((sum,row)=>sum+row.leads,0);
+  const coveredQualified=knownSpendRows.reduce((sum,row)=>sum+row.qualified,0);
+  const coveredVisits=knownSpendRows.reduce((sum,row)=>sum+row.visits,0);
+  const coveredOffers=knownSpendRows.reduce((sum,row)=>sum+row.offers,0);
+  const coveredClients=knownSpendRows.reduce((sum,row)=>sum+row.attributedClients,0);
+  const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
+
+  const stages=[
+    {label:"Spend",value:formatCurrency(data.metrics.spend,true),note:"Tracked paid media"},
+    {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows"},
+    {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
+    {label:"Visits",value:formatNumber(rows.filter(hasCompletedVisitEvidence).length),note:"Completed / post-visit evidence"},
+    {label:"Offers sent",value:formatNumber(summary.offersSent),note:formatCurrency(summary.sentQuotedValue,true)+" sent value"},
+    {label:"CRM signed",value:formatNumber(summary.crmSigned),note:"Monday status"},
+    {label:"ROBAWS clients",value:formatNumber(summary.commercialClients),note:formatNumber(summary.attributableClients)+" attributable"},
+    {label:"Paid",value:formatCurrency(paid,true),note:"Commercial cash"},
+  ];
+
+  const actionItems=buildActionItems(data,rows,openOffers,paidSources);
+  const budgetCards=paidSources.map(source=>budgetConclusion(source));
 
   return <div className="space-y-6">
+    <Card className="overflow-hidden">
+      <div className="border-b border-[var(--line)] p-5">
+        <SectionHeader title="Is marketing producing business?" description="One chain from tracked spend to paid revenue. Detailed evidence lives in the drill-down pages."/>
+      </div>
+      <div className="story-chain">
+        {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
+      </div>
+    </Card>
+
     <div className="kpi-grid border-l border-t border-[var(--line)]">
-      <KpiCard label="Tracked ad spend" value={formatCurrency(data.metrics.spend,true)} meta="Only connected media spend" />
-      <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(summary.leads)+" CRM rows"} />
-      <KpiCard label="CRM signed" value={formatNumber(summary.crmSigned)} meta={formatPercent(percentage(summary.crmSigned,summary.uniquePeople))+" of unique leads"} />
-      <KpiCard label="ROBAWS clients" value={formatNumber(summary.commercialClients)} meta="Commercially confirmed" />
-      <KpiCard label="Attributed clients" value={formatNumber(summary.attributableClients)} meta="Safe to use for source ROI" />
-      <KpiCard label="Open offer value" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" open ROBAWS offers"} />
-      <KpiCard label="Paid cash" value={formatCurrency(paid,true)} meta="Date-conflict revenue excluded" />
-      <KpiCard label="Meta paid ROAS" value={metaRoas===null?"—":metaRoas.toFixed(2)+"×"} meta={metaDecision?.spend===null?"Spend missing":"Paid cash / tracked spend"} />
+      <KpiCard label="Marketing spend" value={formatCurrency(data.metrics.spend,true)} delta={delta(data.metrics.spend,data.previous.spend)} meta="Target: not configured"/>
+      <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(data.metrics.leads)+" CRM rows · target not configured"}/>
+      <KpiCard label="Qualified people" value={formatNumber(summary.qualified)} meta={formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"}/>
+      <KpiCard label="Visits" value={formatNumber(rows.filter(hasCompletedVisitEvidence).length)} meta="Deduplicated visit evidence"/>
+      <KpiCard label="Won project value" value={formatCurrency(projectValue,true)} delta={delta(projectValue,data.previous.revenue)} meta={formatNumber(summary.attributableClients)+" attributable clients"}/>
+      <KpiCard label="Open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" sent + open offers"}/>
+      <KpiCard label="Invoiced" value={formatCurrency(invoiced,true)} meta="Net of credits"/>
+      <KpiCard label="Paid" value={formatCurrency(paid,true)} meta="Cash received"/>
     </div>
 
     <Card className="p-5">
-      <SectionHeader title="Budget decision" description="This is the page to use when deciding what to increase, hold or fix." />
+      <SectionHeader title="Economics with complete cost coverage" description="Cost KPIs include only sources whose spend is actually available; missing spend never becomes €0."/>
+      <div className="economics-grid">
+        <Economy label="Covered spend" value={formatCurrency(coveredSpend)} note={knownSpendRows.map(row=>row.source).join(", ")||"No paid source fully covered"}/>
+        <Economy label="CPL" value={formatCurrency(safeDivide(coveredSpend,coveredLeads))} note={coveredLeads+" covered leads"}/>
+        <Economy label="Cost / qualified" value={formatCurrency(safeDivide(coveredSpend,coveredQualified))} note={coveredQualified+" qualified"}/>
+        <Economy label="Cost / visit" value={formatCurrency(safeDivide(coveredSpend,coveredVisits))} note={coveredVisits+" visits"}/>
+        <Economy label="Cost / offer" value={formatCurrency(safeDivide(coveredSpend,coveredOffers))} note={coveredOffers+" sent offers"}/>
+        <Economy label="CAC" value={formatCurrency(safeDivide(coveredSpend,coveredClients))} note={coveredClients+" attributable clients"}/>
+        <Economy label="Paid ROAS" value={coveredSpend?formatNumber(coveredPaid/coveredSpend)+"×":"—"} note={formatCurrency(coveredPaid)+" paid cash"}/>
+      </div>
+    </Card>
+
+    <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
+      <Card className="p-5">
+        <SectionHeader title="What requires action?" description="The dashboard states the issue; management should not have to calculate it manually."/>
+        <div className="space-y-3">
+          {actionItems.length?actionItems.map(item=><ActionItem key={item.title} {...item} href={scopedHref(item.href)}/>):<div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 size={18}/><strong>No critical action rule is triggered by the current evidence.</strong></div>}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <SectionHeader title="Revenue stages" description="Offer value, project value, invoiced and paid are different commercial states."/>
+        <div className="space-y-1">
+          <MoneyRow label="Total offered" value={sentOffers.reduce((sum,item)=>sum+item.priceInclVat,0)}/>
+          <MoneyRow label="Open pipeline" value={openValue}/>
+          <MoneyRow label="Accepted / contracted" value={acceptedValue}/>
+          <MoneyRow label="Project value" value={projectValue}/>
+          <MoneyRow label="Invoiced" value={invoiced}/>
+          <MoneyRow label="Paid" value={paid} accent/>
+        </div>
+        <Link href={scopedHref("/revenue")} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open revenue evidence <ArrowRight size={14}/></Link>
+      </Card>
+    </div>
+
+    <Card className="p-5">
+      <SectionHeader title="Budget conclusions" description="These rules use client and cash evidence, not lead volume or CTR alone."/>
       <div className="grid gap-4 lg:grid-cols-3">
-        <DecisionBox
-          tone="good"
-          title="Meta / Facebook Ads"
-          body={metaDecision?.spend
-            ? metaDecision.attributableClients === 1
-              ? `Tracked spend is ${formatCurrency(metaDecision.spend)} and attributed paid cash is ${formatCurrency(metaDecision.paid)} (${metaDecision.roas?.toFixed(2) ?? "—"}×). Positive evidence, but it rests on one attributable client. Increase only in small steps, not aggressively.`
-              : `Tracked spend is ${formatCurrency(metaDecision.spend)}. Use the source table below before changing budget.`
-            : "Meta spend is not available for this selection."}
-        />
-        <DecisionBox
-          tone="warn"
-          title="Google Ads"
-          body="Google Ads leads exist in CRM, but Google Ads spend is not currently present in the reporting facts. Do not compare CAC or ROAS against Meta until that spend is imported."
-        />
-        <DecisionBox
-          tone="warn"
-          title="LeadAngel"
-          body="LeadAngel produced signed and ROBAWS clients, but its acquisition cost is missing. Revenue evidence exists; ROI does not. Add the actual LeadAngel cost before increasing or reducing this source."
-        />
+        {budgetCards.map(card=><BudgetCard key={card.source} {...card}/>)}
       </div>
+      <Link href={scopedHref("/campaigns")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open full source & campaign economics <ArrowRight size={14}/></Link>
     </Card>
 
     <Card className="p-5">
-      <SectionHeader title="Source decision table" description="One row per first-touch source. Signed = Monday. Client = ROBAWS. Attributed client excludes date conflicts. Paid cash is used for ROI." />
-      <div className="table-scroll"><table>
-        <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Open offer €</th><th>Paid €</th><th>CPL</th><th>CAC</th><th>Paid ROAS</th><th>Action</th></tr></thead>
-        <tbody>{decisions.map(row => <tr key={row.source}>
-          <td className="font-semibold">{row.source}</td>
-          <td>{row.spend===null?"Missing":formatCurrency(row.spend)}</td>
-          <td>{row.leads}</td>
-          <td>{row.signed}</td>
-          <td>{row.commercialClients}</td>
-          <td>{row.attributableClients}</td>
-          <td>{formatCurrency(row.openValue)}</td>
-          <td className="font-semibold">{formatCurrency(row.paid)}</td>
-          <td>{row.spend===null?"—":formatCurrency(row.cpl)}</td>
-          <td>{row.cac===null?"—":formatCurrency(row.cac)}</td>
-          <td>{row.roas===null?"—":row.roas.toFixed(2)+"×"}</td>
-          <td><ActionPill action={row.action}/></td>
-        </tr>)}</tbody>
-      </table></div>
-    </Card>
-
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]">
-      <Card className="p-5">
-        <SectionHeader title="Signed client reconciliation" description="Why Monday signed and ROBAWS client counts differ." />
-        <div className="table-scroll"><table>
-          <thead><tr><th>Client</th><th>Source</th><th>Monday</th><th>ROBAWS</th><th>Attribution</th><th>Project value</th></tr></thead>
-          <tbody>{signed.map(row => <tr key={row.lead.id}>
-            <td className="font-semibold">{row.lead.name}</td>
-            <td>{row.lead.source}</td>
-            <td><StatusPill tone="good">signed</StatusPill></td>
-            <td><StatusPill tone={row.isCommercialClient?"good":row.lead.commercialStatus==="OFFER_SENT"?"warn":"neutral"}>{row.isCommercialClient?"CLIENT_WON":row.lead.commercialStatus||"No ROBAWS match"}</StatusPill></td>
-            <td>{row.isAttributableClient?<StatusPill tone="good">Attributable</StatusPill>:hasDateConflict(row.lead.attributionLevel)?<StatusPill tone="bad">Date conflict</StatusPill>:<StatusPill tone="neutral">Not confirmed</StatusPill>}</td>
-            <td>{row.projectValue?formatCurrency(row.projectValue):"—"}</td>
-          </tr>)}</tbody>
-        </table></div>
-      </Card>
-
-      <Card className="p-5">
-        <SectionHeader title="ROBAWS reconciliation" description="ROBAWS customers are stored independently so unmatched commercial clients cannot disappear." />
-        {commercialClients.length ? <div className="space-y-4">
-          <Fact label="ROBAWS clients imported" value={commercialClients.length} />
-          <Fact label="Matched to CRM" value={commercialClients.filter(client=>client.matchedLeadId).length} />
-          <Fact label="Unmatched to CRM" value={unmatchedRobaws.length} warn={unmatchedRobaws.length>0} />
-          <Fact label="Unmatched CLIENT_WON" value={unmatchedWon.length} warn={unmatchedWon.length>0} />
-          {unmatchedWon.length>0 && <div className="border-t border-[var(--line)] pt-4"><p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Needs attribution</p>{unmatchedWon.slice(0,8).map(client=><p key={client.id} className="mt-2 text-sm"><strong>{client.name}</strong> · paid {formatCurrency(client.paidTotal)}</p>)}</div>}
-        </div> : <div className="border border-dashed border-[var(--line)] bg-[var(--surface)] p-4 text-sm leading-6 text-[var(--muted)]">The previous ROBAWS sync stored only clients that matched a CRM lead. The new reconciliation table is ready; run ROBAWS sync once and this card will show the complete ROBAWS client list, including unmatched customers.</div>}
-      </Card>
-    </div>
-
-    <Card className="p-5">
-      <SectionHeader title="Open commercial opportunities" description="Highest-value ROBAWS offers still waiting for a final outcome." />
-      {openOffers.length ? <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Offer</th><th>Status</th><th>Value incl. VAT</th><th>Sent</th><th>Follow-up</th></tr></thead><tbody>
-        {openOffers.slice(0,15).map(offer => <tr key={offer.id}><td className="font-semibold">{offer.leadName}</td><td>{offer.source}</td><td>{offer.number}</td><td>{offer.status}</td><td className="font-semibold">{formatCurrency(offer.priceInclVat)}</td><td>{offer.sentAt?formatDate(offer.sentAt):"Not verified"}</td><td>{offer.followUpAt?formatDate(offer.followUpAt):"—"}</td></tr>)}
-      </tbody></table></div> : <p className="text-sm text-[var(--muted)]">No open ROBAWS offers are linked to this cohort.</p>}
-    </Card>
-
-    <Card className="p-5">
-      <SectionHeader title="Data that blocks a budget decision" description="Missing data is shown as a blocker instead of being treated as zero." />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Gap label="Google Ads spend" blocked={!data.channels.some(channel=>channel.channel==="Google Ads"&&channel.spend>0)} />
-        <Gap label="LeadAngel acquisition cost" blocked={decisions.some(row=>row.source==="LeadAngel"&&row.spend===null)} />
-        <Gap label="ROBAWS full client snapshot" blocked={commercialClients.length===0} />
-        <Gap label="CRM ↔ ROBAWS matches" blocked={matchedPeople < Math.min(summary.uniquePeople,50)} detail={matchedPeople+" people currently matched"} />
+      <SectionHeader title="Data trust" description="Performance conclusions are separated from data-quality blockers."/>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Trust label="Google Ads spend" ok={!paidSources.some(row=>row.source==="Google Ads"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="Google Ads"&&row.costState==="missing")?"Missing — no CAC/ROAS":"Available or no Google cohort"}/>
+        <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
+        <Trust label="Potential duplicates" ok={data.dataHealth.duplicates===0} detail={data.dataHealth.duplicates+" flagged"}/>
+        <Trust label="Signed reconciliation" ok={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length===0} detail={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length+" signed not ROBAWS-confirmed"}/>
       </div>
+      <Link href={scopedHref("/data-health")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
     </Card>
   </div>;
 }
 
-type DecisionRow = {
-  source:string;
-  spend:number|null;
-  leads:number;
-  signed:number;
-  commercialClients:number;
-  attributableClients:number;
-  openValue:number;
-  paid:number;
-  cpl:number|null;
-  cac:number|null;
-  roas:number|null;
-  action:"Scale cautiously"|"Hold"|"Do not increase"|"Fix spend tracking"|"Fix matching"|"Monitor";
-};
+function buildActionItems(data:CompanyDataset,rows:JourneyRow[],openOffers:NonNullable<CompanyDataset["commercialOffers"]>,sources:SourceBusinessRow[]) {
+  const items:Array<{title:string;body:string;tone:"bad"|"warn"|"good";href:string;icon:"clock"|"data"|"money"|"trend"}>=[];
+  const stale=openOffers.filter(item=>(item.daysWaiting??0)>7);
+  const staleValue=stale.reduce((sum,item)=>sum+item.priceInclVat,0);
+  if(stale.length)items.push({title:stale.length+" open offers are older than 7 days",body:formatCurrency(staleValue)+" of open commercial value needs review or follow-up.",tone:"bad",href:"/offers-pipeline",icon:"clock"});
+  const signedUnconfirmed=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
+  if(signedUnconfirmed.length)items.push({title:signedUnconfirmed.length+" signed leads are not confirmed as ROBAWS clients",body:"Reconcile the CRM and ROBAWS records before judging source CAC or revenue.",tone:"warn",href:"/data-health",icon:"data"});
+  const missingCost=sources.filter(row=>row.costState==="missing");
+  if(missingCost.length)items.push({title:"Paid-source spend is incomplete",body:missingCost.map(row=>row.source).join(", ")+" cannot be compared on CAC or ROAS yet.",tone:"warn",href:"/data-health",icon:"money"});
+  const visitsNoOffer=rows.filter(row=>hasCompletedVisitEvidence(row)&&!row.offers.length&&!row.isCommercialClient);
+  if(visitsNoOffer.length)items.push({title:visitsNoOffer.length+" visited leads have no ROBAWS offer linked",body:"Check quote creation / linking before assuming these opportunities were lost.",tone:"warn",href:"/funnel",icon:"trend"});
+  if(data.dataHealth.missingCampaign>0)items.push({title:data.dataHealth.missingCampaign+" leads are missing campaign attribution",body:"Campaign conclusions exclude or weaken these records.",tone:"warn",href:"/data-health",icon:"data"});
+  return items.slice(0,5);
+}
 
-function sourceDecisionRows(data:CompanyDataset, rows:JourneyRow[]):DecisionRow[] {
-  const invoices=(data.commercialInvoices??[]).filter(invoice=>!hasDateConflict(invoice.attributionStatus));
-  const groups=new Map<string,JourneyRow[]>();
-
-  for(const row of rows){
-    const key=decisionSource(row.lead.source);
-    const current=groups.get(key)??[];
-    current.push(row);
-    groups.set(key,current);
+function budgetConclusion(row:SourceBusinessRow){
+  const paidRoas=row.spend&&row.spend>0?row.paid/row.spend:null;
+  let action="Monitor";
+  let body="There is not enough commercial evidence for a budget change.";
+  let tone:"good"|"warn"|"bad"="warn";
+  if(row.costState==="missing"){
+    action="Fix spend tracking";
+    body=`${row.leads} leads, ${row.commercialClients} ROBAWS clients and ${formatCurrency(row.paid)} paid cash are visible, but acquisition cost is missing.`;
+  }else if(row.spend!==null&&row.attributedClients===0&&row.openValue>0){
+    action="Hold";
+    body=`${formatCurrency(row.spend)} spent. No attributable client yet, but ${formatCurrency(row.openValue)} remains in open pipeline.`;
+  }else if(row.spend!==null&&row.attributedClients===0){
+    action="Do not increase";
+    tone="bad";
+    body=`${formatCurrency(row.spend)} spent with no attributable commercial client in the selected cohort.`;
+  }else if(row.spend!==null&&row.attributedClients===1&&paidRoas!==null&&paidRoas>=3){
+    action="Scale cautiously";
+    tone="good";
+    body=`${formatCurrency(row.spend)} spend → ${formatCurrency(row.paid)} paid cash (${formatNumber(paidRoas)}×), but the result is concentrated in one attributable client.`;
+  }else if(row.spend!==null&&row.attributedClients>1&&paidRoas!==null&&paidRoas>=3){
+    action="Evidence supports increase";
+    tone="good";
+    body=`${row.attributedClients} attributable clients and ${formatNumber(paidRoas)}× paid ROAS provide broader evidence than CPL alone.`;
+  }else if(row.spend!==null){
+    action="Hold / improve";
+    body=`${row.attributedClients} attributable clients, ${formatCurrency(row.openValue)} open pipeline and ${formatCurrency(row.paid)} paid cash from ${formatCurrency(row.spend)} spend.`;
   }
-
-  return [...groups.entries()].map(([source,group])=>{
-    const rawSources=new Set(group.map(row=>row.lead.source));
-    const sourceInvoices=invoices.filter(invoice=>rawSources.has(invoice.source));
-    const paid=sourceInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
-    const openValue=group.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isOpen).reduce((s,offer)=>s+offer.priceInclVat,0),0);
-    const spend=spendForDecisionSource(data,source,group);
-    const attributableClients=group.filter(row=>row.isAttributableClient).length;
-    const commercialClients=group.filter(row=>row.isCommercialClient).length;
-    const signed=group.filter(row=>row.isSigned).length;
-    const cpl=spend===null||group.length===0?null:spend/group.length;
-    const cac=spend===null||attributableClients===0?null:spend/attributableClients;
-    const roas=spend===null||spend===0?null:paid/spend;
-    const paidSource=["Meta Ads / Facebook","Google Ads","LeadAngel"].includes(source);
-    let action:DecisionRow["action"]="Monitor";
-    if (paidSource&&spend===null) action="Fix spend tracking";
-    else if (signed>0&&commercialClients===0) action="Fix matching";
-    else if (spend!==null&&attributableClients===0&&openValue>0) action="Hold";
-    else if (spend!==null&&attributableClients===0) action="Do not increase";
-    else if (spend!==null&&roas!==null&&roas>=3) action="Scale cautiously";
-    return {source,spend,leads:group.length,signed,commercialClients,attributableClients,openValue,paid,cpl,cac,roas,action};
-  }).sort((a,b)=>(b.paid-a.paid)||(b.openValue-a.openValue)||(b.leads-a.leads));
+  return {source:row.source,action,body,tone};
 }
 
-function decisionSource(source:string){
-  const lower=source.toLowerCase();
-  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")) return "Meta Ads / Facebook";
-  if(lower.includes("google ads")) return "Google Ads";
-  if(lower.includes("leadangel")) return "LeadAngel";
-  if(lower.includes("web calculator")) return "Web calculator";
-  if(lower==="web"||lower.includes("website")) return "Web";
-  return source||"Unattributed";
+function hasCompletedVisitEvidence(row:JourneyRow){
+  const status=row.lead.crmStatus.trim().toLowerCase().replace(/\s+/g," ");
+  const stage=row.lead.stage.trim().toLowerCase();
+  return row.appointments.some(item=>Boolean(item.completedAt))||stage.includes("visit completed")||stage.includes("quote")||stage.includes("won")||["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
 }
-
-function spendForDecisionSource(data:CompanyDataset,source:string,rows:JourneyRow[]) {
-  const channelName=source==="Meta Ads / Facebook"
-    ?"Meta Ads"
-    : source==="Google Ads"
-      ?"Google Ads"
-      : null;
-  if(channelName){
-    const channel=data.channels.find(item=>item.channel===channelName);
-    return channel&&channel.spend>0?channel.spend:null;
-  }
-  const costs=rows.map(row=>row.lead.acquisitionCost);
-  if(costs.length&&costs.every(value=>value!==null)) return costs.reduce<number>((sum,value)=>sum+Number(value),0);
-  return null;
+function ActionItem({title,body,tone,href,icon}:{title:string;body:string;tone:"bad"|"warn"|"good";href:string;icon:"clock"|"data"|"money"|"trend"}){
+  const Icon=icon==="clock"?Clock3:icon==="data"?Database:icon==="money"?CircleDollarSign:TrendingUp;
+  const cls=tone==="bad"?"border-rose-200 bg-rose-50 text-rose-900":tone==="good"?"border-emerald-200 bg-emerald-50 text-emerald-900":"border-amber-200 bg-amber-50 text-amber-900";
+  return <Link href={href} className={`flex gap-3 border p-4 ${cls}`}><Icon size={18} className="mt-0.5 shrink-0"/><div><strong className="text-sm">{title}</strong><p className="mt-1 text-sm leading-5 opacity-80">{body}</p></div><ArrowRight size={15} className="ml-auto mt-0.5 shrink-0"/></Link>;
 }
-
-function DecisionBox({title,body,tone}:{title:string;body:string;tone:"good"|"warn"}) {
-  return <div className={`border p-4 ${tone==="good"?"border-emerald-200 bg-emerald-50":"border-amber-200 bg-amber-50"}`}><div className="flex items-center gap-2">{tone==="good"?<CheckCircle2 size={16}/>:<AlertTriangle size={16}/>}<strong className="text-sm">{title}</strong></div><p className="mt-2 text-sm leading-6">{body}</p></div>;
+function BudgetCard({source,action,body,tone}:{source:string;action:string;body:string;tone:"good"|"warn"|"bad"}){
+  const cls=tone==="good"?"border-emerald-200 bg-emerald-50":tone==="bad"?"border-rose-200 bg-rose-50":"border-amber-200 bg-amber-50";
+  return <div className={`border p-4 ${cls}`}><div className="flex items-start justify-between gap-3"><strong className="text-sm">{source}</strong><StatusPill tone={tone}>{action}</StatusPill></div><p className="mt-3 text-sm leading-6">{body}</p></div>;
 }
-function ActionPill({action}:{action:DecisionRow["action"]}) {
-  const tone=action==="Scale cautiously"?"good":action==="Fix spend tracking"||action==="Fix matching"?"bad":action==="Hold"?"warn":"neutral";
-  return <StatusPill tone={tone}>{action}</StatusPill>;
-}
-function Fact({label,value,warn=false}:{label:string;value:number;warn?:boolean}){return <div className="flex items-center justify-between border-b border-[var(--line)] pb-3 text-sm"><span className="text-[var(--muted)]">{label}</span><strong className={warn?"text-amber-700":""}>{formatNumber(value)}</strong></div>}
-function Gap({label,blocked,detail}:{label:string;blocked:boolean;detail?:string}){return <div className="border border-[var(--line)] p-4"><div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${blocked?"bg-amber-500":"bg-emerald-500"}`}/><strong className="text-sm">{label}</strong></div><p className="mt-2 text-xs text-[var(--muted)]">{detail??(blocked?"Blocks confident budget comparison":"Available")}</p></div>}
+function Economy({label,value,note}:{label:string;value:string;note:string}){return <div className="economy-cell"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
+function MoneyRow({label,value,accent=false}:{label:string;value:number;accent?:boolean}){return <div className={`money-row ${accent?"money-row-accent":""}`}><span>{label}</span><strong>{formatCurrency(value)}</strong></div>}
+function Trust({label,ok,detail}:{label:string;ok:boolean;detail:string}){return <div className="trust-card"><div className="flex items-center gap-2">{ok?<CheckCircle2 size={16} className="text-emerald-700"/>:<AlertTriangle size={16} className="text-amber-700"/>}<strong>{label}</strong></div><p>{detail}</p></div>}
 function hasDateConflict(value:string|null|undefined){return String(value??"").toUpperCase().includes("DATE_CONFLICT")}
-function formatDate(value:string){const date=new Date(value);return new Intl.DateTimeFormat("nl-BE",{day:"2-digit",month:"short",year:"numeric",timeZone:"Europe/Brussels"}).format(date)}
