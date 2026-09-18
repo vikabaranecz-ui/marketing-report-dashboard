@@ -199,13 +199,13 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   </div>;
 }
 
-type SourceBusinessRow = {
+export type SourceBusinessRow = {
   source:string; spend:number|null; costState:"known"|"missing"|"not-applicable";
   leads:number; qualified:number; visits:number; offers:number; sentValue:number; openValue:number;
   signed:number; commercialClients:number; attributedClients:number; projectValue:number; paid:number;
 };
 
-function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):SourceBusinessRow[] {
+export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):SourceBusinessRow[] {
   const groups=new Map<string,JourneyRow[]>();
   for(const row of rows){
     const key=decisionSource(row.lead.source);
