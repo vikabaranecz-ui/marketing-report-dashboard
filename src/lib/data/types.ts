@@ -52,6 +52,7 @@ export type CommercialOffer = {
   leadName: string;
   source: string;
   date: string;
+  sentAt: string | null;
   number: string;
   status: string;
   priceInclVat: number;
