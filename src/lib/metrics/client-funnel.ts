@@ -25,6 +25,7 @@ export type JourneyRow = {
   acceptedOfferValue: number;
   projectValue: number;
   hasVisit: boolean;
+  isQualified: boolean;
   isSigned: boolean;
   isNotRelevant: boolean;
   lostReason: string;
@@ -97,21 +98,76 @@ function latestOffer(offers: CommercialOffer[]) {
   return [...offers].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
 }
 
-function uniquePersonCount(leads: Lead[]) {
-  const identities = new Set<string>();
-  for (const lead of leads) {
-    const email = lead.email.trim().toLowerCase();
-    const phone = lead.phone.replace(/\D/g, "");
-    const name = lead.name
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim()
-      .replace(/\s+/g, " ");
-    identities.add(email ? `email:${email}` : phone.length >= 8 ? `phone:${phone}` : `name:${name || lead.id}`);
+function identityParts(lead: Lead) {
+  const email = lead.email.trim().toLowerCase();
+  const phoneDigits = lead.phone.replace(/\D/g, "");
+  const phone = phoneDigits.length >= 8 ? phoneDigits : "";
+  const normalizedName = lead.name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  const name = normalizedName.split(" ").filter(Boolean).length >= 2 && normalizedName.length >= 6
+    ? normalizedName
+    : "";
+  return { email, phone, name };
+}
+
+function groupLeadsByIdentity(leads: Lead[]) {
+  type Group = { leads: Lead[]; emails: Set<string>; phones: Set<string>; names: Set<string> };
+  const groups: Group[] = [];
+
+  for (const lead of [...leads].sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+    const keys = identityParts(lead);
+    const matches = groups.filter(group =>
+      Boolean(
+        (keys.email && group.emails.has(keys.email))
+        || (keys.phone && group.phones.has(keys.phone))
+        || (keys.name && group.names.has(keys.name))
+      ),
+    );
+
+    const target = matches[0] ?? { leads: [], emails: new Set<string>(), phones: new Set<string>(), names: new Set<string>() };
+    if (matches.length === 0) groups.push(target);
+
+    if (matches.length > 1) {
+      for (const duplicateGroup of matches.slice(1)) {
+        target.leads.push(...duplicateGroup.leads);
+        duplicateGroup.emails.forEach(value => target.emails.add(value));
+        duplicateGroup.phones.forEach(value => target.phones.add(value));
+        duplicateGroup.names.forEach(value => target.names.add(value));
+        groups.splice(groups.indexOf(duplicateGroup), 1);
+      }
+    }
+
+    target.leads.push(lead);
+    if (keys.email) target.emails.add(keys.email);
+    if (keys.phone) target.phones.add(keys.phone);
+    if (keys.name) target.names.add(keys.name);
   }
-  return identities.size;
+
+  return groups.map(group => group.leads.sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)));
+}
+
+function masterLead(leads: Lead[]) {
+  const earliest = leads[0];
+  const latest = leads[leads.length - 1];
+  return {
+    ...latest,
+    id: earliest.id,
+    date: earliest.date,
+    source: earliest.source,
+    campaign: earliest.campaign,
+    ad: earliest.ad,
+    acquisitionCost: earliest.acquisitionCost,
+    attributionLevel: earliest.attributionLevel,
+    utm: earliest.utm,
+    name: earliest.name || latest.name,
+    email: earliest.email || latest.email,
+    phone: earliest.phone || latest.phone,
+  };
 }
 
 export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
@@ -119,26 +175,36 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   const offers = (data.commercialOffers ?? []).filter(item => !hasDateConflict(item.attributionStatus));
   const projects = (data.commercialProjects ?? []).filter(item => !hasDateConflict(item.attributionStatus));
 
-  return data.leads.map(lead => {
-    const leadAppointments = appointments.filter(item => item.leadId === lead.id);
-    const leadOffers = offers.filter(item => item.leadId === lead.id);
-    const leadProjects = projects.filter(item => item.leadId === lead.id);
+  return groupLeadsByIdentity(data.leads).map(group => {
+    const lead = masterLead(group);
+    const leadIds = new Set(group.map(item => item.id));
+    const leadAppointments = appointments.filter(item => leadIds.has(item.leadId));
+    const leadOffers = offers.filter(item => leadIds.has(item.leadId));
+    const leadProjects = projects.filter(item => leadIds.has(item.leadId));
     const currentOffer = latestOffer(leadOffers);
-    const verifiedProject = leadProjects.some(project => project.valueInclVat !== null || normalized(project.status).includes("won") || normalized(project.status).includes("project"));
-    const signed = isSigned(lead);
-    const notRelevant = isExplicitlyNotRelevant(lead);
-    const rejected = leadOffers.some(offer => offer.isRejected) || lead.commercialStatus === "OFFER_LOST";
+    const verifiedProject = leadProjects.some(project =>
+      Number(project.valueInclVat ?? 0) > 0
+      || normalized(project.status).includes("won")
+      || normalized(project.status).includes("project"),
+    );
+    const signed = group.some(isSigned);
+    const visit = leadAppointments.length > 0 || group.some(item => hasVisitEvidence(data, item));
     const accepted = leadOffers.some(offer => offer.isAccepted);
-    const visit = hasVisitEvidence(data, lead);
+    const hasOffer = leadOffers.length > 0;
+    const qualified = group.some(isQualified) || visit || hasOffer || accepted || signed || verifiedProject;
+    const explicitNotRelevant = group.some(isExplicitlyNotRelevant);
+    const currentRejected = Boolean(currentOffer?.isRejected) || lead.commercialStatus === "OFFER_LOST";
+    const lost = !verifiedProject && !signed && !accepted && !currentOffer?.isOpen
+      && (currentRejected || (!visit && !hasOffer && explicitNotRelevant));
 
     let stage: JourneyStage = "new";
-    if (notRelevant || rejected) stage = "lost";
-    else if (verifiedProject) stage = "verified";
+    if (verifiedProject) stage = "verified";
     else if (signed) stage = "signed";
     else if (accepted) stage = "accepted";
-    else if (leadOffers.length > 0) stage = "offer";
+    else if (currentOffer?.isOpen) stage = "offer";
+    else if (lost) stage = "lost";
     else if (visit) stage = "visit";
-    else if (isQualified(lead)) stage = "qualified";
+    else if (qualified) stage = "qualified";
 
     return {
       lead,
@@ -152,36 +218,32 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       acceptedOfferValue: leadOffers.filter(item => item.isAccepted).reduce((sum, item) => sum + item.priceInclVat, 0),
       projectValue: leadProjects.reduce((sum, item) => sum + Number(item.valueInclVat ?? 0), 0),
       hasVisit: visit,
+      isQualified: qualified,
       isSigned: signed,
-      isNotRelevant: notRelevant,
-      lostReason: notRelevant ? lead.crmStatus : rejected ? (currentOffer?.status ?? lead.quoteStatus) : "",
+      isNotRelevant: lost && explicitNotRelevant,
+      lostReason: lost
+        ? (currentRejected ? (currentOffer?.status ?? lead.quoteStatus) : group.find(isExplicitlyNotRelevant)?.crmStatus ?? "Lost")
+        : "",
     };
   });
 }
 
 export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
   const rows = buildJourneyRows(data);
-  const offers = (data.commercialOffers ?? []).filter(item => !hasDateConflict(item.attributionStatus));
-  const projects = (data.commercialProjects ?? []).filter(item => !hasDateConflict(item.attributionStatus));
-  const leadIdsWithOffer = new Set(offers.map(item => item.leadId));
-  const acceptedLeadIds = new Set(offers.filter(item => item.isAccepted).map(item => item.leadId));
-  const openLeadIds = new Set(offers.filter(item => item.isOpen).map(item => item.leadId));
-  const verifiedLeadIds = new Set(projects.filter(item => Number(item.valueInclVat ?? 0) > 0 || normalized(item.status).includes("won")).map(item => item.leadId));
-
   return {
     leads: data.leads.length,
-    uniquePeople: uniquePersonCount(data.leads),
-    qualified: rows.filter(row => !row.isNotRelevant && (row.stage !== "new" && row.stage !== "lost")).length,
+    uniquePeople: rows.length,
+    qualified: rows.filter(row => row.isQualified).length,
     visits: rows.filter(row => row.hasVisit).length,
-    offersSent: leadIdsWithOffer.size,
-    quotedValue: offers.reduce((sum, item) => sum + item.priceInclVat, 0),
-    openOffers: openLeadIds.size,
-    openPipelineValue: offers.filter(item => item.isOpen).reduce((sum, item) => sum + item.priceInclVat, 0),
-    acceptedOffers: acceptedLeadIds.size,
-    acceptedOfferValue: offers.filter(item => item.isAccepted).reduce((sum, item) => sum + item.priceInclVat, 0),
+    offersSent: rows.filter(row => row.offers.length > 0).length,
+    quotedValue: rows.reduce((sum, row) => sum + row.offerValue, 0),
+    openOffers: rows.filter(row => row.openOfferValue > 0).length,
+    openPipelineValue: rows.reduce((sum, row) => sum + row.openOfferValue, 0),
+    acceptedOffers: rows.filter(row => row.acceptedOfferValue > 0).length,
+    acceptedOfferValue: rows.reduce((sum, row) => sum + row.acceptedOfferValue, 0),
     crmSigned: rows.filter(row => row.isSigned).length,
-    verifiedProjects: verifiedLeadIds.size,
-    verifiedRevenue: projects.reduce((sum, item) => sum + Number(item.valueInclVat ?? 0), 0),
+    verifiedProjects: rows.filter(row => row.stage === "verified").length,
+    verifiedRevenue: rows.reduce((sum, row) => sum + row.projectValue, 0),
   };
 }
 
@@ -204,7 +266,7 @@ export function sourcePipelineRows(data: CompanyDataset) {
       source,
       cost,
       leads: sourceRows.length,
-      qualified: sourceRows.filter(row => row.stage !== "new" && row.stage !== "lost").length,
+      qualified: sourceRows.filter(row => row.isQualified).length,
       visits: sourceRows.filter(row => row.hasVisit).length,
       offers: sourceRows.filter(row => row.offers.length > 0).length,
       quotedValue: sourceRows.reduce((sum, row) => sum + row.offerValue, 0),
