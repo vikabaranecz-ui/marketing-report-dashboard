@@ -103,6 +103,37 @@ test("Google 403 diagnostics preserve HTTP, canonical status, message and resour
   );
 });
 
+test("Google Ads diagnostics surface nested authorization error and request id", async () => {
+  await assert.rejects(
+    requestGoogleJson("https://example.test", "secret-token", {
+      context: { apiName: "Google Ads API", resource: "customer 1385725892" },
+      fetchImpl: async () => Response.json({
+        error: {
+          code: 403,
+          status: "PERMISSION_DENIED",
+          message: "The caller does not have permission",
+          details: [{
+            requestId: "req-123",
+            errors: [{
+              errorCode: { authorizationError: "USER_PERMISSION_DENIED" },
+              message: "User does not have permission to access customer",
+            }],
+          }],
+        },
+      }, { status: 403 }),
+    }),
+    error => {
+      assert.match(error.message, /HTTP 403 PERMISSION_DENIED/);
+      assert.match(error.message, /authorizationError\.USER_PERMISSION_DENIED/);
+      assert.match(error.message, /User does not have permission to access customer/);
+      assert.match(error.message, /request-id=req-123/);
+      assert.match(error.message, /customer 1385725892/);
+      assert.doesNotMatch(error.message, /secret-token/);
+      return true;
+    },
+  );
+});
+
 test("Google quota handling retries 429 with bounded backoff", async () => {
   let calls = 0;
   const delays = [];
