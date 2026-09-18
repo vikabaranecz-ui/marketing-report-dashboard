@@ -6,7 +6,7 @@ export const journeyStageMeta: Array<{ key: JourneyStage; label: string; descrip
   { key: "new", label: "New lead", description: "Received, not yet qualified" },
   { key: "qualified", label: "Qualified", description: "Relevant lead ready for sales" },
   { key: "visit", label: "Visit", description: "Visit booked or completed" },
-  { key: "offer", label: "Offer sent", description: "ROBAWS offer exists and is still open" },
+  { key: "offer", label: "Offer", description: "Open ROBAWS offer; sent status is shown separately" },
   { key: "accepted", label: "Offer accepted", description: "Offer accepted, not yet commercially verified" },
   { key: "signed", label: "CRM signed", description: "CRM says signed, project not yet commercially verified" },
   { key: "verified", label: "Verified project", description: "Commercial project verified" },
