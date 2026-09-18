@@ -78,6 +78,8 @@ export type MetaCampaignReportBootstrap = {
   mode: "live" | "unavailable";
   companies: { id: string; name: string }[];
   datasets: Record<string, MetaCampaignDataset>;
+  selectedMonth: string;
+  availableMonths: string[];
 };
 
 type MetricRow = { campaign_id: string | null; spend: number | string; impressions: number; clicks: number; platform_conversions: number | string };
@@ -92,25 +94,23 @@ type AdRow = { id: string; name: string };
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
-export async function getMetaCampaignReportBootstrap(): Promise<MetaCampaignReportBootstrap> {
-  if (!hasSupabaseConfig()) return { mode: "unavailable", companies: [], datasets: {} };
+export async function getMetaCampaignReportBootstrap(month = "ytd"): Promise<MetaCampaignReportBootstrap> {
+  const period = reportingPeriod(month);
+  if (!hasSupabaseConfig()) return { mode: "unavailable", companies: [], datasets: {}, selectedMonth: period.selectedMonth, availableMonths: availableReportingMonths() };
   const supabase = await createSupabaseServerClient();
   const companiesResult = await supabase.from("companies").select("id,name").eq("is_active", true).order("name");
   if (companiesResult.error) throw new Error(`Unable to load companies: ${companiesResult.error.message}`);
   const companies = (companiesResult.data ?? []).map(row => ({ id: row.id, name: row.name }));
-  const entries = await Promise.all(companies.map(async company => [company.id, await loadCompany(supabase, company)] as const));
-  return { mode: "live", companies, datasets: Object.fromEntries(entries) };
+  const entries = await Promise.all(companies.map(async company => [company.id, await loadCompany(supabase, company, period)] as const));
+  return { mode: "live", companies, datasets: Object.fromEntries(entries), selectedMonth: period.selectedMonth, availableMonths: availableReportingMonths() };
 }
 
 async function loadCompany(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   company: { id: string; name: string },
+  period: ReturnType<typeof reportingPeriod>,
 ): Promise<MetaCampaignDataset> {
-  const now = new Date();
-  const dateTo = brusselsDate(now);
-  const dateFrom = `${dateTo.slice(0, 4)}-01-01`;
-  const fromIso = `${dateFrom}T00:00:00.000Z`;
-  const toIso = `${dateTo}T23:59:59.999Z`;
+  const { dateFrom, dateTo, fromIso, toIso } = period;
   // Phase 1: load only tables that are directly company-scoped. Quotes,
   // projects, appointments and ads do not have a company_id column, so they
   // must never be queried with a guessed company filter or left unscoped.
@@ -118,7 +118,7 @@ async function loadCompany(
     supabase.from("campaigns").select("id,name,status").eq("company_id", company.id),
     supabase.from("daily_marketing_metrics").select("campaign_id,spend,impressions,clicks,platform_conversions,marketing_channels!inner(name)").eq("company_id", company.id).eq("marketing_channels.name", "Meta Ads").gte("date", dateFrom).lte("date", dateTo),
     supabase.from("meta_lead_attribution").select("created_time,campaign_id,ad_id,matched_lead_id,match_method,match_status").eq("company_id", company.id).gte("created_time", fromIso).lte("created_time", toIso),
-    supabase.from("leads").select("id,created_at,name,source,sales_stage,crm_status,campaign_id,ad_id").eq("company_id", company.id),
+    supabase.from("leads").select("id,created_at,name,source,sales_stage,crm_status,campaign_id,ad_id").eq("company_id", company.id).gte("created_at", fromIso).lte("created_at", toIso),
   ]);
   const phaseOne = [campaignsRes, metricsRes, attributionRes, leadsRes];
   const phaseOneError = phaseOne.find(result => result.error)?.error;
@@ -230,7 +230,7 @@ async function loadCompany(
   const dates = attributionRows.map(row => row.created_time).sort();
   return {
     company: { id: company.id, name: company.name, shortName: company.name.slice(0, 3).toUpperCase() },
-    periodLabel: `${dateFrom} – ${dateTo} (YTD)`,
+    periodLabel: `${dateFrom} – ${dateTo}`,
     campaigns,
     quality: {
       imported: attributionRows.length,
@@ -310,6 +310,46 @@ function isQualified(stage: string | undefined) {
   return ["qualified", "visit_booked", "visit_completed", "quote_sent", "won"].includes(stage ?? "");
 }
 
+function reportingPeriod(month: string) {
+  const today = brusselsDate(new Date());
+  const year = today.slice(0, 4);
+  const selectedMonth = /^\d{4}-\d{2}$/.test(month) ? month : "ytd";
+
+  if (selectedMonth === "ytd") {
+    const dateFrom = `${year}-01-01`;
+    return {
+      selectedMonth,
+      dateFrom,
+      dateTo: today,
+      fromIso: `${dateFrom}T00:00:00.000Z`,
+      toIso: `${today}T23:59:59.999Z`,
+    };
+  }
+
+  const [selectedYear, selectedMonthNumber] = selectedMonth.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(selectedYear, selectedMonthNumber, 0)).getUTCDate();
+  const dateFrom = `${selectedMonth}-01`;
+  const rawDateTo = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
+  const dateTo = rawDateTo > today ? today : rawDateTo;
+  return {
+    selectedMonth,
+    dateFrom,
+    dateTo,
+    fromIso: `${dateFrom}T00:00:00.000Z`,
+    toIso: `${dateTo}T23:59:59.999Z`,
+  };
+}
+
+function availableReportingMonths() {
+  const today = brusselsDate(new Date());
+  const year = Number(today.slice(0, 4));
+  const currentMonth = Number(today.slice(5, 7));
+  const months = ["ytd"];
+  for (let month = 1; month <= currentMonth; month += 1) {
+    months.push(`${year}-${String(month).padStart(2, "0")}`);
+  }
+  return months.reverse();
+}
 function brusselsDate(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Brussels", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
   const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
