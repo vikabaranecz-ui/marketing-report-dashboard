@@ -1,7 +1,7 @@
 import { CampaignAttributionDashboard } from "@/components/dashboard/campaign-attribution";
 import { getMetaCampaignReportBootstrap } from "@/lib/data/meta-campaign-report";
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ month?: string; company?: string }> }) {
   const params = await searchParams;
-  return <CampaignAttributionDashboard bootstrap={await getMetaCampaignReportBootstrap(params.month)} />;
+  return <CampaignAttributionDashboard bootstrap={await getMetaCampaignReportBootstrap(params.month, params.company)} />;
 }
