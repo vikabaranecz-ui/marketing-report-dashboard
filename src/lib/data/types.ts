@@ -231,7 +231,7 @@ export type ReportingChangeEvent = {
 
 export type ReportingOverride = {
   id: string;
-  periodKey?: string;
+  periodKey: string;
   scopeType: "company" | "source" | "client";
   scopeKey: string;
   fieldKey: string;
@@ -248,7 +248,7 @@ export type AutomationSettings = {
 
 export type CompanyDataset = {
   company: Company;
-  periodKey: string;
+  periodKey?: string;
   periodLabel: string;
   comparisonLabel: string;
   metrics: { spend: number; leads: number; notRelevant?: number; qualified: number; visits: number; quotes: number; won: number; revenue: number; grossProfit: number | null };
