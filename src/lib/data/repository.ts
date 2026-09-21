@@ -10,6 +10,7 @@ export type DashboardBootstrap = {
   companies: Company[];
   datasets: Record<string, CompanyDataset>;
   selectedMonth: string;
+  selectedCompanyId: string;
   availableMonths: string[];
 };
 
@@ -21,10 +22,12 @@ type DashboardPeriod = {
   toIso: string;
 };
 
-export async function getDashboardBootstrap(month = "ytd"): Promise<DashboardBootstrap> {
+export async function getDashboardBootstrap(month = "ytd", companyId?: string): Promise<DashboardBootstrap> {
   const period = dashboardPeriod(month);
   if (!hasSupabaseConfig()) {
-    return { mode: "demo", companies: demoCompanies, datasets: demoDatasets, selectedMonth: period.selectedMonth, availableMonths: availableDashboardMonths() };
+    const selectedCompanyId = demoCompanies.some(company => company.id === companyId) ? companyId! : (demoCompanies[0]?.id ?? "");
+    const selectedDataset = selectedCompanyId ? { [selectedCompanyId]: demoDatasets[selectedCompanyId] } : {};
+    return { mode: "demo", companies: demoCompanies, datasets: selectedDataset, selectedMonth: period.selectedMonth, selectedCompanyId, availableMonths: availableDashboardMonths() };
   }
 
   const supabase = await createSupabaseServerClient();
@@ -43,9 +46,12 @@ export async function getDashboardBootstrap(month = "ytd"): Promise<DashboardBoo
     accent: "#ceff3d",
   }));
 
-  const loaded = await Promise.all(companies.map(async (company) => [company.id, await loadLiveDataset(supabase, company, period)] as const));
-  const datasets = Object.fromEntries(loaded);
-  return { mode: "live", companies, datasets, selectedMonth: period.selectedMonth, availableMonths: availableDashboardMonths() };
+  const selectedCompany = companies.find(company => company.id === companyId) ?? companies[0];
+  const selectedCompanyId = selectedCompany?.id ?? "";
+  const datasets = selectedCompany
+    ? { [selectedCompany.id]: await loadLiveDataset(supabase, selectedCompany, period) }
+    : {};
+  return { mode: "live", companies, datasets, selectedMonth: period.selectedMonth, selectedCompanyId, availableMonths: availableDashboardMonths() };
 }
 
 type RawMetric = { date:string; spend:number|string; impressions:number; clicks:number; platform_conversions:number|string; channel_id:string; campaign_id:string|null; service_id:string|null; marketing_channels:{name:string}|null; campaigns:{name:string}|null; services:{name:string}|null };
