@@ -96,7 +96,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const campaignRows = campaignBusinessRows(data,rows);
   const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
   const safeAttributed=rows.filter(row=>row.isAttributableClient).length;
-  const attributionCoverage=percentage(safeAttributed,allWonClients.length);
+  const attributionCoverage=percentage(safeAttributed,allWonClients.length)??0;
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
 
   return <div className="space-y-6">
@@ -174,11 +174,11 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
   const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
   const safelyAttributed=rows.filter(row=>row.isAttributableClient);
-  const attributionCoverage=percentage(safelyAttributed.length,wonClients.length);
+  const attributionCoverage=percentage(safelyAttributed.length,wonClients.length)??0;
   const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
   const safeLeadIds=new Set(safelyAttributed.flatMap(row=>row.leadIds));
   const attributedPaid=wonClients.filter(client=>client.matchedLeadId&&safeLeadIds.has(client.matchedLeadId)).reduce((sum,client)=>sum+client.paidTotal,0);
-  const paidCoverage=percentage(attributedPaid,businessPaid);
+  const paidCoverage=percentage(attributedPaid,businessPaid)??0;
   const checks=[
     {label:"CRM source completeness",ok:data.dataHealth.missingSource===0,detail:data.dataHealth.missingSource+" leads missing source"},
     {label:"Duplicate control",ok:data.dataHealth.duplicates===0,detail:data.dataHealth.duplicates+" potential duplicate CRM rows"},
