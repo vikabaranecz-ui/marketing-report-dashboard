@@ -8,6 +8,7 @@ import { buildFunnelSummary, buildJourneyRows, type JourneyRow } from "@/lib/met
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
 import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
+import { SystemPulse } from "./system-pulse";
 
 function delta(current:number,previous:number){return previous===0?null:((current-previous)/previous)*100}
 
@@ -40,7 +41,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
 
   const stages=[
-    {label:"Spend",value:formatCurrency(data.metrics.spend,true),note:"Tracked paid media"},
+    {label:"Known spend",value:formatCurrency(coveredSpend,true),note:paidSources.some(row=>row.costState==="missing")?"Some paid-source spend still missing":"Synced + manual corrections"},
     {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows"},
     {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
     {label:"Visits",value:formatNumber(rows.filter(hasCompletedVisitEvidence).length),note:"Completed / post-visit evidence"},
@@ -54,6 +55,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const budgetCards=paidSources.map(source=>budgetConclusion(source));
 
   return <div className="space-y-6">
+    <SystemPulse data={data}/>
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
         <SectionHeader title="Is marketing producing business?" description="One chain from tracked spend to paid revenue. Detailed evidence lives in the drill-down pages."/>
@@ -64,7 +66,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
     </Card>
 
     <div className="kpi-grid border-l border-t border-[var(--line)]">
-      <KpiCard label="Marketing spend" value={formatCurrency(data.metrics.spend,true)} delta={delta(data.metrics.spend,data.previous.spend)} meta="Target: not configured"/>
+      <KpiCard label="Known paid-source spend" value={formatCurrency(coveredSpend,true)} meta={(paidSources.some(row=>row.isManualSpend)?"Includes manual correction · ":"")+"Target: not configured"}/>
       <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(data.metrics.leads)+" CRM rows · target not configured"}/>
       <KpiCard label="Qualified people" value={formatNumber(summary.qualified)} meta={formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"}/>
       <KpiCard label="Visits" value={formatNumber(rows.filter(hasCompletedVisitEvidence).length)} meta="Deduplicated visit evidence"/>

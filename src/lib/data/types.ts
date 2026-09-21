@@ -216,8 +216,39 @@ export type Integration = {
   metaMissingPermissions?: string[];
 };
 
+export type ReportingChangeEvent = {
+  id: number;
+  provider: string;
+  occurredAt: string;
+  metricKey: string;
+  title: string;
+  detail: string;
+  delta: number | null;
+  beforeValue: number | null;
+  afterValue: number | null;
+  severity: "info" | "good" | "warn" | "bad";
+};
+
+export type ReportingOverride = {
+  id: string;
+  periodKey: string;
+  scopeType: "company" | "source" | "client";
+  scopeKey: string;
+  fieldKey: string;
+  value: unknown;
+  note: string;
+  updatedAt: string;
+};
+
+export type AutomationSettings = {
+  enabled: boolean;
+  operationalSchedule: string;
+  marketingSchedule: string;
+};
+
 export type CompanyDataset = {
   company: Company;
+  periodKey?: string;
   periodLabel: string;
   comparisonLabel: string;
   metrics: { spend: number; leads: number; notRelevant?: number; qualified: number; visits: number; quotes: number; won: number; revenue: number; grossProfit: number | null };
@@ -240,5 +271,8 @@ export type CompanyDataset = {
   seo: { impressions: number; clicks: number; ctr: number; position: number; brandedShare: number | null };
   gbp?: { profileViews: number; websiteClicks: number; calls: number; directionRequests: number; messages: number; searches: number; reviews: number; averageRating: number | null };
   integrations: Integration[];
+  changeEvents?: ReportingChangeEvent[];
+  manualOverrides?: ReportingOverride[];
+  automation?: AutomationSettings | null;
   dataHealth: { missingSource: number; missingService: number; missingCampaign: number; wonMissingRevenue: number; duplicates: number; campaignsWithoutSpend: number; daysSinceSync: number | null };
 };
