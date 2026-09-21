@@ -198,6 +198,8 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
 
     <IntegrationCenter companyId={data.company.id} integrations={data.integrations}/>
 
+    <ManualOverridesPanel data={data}/>
+
     <Card className="p-5">
       <SectionHeader title="Integration freshness" description="Last successful sync is shown per source so stale data is visible."/>
       <div className="table-scroll"><table><thead><tr><th>Source</th><th>Status</th><th>Resource</th><th>Last successful sync</th><th>Last attempt</th><th>Records</th></tr></thead><tbody>
@@ -337,6 +339,32 @@ function campaignBusinessRows(data:CompanyDataset,rows:JourneyRow[]) {
       projectValue:item.revenue,
     };
   }).sort((a,b)=>b.projectValue-a.projectValue||b.openValue-a.openValue||b.spend-a.spend);
+}
+
+function ManualOverridesPanel({data}:{data:CompanyDataset}){
+  const router=useRouter();
+  const [pending,setPending]=useState<string|null>(null);
+  const overrides=data.manualOverrides??[];
+
+  async function reset(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
+    setPending(item.id);
+    await fetch("/api/overrides",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      companyId:data.company.id,
+      periodKey:item.periodKey,
+      scopeType:item.scopeType,
+      scopeKey:item.scopeKey,
+      fieldKey:item.fieldKey,
+    })});
+    setPending(null);
+    router.refresh();
+  }
+
+  return <Card className="p-5">
+    <SectionHeader title="Manual corrections" description="Visible override layer. Synced source data is never overwritten."/>
+    {overrides.length?<div className="table-scroll"><table><thead><tr><th>Scope</th><th>Item</th><th>Field</th><th>Manual value</th><th>Note</th><th>Updated</th><th></th></tr></thead><tbody>
+      {overrides.map(item=><tr key={item.id}><td>{item.scopeType}</td><td className="font-semibold">{item.scopeKey}</td><td>{item.fieldKey}</td><td>{typeof item.value==="number"?formatCurrency(item.value):String(item.value??"—")}</td><td>{item.note||"—"}</td><td>{formatTimestamp(item.updatedAt)}</td><td><button type="button" disabled={pending===item.id} onClick={()=>reset(item)} className="button-secondary"><RotateCcw size={13}/>{pending===item.id?"Resetting…":"Reset"}</button></td></tr>)}
+    </tbody></table></div>:<EmptyState title="No manual corrections" body="Everything in this period currently comes from synced source data."/>}
+  </Card>;
 }
 
 function RevenueClientTable({data}:{data:CompanyDataset}) {
