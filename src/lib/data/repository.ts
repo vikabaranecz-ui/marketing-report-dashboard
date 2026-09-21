@@ -85,13 +85,18 @@ type RawAutomation = { enabled:boolean; operational_schedule:string; marketing_s
 async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, company: Company, period: DashboardPeriod): Promise<CompanyDataset> {
   const { fromIso, toIso, fromDate, toDate } = period;
   const comparison = previousDashboardPeriod(period);
-  const [currentLeadIds, previousLeadIds] = await Promise.all([
-    accessibleLeadIds(supabase, company.id, fromIso, toIso),
-    accessibleLeadIds(supabase, company.id, comparison.fromIso, comparison.toIso),
+  const leadSelect = "id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)";
+  const [leadsRes, previousLeadsRes] = await Promise.all([
+    supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
+    supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",comparison.fromIso).lte("created_at",comparison.toIso),
   ]);
-  const [metricsRes, leadsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, previousMetricsRes, previousLeadsRes, previousQuotesRes, previousProjectsRes] = await Promise.all([
+  const leadError = leadsRes.error ?? previousLeadsRes.error;
+  if (leadError) throw new Error(`Unable to load lead cohorts: ${leadError.message}`);
+  const currentLeadIds = rawLeads.length ? rawLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
+  const previousLeadIds = previousLeads.length ? previousLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
+
+  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, previousMetricsRes, previousQuotesRes, previousProjectsRes] = await Promise.all([
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
-    supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
     supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds),
     supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds),
     supabase.from("projects").select("id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,crm_source,crm_external_id,external_status,attribution_status").in("lead_id", currentLeadIds),
@@ -112,11 +117,10 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).eq("period_key",period.selectedMonth),
     supabase.from("reporting_automation_settings").select("enabled,operational_schedule,marketing_schedule").eq("company_id",company.id).maybeSingle(),
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",comparison.fromDate).lte("date",comparison.toDate),
-    supabase.from("leads").select("id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)").eq("company_id",company.id).gte("created_at",comparison.fromIso).lte("created_at",comparison.toIso),
     supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", previousLeadIds),
     supabase.from("projects").select("id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,crm_source,crm_external_id,external_status,attribution_status").in("lead_id", previousLeadIds),
   ]);
-  const firstError = [metricsRes,leadsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,previousMetricsRes,previousLeadsRes,previousQuotesRes,previousProjectsRes].find(result => result.error)?.error;
+  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,previousMetricsRes,previousQuotesRes,previousProjectsRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
@@ -383,7 +387,6 @@ function daysBetween(from: string, to: string) {
   return Math.max(0, Math.floor((end - start) / 86400000));
 }
 
-async function accessibleLeadIds(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,companyId:string,from:string,to:string){const {data}=await supabase.from("leads").select("id").eq("company_id",companyId).gte("created_at",from).lte("created_at",to);const ids=(data??[]).map(r=>r.id);return ids.length?ids:["00000000-0000-0000-0000-000000000000"];}
 function sum<T>(rows:T[],key:keyof T){return rows.reduce((s,row)=>s+Number(row[key]??0),0);}
 function mapLeads(
   rows: RawLead[],
