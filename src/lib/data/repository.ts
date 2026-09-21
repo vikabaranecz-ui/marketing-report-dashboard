@@ -22,7 +22,9 @@ type DashboardPeriod = {
   toIso: string;
 };
 
-export async function getDashboardBootstrap(month = "ytd", companyId?: string): Promise<DashboardBootstrap> {
+export type DashboardLoadProfile = "full" | "overview" | "commercial" | "website" | "health";
+
+export async function getDashboardBootstrap(month = "ytd", companyId?: string, profile: DashboardLoadProfile = "full"): Promise<DashboardBootstrap> {
   const period = dashboardPeriod(month);
   if (!hasSupabaseConfig()) {
     const selectedCompanyId = demoCompanies.some(company => company.id === companyId) ? companyId! : (demoCompanies[0]?.id ?? "");
@@ -49,7 +51,7 @@ export async function getDashboardBootstrap(month = "ytd", companyId?: string): 
   const selectedCompany = companies.find(company => company.id === companyId) ?? companies[0];
   const selectedCompanyId = selectedCompany?.id ?? "";
   const datasets = selectedCompany
-    ? { [selectedCompany.id]: await loadLiveDataset(supabase, selectedCompany, period) }
+    ? { [selectedCompany.id]: await loadLiveDataset(supabase, selectedCompany, period, profile) }
     : {};
   return { mode: "live", companies, datasets, selectedMonth: period.selectedMonth, selectedCompanyId, availableMonths: availableDashboardMonths() };
 }
@@ -82,36 +84,51 @@ type RawChangeEvent = { id:number; provider:string; occurred_at:string; metric_k
 type RawOverride = { id:string; period_key:string; scope_type:"company"|"source"|"client"; scope_key:string; field_key:string; value:unknown; note:string|null; updated_at:string };
 type RawAutomation = { enabled:boolean; operational_schedule:string; marketing_schedule:string };
 
-async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, company: Company, period: DashboardPeriod): Promise<CompanyDataset> {
+async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, company: Company, period: DashboardPeriod, profile: DashboardLoadProfile): Promise<CompanyDataset> {
   const { fromIso, toIso, fromDate, toDate } = period;
   const comparison = previousDashboardPeriod(period);
+  const needsLeads = profile !== "website";
+  const needsMarketing = profile === "full" || profile === "overview" || profile === "health";
+  const needsCommercial = profile === "full" || profile === "overview" || profile === "commercial";
+  const needsAppointments = needsCommercial;
+  const needsClients = profile === "full" || profile === "overview" || profile === "health";
+  const needsCatalog = profile === "full" || profile === "commercial" || profile === "health";
+  const needsWebsite = profile === "full" || profile === "website";
+  const needsIntegrations = profile === "full" || profile === "overview" || profile === "health";
+  const needsChanges = profile === "full" || profile === "overview";
+  const needsOverrides = profile === "full" || profile === "overview" || profile === "commercial" || profile === "health";
+  const needsAutomation = profile === "full" || profile === "overview" || profile === "health";
+  const emptyRows = Promise.resolve({ data: [], error: null });
+  const emptyOne = Promise.resolve({ data: null, error: null });
   const leadSelect = "id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)";
-  const leadsRes = await supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso);
+  const leadsRes = needsLeads
+    ? await supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso)
+    : { data: [], error: null };
   if (leadsRes.error) throw new Error(`Unable to load lead cohort: ${leadsRes.error.message}`);
   const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
   const currentLeadIds = rawLeads.length ? rawLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
 
   const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes] = await Promise.all([
-    supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
-    supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds),
-    supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds),
-    supabase.from("projects").select("id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,crm_source,crm_external_id,external_status,attribution_status").in("lead_id", currentLeadIds),
-    supabase.from("commercial_invoices").select("id,lead_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id).in("lead_id", currentLeadIds),
-    supabase.from("commercial_clients").select("id,external_source,external_id,name,email,phone,client_since,matched_lead_id,match_method,commercial_status,offer_count,project_count,invoice_count,invoiced_total,paid_total").eq("company_id",company.id),
-    supabase.from("crm_deals").select("id,name,stage,pipeline_group,deal_value,offer_status,offer_number,lost_reason,linked_lead_id,created_at_external").eq("company_id",company.id).gte("created_at_external",fromIso).lte("created_at_external",toIso),
-    supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true),
-    supabase.from("campaigns").select("id,name,channel_id,marketing_channels(name)").eq("company_id",company.id),
-    supabase.from("website_metrics").select("company_id,date,users,sessions,new_users,engaged_sessions,form_submissions,whatsapp_clicks,phone_clicks,quote_requests").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
-    supabase.rpc("reporting_seo_summary",{p_company_id:company.id,p_from:fromDate,p_to:toDate}),
-    supabase.from("gbp_metrics").select("profile_views,website_clicks,calls,direction_requests,messages,searches,reviews,rating_sum").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
-    supabase.from("reporting_integration_connections")
+    needsMarketing ? supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate) : emptyRows,
+    needsAppointments ? supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds) : emptyRows,
+    needsCommercial ? supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
+    needsCommercial ? supabase.from("projects").select("id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,crm_source,crm_external_id,external_status,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
+    needsCommercial ? supabase.from("commercial_invoices").select("id,lead_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id).in("lead_id", currentLeadIds) : emptyRows,
+    needsClients ? supabase.from("commercial_clients").select("id,external_source,external_id,name,email,phone,client_since,matched_lead_id,match_method,commercial_status,offer_count,project_count,invoice_count,invoiced_total,paid_total").eq("company_id",company.id) : emptyRows,
+    profile === "full" ? supabase.from("crm_deals").select("id,name,stage,pipeline_group,deal_value,offer_status,offer_number,lost_reason,linked_lead_id,created_at_external").eq("company_id",company.id).gte("created_at_external",fromIso).lte("created_at_external",toIso) : emptyRows,
+    needsCatalog ? supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true) : emptyRows,
+    needsCatalog ? supabase.from("campaigns").select("id,name,channel_id,marketing_channels(name)").eq("company_id",company.id) : emptyRows,
+    needsWebsite ? supabase.from("website_metrics").select("company_id,date,users,sessions,new_users,engaged_sessions,form_submissions,whatsapp_clicks,phone_clicks,quote_requests").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate) : emptyRows,
+    needsWebsite ? supabase.rpc("reporting_seo_summary",{p_company_id:company.id,p_from:fromDate,p_to:toDate}) : Promise.resolve({data:{impressions:0,clicks:0,position_sum:0,branded_clicks:0,classified_clicks:0},error:null}),
+    needsWebsite ? supabase.from("gbp_metrics").select("profile_views,website_clicks,calls,direction_requests,messages,searches,reviews,rating_sum").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate) : emptyRows,
+    needsIntegrations ? supabase.from("reporting_integration_connections")
       .select("id,provider,status,configuration,error_message,last_successful_sync,last_attempted_sync,sync_logs(records_imported,completed_at)")
       .eq("company_id",company.id)
       .order("completed_at",{referencedTable:"sync_logs",ascending:false})
-      .limit(1,{referencedTable:"sync_logs"}),
-    supabase.from("reporting_change_events").select("id,provider,occurred_at,metric_key,title,detail,delta,before_value,after_value,severity").eq("company_id",company.id).order("occurred_at",{ascending:false}).limit(30),
-    supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).eq("period_key",period.selectedMonth),
-    supabase.from("reporting_automation_settings").select("enabled,operational_schedule,marketing_schedule").eq("company_id",company.id).maybeSingle(),
+      .limit(1,{referencedTable:"sync_logs"}) : emptyRows,
+    needsChanges ? supabase.from("reporting_change_events").select("id,provider,occurred_at,metric_key,title,detail,delta,before_value,after_value,severity").eq("company_id",company.id).order("occurred_at",{ascending:false}).limit(30) : emptyRows,
+    needsOverrides ? supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).eq("period_key",period.selectedMonth) : emptyRows,
+    needsAutomation ? supabase.from("reporting_automation_settings").select("enabled,operational_schedule,marketing_schedule").eq("company_id",company.id).maybeSingle() : emptyOne,
   ]);
   const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
