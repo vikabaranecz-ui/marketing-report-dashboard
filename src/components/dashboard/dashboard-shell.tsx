@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { DashboardBootstrap } from "@/lib/data/repository";
 import { Sidebar } from "./sidebar";
 import { TopControls } from "./top-controls";
@@ -12,7 +12,7 @@ import { DataHealthPage, FunnelPage, RevenuePage, SourcesCampaignsPage } from ".
 import { EmptyState } from "./ui";
 
 export function DashboardShell({ bootstrap, section }: { bootstrap: DashboardBootstrap; section: SectionKey }) {
-  const [companyId, setCompanyId] = useState(bootstrap.companies[0]?.id ?? "");
+  const companyId = bootstrap.selectedCompanyId;
   const data = bootstrap.datasets[companyId];
   const meta = sectionMeta[section];
   const Page = useMemo(() => ({ overview: OverviewPage, funnel: FunnelPage, campaigns: SourcesCampaignsPage, "client-journey": ClientJourneyPage, "offers-pipeline": OffersPipelinePage, revenue: RevenuePage, "website-seo": WebsiteSeoPage, "data-health": DataHealthPage, "leads-sales": LeadsSalesPage, visits: VisitsPage, "sales-projects": SalesProjectsPage, acquisition: AcquisitionPage, services: ServicesPage, locations: LocationsPage, cohorts: CohortsPage, "sales-team": SalesTeamPage, integrations: IntegrationsPage, settings: SettingsPage })[section], [section]);
@@ -26,5 +26,5 @@ export function DashboardShell({ bootstrap, section }: { bootstrap: DashboardBoo
     link.click(); URL.revokeObjectURL(link.href);
   }
   const liveOnly = ["funnel","campaigns","client-journey","leads-sales","visits","offers-pipeline","revenue","data-health","sales-projects","cohorts","sales-team"].includes(section);
-  return <div className="app-shell"><Sidebar/><main className="main-shell"><TopControls companies={bootstrap.companies} companyId={companyId} onCompanyChange={setCompanyId} onExport={exportCsv} selectedMonth={bootstrap.selectedMonth} availableMonths={bootstrap.availableMonths}/><div className="page-wrap"><header className="page-header"><div><div className="flex items-center gap-2"><p className="eyebrow">{meta.eyebrow}</p>{bootstrap.mode === "demo" && <span className="demo-badge">Demo data</span>}</div><h1>{meta.title}</h1><p>{data ? `${data.company.name} · ${data.periodLabel} · ${data.comparisonLabel}` : "No company available"}</p></div><div className="company-mark" style={{background:data?.company.accent}}>{data?.company.shortName ?? "—"}</div></header>{data ? liveOnly && bootstrap.mode === "demo" ? <EmptyState title="Live data required" body="Commercial funnel pages never show synthetic client, offer or project data. Connect Supabase and the CRM / ROBAWS sources to use this page."/> : <Page data={data}/> : <EmptyState title="No companies available" body="Ask an administrator to assign your account to a company."/>}</div></main></div>;
+  return <div className="app-shell"><Sidebar/><main className="main-shell"><TopControls companies={bootstrap.companies} companyId={companyId} onExport={exportCsv} selectedMonth={bootstrap.selectedMonth} availableMonths={bootstrap.availableMonths}/><div className="page-wrap"><header className="page-header"><div><div className="flex items-center gap-2"><p className="eyebrow">{meta.eyebrow}</p>{bootstrap.mode === "demo" && <span className="demo-badge">Demo data</span>}</div><h1>{meta.title}</h1><p>{data ? `${data.company.name} · ${data.periodLabel} · ${data.comparisonLabel}` : "No company available"}</p></div><div className="company-mark" style={{background:data?.company.accent}}>{data?.company.shortName ?? "—"}</div></header>{data ? liveOnly && bootstrap.mode === "demo" ? <EmptyState title="Live data required" body="Commercial funnel pages never show synthetic client, offer or project data. Connect Supabase and the CRM / ROBAWS sources to use this page."/> : <Page data={data}/> : <EmptyState title="No companies available" body="Ask an administrator to assign your account to a company."/>}</div></main></div>;
 }
