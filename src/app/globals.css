@@ -117,6 +117,27 @@ tbody tr:hover { background: #f8f8f4; }
 .evidence-record{border-top:1px solid var(--line);padding:.8rem 0}.evidence-record:first-child{border-top:0;padding-top:0}.evidence-record > div{display:flex;align-items:center;justify-content:space-between;gap:.7rem}.evidence-record > p{margin:.45rem 0;color:var(--muted);font-size:.73rem;line-height:1.5}
 
 
+
+/* Operating system pulse */
+.system-pulse-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.1rem; background:#111315; color:white; }
+.system-live { display:flex; align-items:center; gap:.8rem; min-width:0; }
+.system-live-dot { width:10px; height:10px; flex:none; border-radius:999px; background:#8a8f89; box-shadow:0 0 0 4px rgba(255,255,255,.06); }
+.system-live-dot.is-on { background:#6ddd8a; box-shadow:0 0 0 4px rgba(109,221,138,.12); }
+.system-live strong { display:block; font-size:.82rem; }.system-live span { display:block; margin-top:.15rem; color:rgba(255,255,255,.52); font-size:.68rem; }
+.system-pulse-meta { display:flex; align-items:center; justify-content:flex-end; gap:.8rem; flex-wrap:wrap; }
+.system-pulse-meta > span { display:inline-flex; align-items:center; gap:.4rem; color:rgba(255,255,255,.58); font-size:.7rem; }
+.system-pulse-meta .button-primary { background:white; color:#141617; }
+.system-sync-message { display:flex; align-items:center; gap:.55rem; border-bottom:1px solid var(--line); padding:.65rem 1rem; font-size:.74rem; font-weight:650; }
+.system-sync-message.is-good { background:#effaf1; color:#215f30; }.system-sync-message.is-warn { background:#fff5df; color:#77520c; }
+.system-change-strip { display:grid; grid-template-columns:170px repeat(6,minmax(155px,1fr)); overflow-x:auto; border-top:1px solid var(--line); background:white; }
+.system-change-label,.system-change-chip,.system-change-empty { min-height:92px; border-right:1px solid var(--line); padding:.85rem; }
+.system-change-label span,.system-change-chip span { color:var(--muted); font-size:.6rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.system-change-label strong { display:block; margin-top:.55rem; font-size:.8rem; line-height:1.35; }
+.system-change-chip strong { display:block; margin-top:.5rem; color:var(--ink); font-size:.82rem; line-height:1.25; }
+.system-change-chip small { display:block; margin-top:.42rem; color:var(--muted); font-size:.62rem; }
+.system-change-chip.tone-good { box-shadow:inset 0 3px #66b879; }.system-change-chip.tone-warn { box-shadow:inset 0 3px #d7a327; }.system-change-chip.tone-bad { box-shadow:inset 0 3px #c9584f; }.system-change-chip.tone-info { box-shadow:inset 0 3px #77808b; }
+.system-change-empty { grid-column:span 3; color:var(--muted); font-size:.72rem; line-height:1.5; }
+
 /* Marketing control center */
 .story-chain { display:grid; grid-template-columns:repeat(8,minmax(130px,1fr)); overflow-x:auto; background:white; }
 .story-stage { min-height:138px; border-right:1px solid var(--line); padding:1rem; }.story-stage:last-child{border-right:0}
@@ -160,7 +181,7 @@ tbody tr:hover { background: #f8f8f4; }
 
 @media (max-width: 1180px) { .kpi-grid-six{grid-template-columns:repeat(3,minmax(0,1fr))}.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
 @media (max-width: 1280px) { .sales-metric{grid-column:span 3}.sales-metric-money{grid-column:span 3}.attribution-strip{grid-template-columns:repeat(3,1fr)}.attribution-strip>div{border-bottom:1px solid var(--line)} }
-@media (max-width: 900px) { .boundary-grid{grid-template-columns:1fr}.story-chain,.control-funnel,.revenue-stage-grid,.economics-grid{scroll-snap-type:x proximity}.story-stage,.control-funnel-stage,.revenue-stage,.economy-cell{scroll-snap-align:start} }
+@media (max-width: 900px) { .system-pulse-head{align-items:flex-start;flex-direction:column}.system-pulse-meta{justify-content:flex-start}.boundary-grid{grid-template-columns:1fr}.story-chain,.control-funnel,.revenue-stage-grid,.economics-grid{scroll-snap-type:x proximity}.story-stage,.control-funnel-stage,.revenue-stage,.economy-cell{scroll-snap-align:start} }
 @media (max-width: 760px) {
   .sidebar { position: sticky; top: 0; width: 100%; height: auto; max-height: none; flex-direction: row; overflow-x: auto; }
   .sidebar > div:first-child,.sidebar > div:last-child { display:none; }.sidebar nav{display:flex;flex:none;padding:.45rem}.nav-link{min-height:38px;white-space:nowrap}.nav-link span:last-child{display:none}
