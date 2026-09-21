@@ -94,9 +94,13 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
+  const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
+  const safeAttributed=rows.filter(row=>row.isAttributableClient).length;
+  const attributionCoverage=percentage(safeAttributed,allWonClients.length);
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
 
   return <div className="space-y-6">
+    <div className="callout"><AlertTriangle size={18}/><div><strong>Source economics currently cover {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>CAC and ROAS below describe only clients safely linked back to CRM. Unmatched ROBAWS clients are not treated as marketing failures or assigned to a source by guesswork.</p></div></div>
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Paid sources are compared only when their actual spend exists. Organic sources keep cost metrics blank."/>
       <div className="table-scroll"><table className="wide-decision-table">
@@ -164,13 +168,24 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const rows=buildJourneyRows(data);
   const clients=data.commercialClients??[];
   const googleSpendPresent=data.channels.some(channel=>channel.channel==="Google Ads"&&channel.spend>0);
-  const signedUnconfirmed=rows.filter(row=>row.isSigned&&!row.isCommercialClient).length;
+  const signedUnconfirmedRows=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
+  const signedUnconfirmed=signedUnconfirmedRows.length;
   const unmatchedClients=clients.filter(client=>!client.matchedLeadId).length;
+  const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
+  const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
+  const safelyAttributed=rows.filter(row=>row.isAttributableClient);
+  const attributionCoverage=percentage(safelyAttributed.length,wonClients.length);
+  const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
+  const safeLeadIds=new Set(safelyAttributed.flatMap(row=>row.leadIds));
+  const attributedPaid=wonClients.filter(client=>client.matchedLeadId&&safeLeadIds.has(client.matchedLeadId)).reduce((sum,client)=>sum+client.paidTotal,0);
+  const paidCoverage=percentage(attributedPaid,businessPaid);
   const checks=[
     {label:"CRM source completeness",ok:data.dataHealth.missingSource===0,detail:data.dataHealth.missingSource+" leads missing source"},
     {label:"Duplicate control",ok:data.dataHealth.duplicates===0,detail:data.dataHealth.duplicates+" potential duplicate CRM rows"},
     {label:"Campaign attribution",ok:data.dataHealth.missingCampaign===0,detail:data.dataHealth.missingCampaign+" leads missing campaign"},
-    {label:"ROBAWS client reconciliation",ok:clients.length>0&&unmatchedClients===0,detail:clients.length===0?"Full ROBAWS client snapshot not populated":unmatchedClients+" ROBAWS clients unmatched"},
+    {label:"ROBAWS client reconciliation",ok:wonClients.length>0&&unmatchedWon.length===0,detail:wonClients.length===0?"Full ROBAWS client snapshot not populated":unmatchedWon.length+" commercial clients unmatched"},
+    {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:safelyAttributed.length+" / "+wonClients.length+" commercial clients safely attributed ("+formatPercent(attributionCoverage)+")"},
+    {label:"Paid cash attribution",ok:paidCoverage>=90,detail:formatCurrency(attributedPaid)+" / "+formatCurrency(businessPaid)+" safely attributed ("+formatPercent(paidCoverage)+")"},
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
     {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Spend available":"Spend not synced"},
   ];
@@ -179,7 +194,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   return <div className="space-y-6">
     <div className="grid gap-6 xl:grid-cols-[.72fr_1.28fr]">
       <Card className="p-5">
-        <SectionHeader title="Trust coverage" description="A transparent check count, not an invented health score."/>
+        <SectionHeader title="Trust coverage" description="The dashboard must prove where each number comes from before you use it for budget decisions."/>
         <div className="trust-score"><strong>{passed}/{checks.length}</strong><span>critical reporting checks passing</span></div>
         <div className="mt-5 space-y-2">{checks.map(item=><div className="health-check" key={item.label}>{item.ok?<CheckCircle2 size={16}/>:<AlertTriangle size={16}/>}<div><strong>{item.label}</strong><span>{item.detail}</span></div></div>)}</div>
       </Card>
@@ -195,6 +210,24 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
         </div>
       </Card>
     </div>
+
+    <Card className="p-5">
+      <SectionHeader title="Reconciliation queue" description="This is the work required before marketing CAC / ROAS can be treated as complete business truth."/>
+      <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3"><div><strong className="text-sm">Unmatched ROBAWS commercial clients</strong><p className="mt-1 text-xs text-[var(--muted)]">{unmatchedWon.length} of {wonClients.length} commercial clients are not linked to a CRM person.</p></div><StatusPill tone={unmatchedWon.length?"warn":"good"}>{formatPercent(attributionCoverage)} attributed</StatusPill></div>
+          {unmatchedWon.length?<div className="table-scroll"><table><thead><tr><th>ROBAWS client</th><th>Offers</th><th>Projects</th><th>Invoiced</th><th>Paid</th><th>Match</th></tr></thead><tbody>
+            {unmatchedWon.slice(0,20).map(client=><tr key={client.id}><td className="font-semibold">{client.name}</td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td><td><StatusPill tone="warn">{client.matchMethod||"NONE"}</StatusPill></td></tr>)}
+          </tbody></table></div>:<EmptyState title="ROBAWS reconciliation complete" body="Every commercial client is linked to a CRM lead."/>}
+          {unmatchedWon.length>20&&<p className="mt-3 text-xs text-[var(--muted)]">Showing the 20 highest-value unmatched clients of {unmatchedWon.length}.</p>}
+        </div>
+        <div>
+          <strong className="text-sm">CRM signed exceptions</strong>
+          <p className="mt-1 text-xs text-[var(--muted)]">CRM says signed, but ROBAWS does not yet confirm a commercial client.</p>
+          <div className="mt-3 space-y-2">{signedUnconfirmedRows.length?signedUnconfirmedRows.map(row=><div key={row.lead.id} className="border border-[var(--line)] p-3"><div className="flex items-center justify-between gap-2"><strong className="text-sm">{row.lead.name}</strong><StatusPill tone="warn">{row.lead.commercialStatus||"Not confirmed"}</StatusPill></div><p className="mt-1 text-xs text-[var(--muted)]">{row.lead.source} · CRM: {row.lead.crmStatus}</p></div>):<div className="border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">No signed CRM exception.</div>}</div>
+        </div>
+      </div>
+    </Card>
 
     <IntegrationCenter companyId={data.company.id} integrations={data.integrations}/>
 
