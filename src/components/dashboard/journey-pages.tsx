@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Pencil, RotateCcw, Search, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, journeyStageMeta, sourcePipelineRows, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
@@ -38,7 +39,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
       </div></div>
     </Card>
     <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-7"><Mini label="Unique people" value={formatNumber(summary.uniquePeople)}/><Mini label="Offers created" value={formatNumber(summary.offersCreated)}/><Mini label="Offers sent" value={formatNumber(summary.offersSent)}/><Mini label="Sent quote value" value={formatCurrency(summary.sentQuotedValue)}/><Mini label="Open pipeline" value={formatCurrency(summary.openPipelineValue)}/><Mini label="Commercial clients" value={formatNumber(summary.commercialClients)}/><Mini label="Project value" value={formatCurrency(summary.verifiedRevenue)}/></div>
-    {selected&&<ClientDrawer row={selected} onClose={()=>setSelected(null)}/>}
+    {selected&&<ClientDrawer data={data} row={selected} onClose={()=>setSelected(null)}/>}
   </div>;
 }
 
@@ -90,12 +91,59 @@ function Funnel({ data }: { data: CompanyDataset }) {
 }
 
 function JourneyCard({ row,onOpen }: { row: JourneyRow; onOpen:()=>void }) { const a=[...row.appointments].sort((x,y)=>y.scheduledAt.localeCompare(x.scheduledAt))[0],o=row.latestOffer; return <button onClick={onOpen} className="w-full border border-[var(--line)] bg-white p-3 text-left transition hover:border-[var(--ink)]"><div className="flex justify-between gap-2"><strong className="text-sm">{row.lead.name}</strong><StatusPill tone={tone(row.stage)}>{journeyStageMeta.find(s=>s.key===row.stage)?.label}</StatusPill></div><p className="mt-1 text-[11px] text-[var(--muted)]">{row.lead.source+" · "+row.lead.service}</p>{row.crmRecordCount>1&&<p className="mt-1 text-[11px] font-semibold text-amber-700">{row.crmRecordCount+" CRM records merged"}</p>}<div className="mt-3 space-y-1 text-xs"><p>Lead: {date(row.lead.date)}</p>{a&&<p>Visit: {dateTime(a.completedAt??a.scheduledAt)}</p>}{o&&<p>Offer: <b>{formatCurrency(o.priceInclVat)}</b> · {o.sentAt?"sent "+dateTime(o.sentAt):"send not verified"}</p>}{row.projectValue>0&&<p>Project: <b>{formatCurrency(row.projectValue)}</b></p>}</div></button>; }
-function ClientDrawer({row,onClose}:{row:JourneyRow;onClose:()=>void}) {
+function ClientDrawer({data,row,onClose}:{data:CompanyDataset;row:JourneyRow;onClose:()=>void}) {
+  const router=useRouter();
+  const overrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.scopeKey===row.lead.id);
+  const [editing,setEditing]=useState(false);
+  const [source,setSource]=useState(row.lead.source);
+  const [service,setService]=useState(row.lead.service);
+  const [campaign,setCampaign]=useState(row.lead.campaign);
+  const [municipality,setMunicipality]=useState(row.lead.municipality);
+  const [pending,setPending]=useState(false);
+  const [error,setError]=useState("");
+
+  async function save(){
+    setPending(true);setError("");
+    const fields={source,service,campaign,municipality};
+    for(const [fieldKey,value] of Object.entries(fields)){
+      const response=await fetch("/api/overrides",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        companyId:data.company.id,periodKey:data.periodKey??"ytd",scopeType:"client",scopeKey:row.lead.id,fieldKey,value,
+        note:"Manual client correction from Client Map",
+      })});
+      if(!response.ok){const body=await response.json().catch(()=>({}));setError(body.error??"Could not save client correction.");setPending(false);return;}
+    }
+    setPending(false);setEditing(false);router.refresh();
+  }
+
+  async function reset(){
+    setPending(true);setError("");
+    for(const fieldKey of ["source","service","campaign","municipality"]){
+      const response=await fetch("/api/overrides",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        companyId:data.company.id,periodKey:data.periodKey??"ytd",scopeType:"client",scopeKey:row.lead.id,fieldKey,
+      })});
+      if(!response.ok){const body=await response.json().catch(()=>({}));setError(body.error??"Could not reset client corrections.");setPending(false);return;}
+    }
+    setPending(false);setEditing(false);onClose();router.refresh();
+  }
+
   return <div className="fixed inset-0 z-50 bg-black/35 p-4" onMouseDown={onClose}><aside className="ml-auto h-full w-full max-w-xl overflow-y-auto bg-white shadow-2xl" onMouseDown={e=>e.stopPropagation()}>
-    <header className="sticky top-0 z-10 flex items-start justify-between border-b border-[var(--line)] bg-white p-5"><div><p className="eyebrow">Client evidence</p><h2 className="mt-1 text-xl font-semibold">{row.lead.name}</h2><p className="mt-1 text-sm text-[var(--muted)]">{row.lead.source+" · "+row.lead.service+" · "+row.lead.municipality}</p></div><button onClick={onClose} className="p-2" aria-label="Close client details"><X size={18}/></button></header>
+    <header className="sticky top-0 z-10 flex items-start justify-between border-b border-[var(--line)] bg-white p-5"><div><div className="flex items-center gap-2"><p className="eyebrow">Client evidence</p>{overrides.length>0&&<StatusPill tone="accent">Manual corrections</StatusPill>}</div><h2 className="mt-1 text-xl font-semibold">{row.lead.name}</h2><p className="mt-1 text-sm text-[var(--muted)]">{row.lead.source+" · "+row.lead.service+" · "+row.lead.municipality}</p></div><button onClick={onClose} className="p-2" aria-label="Close client details"><X size={18}/></button></header>
     <div className="space-y-6 p-5">
       <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2"><Mini label="CRM records merged" value={String(row.crmRecordCount)}/><Mini label="First-touch source" value={row.lead.source}/><Mini label="Sources seen" value={row.sourcesSeen.join(" → ")}/><Mini label="Salesperson" value={row.lead.salesperson}/></div>
-      <section><h3 className="mb-3 text-sm font-semibold">Client</h3><div className="space-y-2 text-sm"><p><b>Email:</b> {row.lead.email||"—"}</p><p><b>Phone:</b> {row.lead.phone||"—"}</p><p><b>Campaign:</b> {row.lead.campaign}</p><p><b>CRM status:</b> {row.lead.crmStatus}</p></div></section>
+
+      <section className="border border-[var(--line)] p-4">
+        <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Classification</h3><p className="mt-1 text-xs text-[var(--muted)]">Correct reporting fields without editing Monday or ROBAWS.</p></div><button type="button" className="button-secondary" onClick={()=>setEditing(value=>!value)}><Pencil size={14}/>{editing?"Cancel":"Edit"}</button></div>
+        {editing?<div className="mt-4 grid gap-3">
+          <label><span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Source</span><input className="h-10 w-full border border-[var(--line)] px-3" value={source} onChange={e=>setSource(e.target.value)}/></label>
+          <label><span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Service</span><select className="h-10 w-full border border-[var(--line)] px-3" value={service} onChange={e=>setService(e.target.value)}><option value={service}>{service||"Unassigned"}</option>{data.services.filter(item=>item.name!==service).map(item=><option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
+          <label><span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Campaign</span><select className="h-10 w-full border border-[var(--line)] px-3" value={campaign} onChange={e=>setCampaign(e.target.value)}><option value={campaign}>{campaign||"Unattributed"}</option>{data.campaigns.filter(item=>item.name!==campaign).map(item=><option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
+          <label><span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Municipality</span><input className="h-10 w-full border border-[var(--line)] px-3" value={municipality} onChange={e=>setMunicipality(e.target.value)}/></label>
+          {error&&<div className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+          <div className="flex gap-2"><button type="button" onClick={save} disabled={pending} className="button-primary flex-1">{pending?"Saving…":"Save correction"}</button>{overrides.length>0&&<button type="button" onClick={reset} disabled={pending} className="button-secondary"><RotateCcw size={14}/> Reset synced</button>}</div>
+        </div>:<div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p><span className="block text-xs text-[var(--muted)]">Source</span><b>{row.lead.source}</b></p><p><span className="block text-xs text-[var(--muted)]">Service</span><b>{row.lead.service}</b></p><p><span className="block text-xs text-[var(--muted)]">Campaign</span><b>{row.lead.campaign}</b></p><p><span className="block text-xs text-[var(--muted)]">Municipality</span><b>{row.lead.municipality}</b></p></div>}
+      </section>
+
+      <section><h3 className="mb-3 text-sm font-semibold">Client</h3><div className="space-y-2 text-sm"><p><b>Email:</b> {row.lead.email||"—"}</p><p><b>Phone:</b> {row.lead.phone||"—"}</p><p><b>CRM status:</b> {row.lead.crmStatus}</p></div></section>
       <section><h3 className="mb-3 text-sm font-semibold">Timeline</h3><div className="space-y-3 border-l border-[var(--line)] pl-4"><Timeline title="Lead acquired" when={date(row.lead.date)} detail={row.lead.source+" · "+row.lead.campaign}/>{row.appointments.map((a,i)=><Timeline key={"a"+i} title={a.completedAt?"Visit completed":"Visit scheduled"} when={dateTime(a.completedAt??a.scheduledAt)} detail={a.noShow?"No-show":a.status}/>)}{row.offers.map(o=><Timeline key={o.id} title={"Offer "+o.number} when={o.sentAt?"Sent "+dateTime(o.sentAt):"Created "+date(o.date)+" · send not verified"} detail={formatCurrency(o.priceExclVat)+" excl. VAT · "+formatCurrency(o.priceInclVat)+" incl. VAT · "+o.status+(o.followUpAt?" · follow-up "+dateTime(o.followUpAt):"")}/>)}{row.isSigned&&<Timeline title="CRM signed" when="CRM evidence" detail="Kept separate from commercial verification."/>}{row.projects.map(p=><Timeline key={p.id} title={"Commercial project "+p.externalId} when="ROBAWS evidence" detail={formatCurrency(p.valueInclVat)+" · "+p.status}/>)}{row.invoices.map(i=><Timeline key={i.id} title={"Invoice "+i.number} when={i.date?date(i.date):"Commercial evidence"} detail={formatCurrency(i.totalInclVat)+" invoiced · "+formatCurrency(i.paidTotal)+" paid · "+i.status}/>)}</div></section>
       {row.stage==="lost"&&<div className="border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><b>Lost / not relevant</b><p className="mt-1">{row.lostReason||"No structured reason recorded."}</p></div>}
     </div>
