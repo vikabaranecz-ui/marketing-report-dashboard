@@ -23,7 +23,7 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
   const [syncing,setSyncing]=useState(false);
   const [message,setMessage]=useState("");
   const [tone,setTone]=useState<"good"|"warn">("good");
-  const connected = data.integrations.filter(item=>item.status==="Connected"&&syncableProviders.has(item.provider));
+  const connected = data.integrations.filter(item=>item.status==="Connected"&&syncableProviders.has(item.provider)&&item.resource!=="Not selected");
   const lastSync = useMemo(() => latestDate(data.integrations.map(item=>item.lastSuccess)), [data.integrations]);
   const changes=(data.changeEvents??[]).slice(0,6);
   const autoEnabled=Boolean(data.automation?.enabled);

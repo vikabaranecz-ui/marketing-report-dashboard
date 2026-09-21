@@ -61,7 +61,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   const configuration = isGoogleProvider(provider)
     ? requestedConfiguration
     : { ...(access.connection.configuration as Record<string, unknown>), ...requestedConfiguration };
-  const { error } = await access.supabase.from("reporting_integration_connections").update({ configuration, updated_at: new Date().toISOString() }).eq("id", access.connection.id).select("id").single();
+  const { error } = await access.supabase.from("reporting_integration_connections").update({
+    configuration,
+    status: "connected",
+    error_message: null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", access.connection.id).select("id").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ message: "Resource selection saved.", configuration });
 }

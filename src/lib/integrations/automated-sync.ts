@@ -54,7 +54,8 @@ export async function runAutomatedSync(scope: AutomationScope) {
   if (error) throw new Error(`Unable to load connected integrations: ${error.message}`);
 
   const connections = ((data ?? []) as ConnectionRow[])
-    .filter((connection) => shouldRun(scope, connection.provider));
+    .filter((connection) => shouldRun(scope, connection.provider))
+    .filter(isConfiguredForAutomation);
 
   const results: Array<{
     companyId: string;
@@ -85,6 +86,18 @@ export async function runAutomatedSync(scope: AutomationScope) {
     providers: results,
     changes: results.reduce((sum, row) => sum + row.changes, 0),
   };
+}
+
+function isConfiguredForAutomation(connection: ConnectionRow) {
+  const configuration = connection.configuration ?? {};
+  if (connection.provider === "meta") return Boolean(configuration.ad_account_id);
+  if (connection.provider === "google_ads") return Boolean(configuration.customer_id);
+  if (connection.provider === "ga4") return Boolean(configuration.property_id);
+  if (connection.provider === "search_console") return Boolean(configuration.site_url);
+  if (connection.provider === "google_business") return Boolean(configuration.location_id);
+  if (connection.provider === "monday") return Boolean(configuration.board_id);
+  if (connection.provider === "hubspot") return Boolean(configuration.portal_id);
+  return connection.provider === "robaws";
 }
 
 function shouldRun(scope: AutomationScope, provider: IntegrationProvider) {
