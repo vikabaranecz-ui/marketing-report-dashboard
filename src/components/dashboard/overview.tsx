@@ -40,6 +40,17 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const coveredClients=knownSpendRows.reduce((sum,row)=>sum+row.attributedClients,0);
   const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
 
+  const allCommercialClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
+  const matchedCommercialClients=allCommercialClients.filter(client=>Boolean(client.matchedLeadId));
+  const safeLeadIds=new Set(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.leadIds));
+  const safeCommercialClients=allCommercialClients.filter(client=>Boolean(client.matchedLeadId)&&safeLeadIds.has(client.matchedLeadId!));
+  const businessInvoiced=allCommercialClients.reduce((sum,client)=>sum+client.invoicedTotal,0);
+  const businessPaid=allCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
+  const attributedInvoiced=safeCommercialClients.reduce((sum,client)=>sum+client.invoicedTotal,0);
+  const attributedPaid=safeCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
+  const clientCoverage=percentage(safeCommercialClients.length,allCommercialClients.length);
+  const paidCoverage=percentage(attributedPaid,businessPaid);
+
   const stages=[
     {label:"Known spend",value:formatCurrency(coveredSpend,true),note:paidSources.some(row=>row.costState==="missing")?"Some paid-source spend still missing":"Synced + manual corrections"},
     {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows"},
@@ -47,8 +58,8 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
     {label:"Visits",value:formatNumber(rows.filter(hasCompletedVisitEvidence).length),note:"Completed / post-visit evidence"},
     {label:"Offers sent",value:formatNumber(summary.offersSent),note:formatCurrency(summary.sentQuotedValue,true)+" sent value"},
     {label:"CRM signed",value:formatNumber(summary.crmSigned),note:"Monday status"},
-    {label:"ROBAWS clients",value:formatNumber(summary.commercialClients),note:formatNumber(summary.attributableClients)+" attributable"},
-    {label:"Paid",value:formatCurrency(paid,true),note:"Commercial cash"},
+    {label:"Attributed clients",value:formatNumber(summary.attributableClients),note:formatNumber(summary.commercialClients)+" CRM-linked commercial"},
+    {label:"Attributed paid",value:formatCurrency(attributedPaid,true),note:"Safely linked to marketing"},
   ];
 
   const actionItems=buildActionItems(data,rows,openOffers,paidSources);
@@ -56,6 +67,33 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
   return <div className="space-y-6">
     <SystemPulse data={data}/>
+
+    <Card className="overflow-hidden">
+      <div className="border-b border-[var(--line)] p-5">
+        <SectionHeader title="Can I trust these numbers?" description="Business truth from ROBAWS is kept separate from marketing attribution. A low attribution number does not mean the company has only a few clients."/>
+      </div>
+      <div className="grid gap-px bg-[var(--line)] lg:grid-cols-2">
+        <div className="bg-white p-5">
+          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">BUSINESS TRUTH · ROBAWS</p><h3 className="mt-1 text-lg font-semibold">What actually happened commercially</h3></div><StatusPill tone="good">Source of truth</StatusPill></div>
+          <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
+            <TruthMetric label="Commercial clients" value={formatNumber(allCommercialClients.length)}/>
+            <TruthMetric label="Invoiced" value={formatCurrency(businessInvoiced)}/>
+            <TruthMetric label="Paid" value={formatCurrency(businessPaid)}/>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">These totals come from ROBAWS client records and do not require a marketing match.</p>
+        </div>
+        <div className="bg-white p-5">
+          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">MARKETING ATTRIBUTION</p><h3 className="mt-1 text-lg font-semibold">What we can safely connect to CRM</h3></div><StatusPill tone={safeCommercialClients.length===allCommercialClients.length?"good":"warn"}>{formatPercent(clientCoverage)} covered</StatusPill></div>
+          <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
+            <TruthMetric label="Safe attributed" value={formatNumber(safeCommercialClients.length)}/>
+            <TruthMetric label="Attributed invoiced" value={formatCurrency(attributedInvoiced)}/>
+            <TruthMetric label="Attributed paid" value={formatCurrency(attributedPaid)}/>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatNumber(allCommercialClients.length-safeCommercialClients.length)} commercial clients are not safely attributable to a CRM lead. Paid-cash coverage is {formatPercent(paidCoverage)}.</p>
+        </div>
+      </div>
+    </Card>
+
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
         <SectionHeader title="Is marketing producing business?" description="One chain from tracked spend to paid revenue. Detailed evidence lives in the drill-down pages."/>
@@ -70,10 +108,10 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(data.metrics.leads)+" CRM rows · target not configured"}/>
       <KpiCard label="Qualified people" value={formatNumber(summary.qualified)} meta={formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"}/>
       <KpiCard label="Visits" value={formatNumber(rows.filter(hasCompletedVisitEvidence).length)} meta="Deduplicated visit evidence"/>
-      <KpiCard label="Won project value" value={formatCurrency(projectValue,true)} delta={delta(projectValue,data.previous.revenue)} meta={formatNumber(summary.attributableClients)+" attributable clients"}/>
-      <KpiCard label="Open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" sent + open offers"}/>
-      <KpiCard label="Invoiced" value={formatCurrency(invoiced,true)} meta="Net of credits"/>
-      <KpiCard label="Paid" value={formatCurrency(paid,true)} meta="Cash received"/>
+      <KpiCard label="Attributed project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" safely attributed clients"}/>
+      <KpiCard label="Attributed open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" CRM-linked sent + open offers"}/>
+      <KpiCard label="Attributed invoiced" value={formatCurrency(attributedInvoiced,true)} meta={formatPercent(clientCoverage)+" client attribution coverage"}/>
+      <KpiCard label="Attributed paid" value={formatCurrency(attributedPaid,true)} meta={formatPercent(paidCoverage)+" of ROBAWS paid cash covered"/>
     </div>
 
     <Card className="p-5">
@@ -98,14 +136,14 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       </Card>
 
       <Card className="p-5">
-        <SectionHeader title="Revenue stages" description="Offer value, project value, invoiced and paid are different commercial states."/>
+        <SectionHeader title="Attributed revenue stages" description="This section contains only CRM-linked commercial evidence. The full ROBAWS business totals are shown above."/>
         <div className="space-y-1">
           <MoneyRow label="Total offered" value={sentOffers.reduce((sum,item)=>sum+item.priceInclVat,0)}/>
           <MoneyRow label="Open pipeline" value={openValue}/>
           <MoneyRow label="Accepted / contracted" value={acceptedValue}/>
           <MoneyRow label="Project value" value={projectValue}/>
-          <MoneyRow label="Invoiced" value={invoiced}/>
-          <MoneyRow label="Paid" value={paid} accent/>
+          <MoneyRow label="Linked invoice rows" value={invoiced}/>
+          <MoneyRow label="Safely attributed paid" value={attributedPaid} accent/>
         </div>
         <Link href={scopedHref("/revenue")} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open revenue evidence <ArrowRight size={14}/></Link>
       </Card>
@@ -121,9 +159,11 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
     <Card className="p-5">
       <SectionHeader title="Data trust" description="Performance conclusions are separated from data-quality blockers."/>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Trust label="Google Ads spend" ok={!paidSources.some(row=>row.source==="Google Ads"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="Google Ads"&&row.costState==="missing")?"Missing — no CAC/ROAS":"Available or no Google cohort"}/>
         <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
+        <Trust label="Attribution coverage" ok={safeCommercialClients.length===allCommercialClients.length} detail={safeCommercialClients.length+" / "+allCommercialClients.length+" commercial clients safely attributed"}/>
+        <Trust label="Paid-cash coverage" ok={paidCoverage>=90} detail={formatPercent(paidCoverage)+" of ROBAWS paid cash attributable"}/>
         <Trust label="Potential duplicates" ok={data.dataHealth.duplicates===0} detail={data.dataHealth.duplicates+" flagged"}/>
         <Trust label="Signed reconciliation" ok={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length===0} detail={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length+" signed not ROBAWS-confirmed"}/>
       </div>
@@ -191,6 +231,7 @@ function BudgetCard({source,action,body,tone}:{source:string;action:string;body:
   const cls=tone==="good"?"border-emerald-200 bg-emerald-50":tone==="bad"?"border-rose-200 bg-rose-50":"border-amber-200 bg-amber-50";
   return <div className={`border p-4 ${cls}`}><div className="flex items-start justify-between gap-3"><strong className="text-sm">{source}</strong><StatusPill tone={tone}>{action}</StatusPill></div><p className="mt-3 text-sm leading-6">{body}</p></div>;
 }
+function TruthMetric({label,value}:{label:string;value:string}){return <div className="bg-[var(--surface)] p-3"><span className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted)]">{label}</span><strong className="mt-2 block text-lg">{value}</strong></div>}
 function Economy({label,value,note}:{label:string;value:string;note:string}){return <div className="economy-cell"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
 function MoneyRow({label,value,accent=false}:{label:string;value:number;accent?:boolean}){return <div className={`money-row ${accent?"money-row-accent":""}`}><span>{label}</span><strong>{formatCurrency(value)}</strong></div>}
 function Trust({label,ok,detail}:{label:string;ok:boolean;detail:string}){return <div className="trust-card"><div className="flex items-center gap-2">{ok?<CheckCircle2 size={16} className="text-emerald-700"/>:<AlertTriangle size={16} className="text-amber-700"/>}<strong>{label}</strong></div><p>{detail}</p></div>}
