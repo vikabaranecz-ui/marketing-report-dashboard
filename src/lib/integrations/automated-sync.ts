@@ -159,6 +159,7 @@ async function runConnection(connection: ConnectionRow) {
           trigger: "automation",
           provider: connection.provider,
           companyId: connection.company_id,
+          sync: result,
           changes: events.map((event) => ({
             metric: event.metric_key,
             delta: event.delta,
