@@ -231,7 +231,7 @@ export type ReportingChangeEvent = {
 
 export type ReportingOverride = {
   id: string;
-  periodKey: string;
+  periodKey?: string;
   scopeType: "company" | "source" | "client";
   scopeKey: string;
   fieldKey: string;
@@ -271,8 +271,8 @@ export type CompanyDataset = {
   seo: { impressions: number; clicks: number; ctr: number; position: number; brandedShare: number | null };
   gbp?: { profileViews: number; websiteClicks: number; calls: number; directionRequests: number; messages: number; searches: number; reviews: number; averageRating: number | null };
   integrations: Integration[];
-  changeEvents: ReportingChangeEvent[];
-  manualOverrides: ReportingOverride[];
-  automation: AutomationSettings | null;
+  changeEvents?: ReportingChangeEvent[];
+  manualOverrides?: ReportingOverride[];
+  automation?: AutomationSettings | null;
   dataHealth: { missingSource: number; missingService: number; missingCampaign: number; wonMissingRevenue: number; duplicates: number; campaignsWithoutSpend: number; daysSinceSync: number | null };
 };
