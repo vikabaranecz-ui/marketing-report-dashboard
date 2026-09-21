@@ -86,16 +86,12 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const { fromIso, toIso, fromDate, toDate } = period;
   const comparison = previousDashboardPeriod(period);
   const leadSelect = "id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)";
-  const [leadsRes, previousLeadsRes] = await Promise.all([
-    supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso),
-    supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",comparison.fromIso).lte("created_at",comparison.toIso),
-  ]);
-  const leadError = leadsRes.error ?? previousLeadsRes.error;
-  if (leadError) throw new Error(`Unable to load lead cohorts: ${leadError.message}`);
+  const leadsRes = await supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso);
+  if (leadsRes.error) throw new Error(`Unable to load lead cohort: ${leadsRes.error.message}`);
+  const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
   const currentLeadIds = rawLeads.length ? rawLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
-  const previousLeadIds = previousLeads.length ? previousLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
 
-  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, previousMetricsRes, previousQuotesRes, previousProjectsRes] = await Promise.all([
+  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes] = await Promise.all([
     supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate),
     supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds),
     supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds),
@@ -116,11 +112,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     supabase.from("reporting_change_events").select("id,provider,occurred_at,metric_key,title,detail,delta,before_value,after_value,severity").eq("company_id",company.id).order("occurred_at",{ascending:false}).limit(30),
     supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).eq("period_key",period.selectedMonth),
     supabase.from("reporting_automation_settings").select("enabled,operational_schedule,marketing_schedule").eq("company_id",company.id).maybeSingle(),
-    supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",comparison.fromDate).lte("date",comparison.toDate),
-    supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", previousLeadIds),
-    supabase.from("projects").select("id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,crm_source,crm_external_id,external_status,attribution_status").in("lead_id", previousLeadIds),
   ]);
-  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,previousMetricsRes,previousQuotesRes,previousProjectsRes].find(result => result.error)?.error;
+  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
@@ -134,10 +127,6 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawChangeEvents = (changeEventsRes.data ?? []) as unknown as RawChangeEvent[];
   const rawOverrides = (overridesRes.data ?? []) as unknown as RawOverride[];
   const rawAutomation = (automationRes.data ?? null) as unknown as RawAutomation | null;
-  const previousMetrics = (previousMetricsRes.data ?? []) as unknown as RawMetric[];
-  const previousLeads = (previousLeadsRes.data ?? []) as unknown as RawLead[];
-  const previousQuotes = ((previousQuotesRes.data ?? []) as unknown as RawQuote[]).filter(quote => !isDateConflict(quote.attribution_status));
-  const previousProjects = ((previousProjectsRes.data ?? []) as unknown as RawProject[]).filter(project => !isDateConflict(project.attribution_status));
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? {impressions:0,clicks:0,position_sum:0,branded_clicks:0,classified_clicks:0}) as unknown as RawSeoSummary;
   const rawGbp = (gbpRes.data ?? []) as unknown as RawGbp[];
@@ -307,18 +296,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   );
 
   const revenue=attributableProjects.reduce((sum, project) => sum + Number(project.project_value ?? 0), 0), grossProfit=attributableProjects.every(p=>p.gross_margin!==null)?attributableProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
-  const previousQuoteLeadIds = new Set(previousQuotes.map(quote => quote.lead_id).concat(previousLeads.filter(lead => ["quote_sent","won"].includes(lead.sales_stage) || isQuoteOutcomeStatus(lead.crm_status)).map(lead => lead.id)));
-  const previousWonLeadIds = new Set(previousProjects.filter(project => project.status === "won").map(project => project.lead_id));
-  const previous = {
-    spend: previousMetrics.reduce((sum,row) => sum + Number(row.spend ?? 0), 0),
-    leads: previousLeads.length,
-    notRelevant: previousLeads.filter(isNotRelevantLead).length,
-    qualified: previousLeads.filter(isQualifiedLead).length,
-    visits: previousLeads.filter(hasReachedVisit).length,
-    quotes: previousQuoteLeadIds.size,
-    won: previousWonLeadIds.size,
-    revenue: previousProjects.reduce((sum,project) => sum + Number(project.project_value ?? 0), 0),
-  };
+  const previous = { spend:0, leads:0, notRelevant:0, qualified:0, visits:0, quotes:0, won:0, revenue:0 };
   return {company,periodKey:period.selectedMonth,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:`vs ${comparison.fromDate} — ${comparison.toDate}`,metrics:{spend:total("spend"),leads:rawLeads.length,notRelevant:rawLeads.filter(isNotRelevantLead).length,qualified:rawLeads.filter(isQualifiedLead).length,visits:rawLeads.filter(hasReachedVisit).length,quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous,channels,leadSources,commercialDeals,commercialClients,commercialOffers,commercialProjects,commercialInvoices,commercialAppointments,appointmentLeadIds,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:classifiedClicks?branded/classifiedClicks*100:null},gbp,integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[])[0]?.records_imported??0,resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),changeEvents:rawChangeEvents.map(event=>({id:event.id,provider:event.provider,occurredAt:event.occurred_at,metricKey:event.metric_key,title:event.title,detail:event.detail??"",delta:event.delta===null?null:Number(event.delta),beforeValue:event.before_value===null?null:Number(event.before_value),afterValue:event.after_value===null?null:Number(event.after_value),severity:event.severity})),manualOverrides:rawOverrides.map(item=>({id:item.id,periodKey:item.period_key,scopeType:item.scope_type,scopeKey:item.scope_key,fieldKey:item.field_key,value:item.value,note:item.note??"",updatedAt:item.updated_at})),automation:rawAutomation?{enabled:rawAutomation.enabled,operationalSchedule:rawAutomation.operational_schedule,marketingSchedule:rawAutomation.marketing_schedule}:null,dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:attributableProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:potentialDuplicateCount(rawLeads),campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
 }
 
