@@ -11,7 +11,7 @@ export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCam
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [companyId, setCompanyId] = useState(bootstrap.companies[0]?.id ?? "");
+  const companyId = bootstrap.selectedCompanyId;
 
   function setMonth(value: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -20,6 +20,14 @@ export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCam
     const query = params.toString();
     router.push(query ? `${pathname}?${query}` : pathname);
   }
+  function setCompany(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("company", value);
+    const query = params.toString();
+    setExpandedCampaignId(null);
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }
+
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const data = bootstrap.datasets[companyId];
   const totals = useMemo(() => data ? totalCampaigns(data.campaigns) : null, [data]);
@@ -38,7 +46,7 @@ export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCam
           </label>
           <label className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[.12em] text-[var(--muted)]">
             Company
-            <select className="h-10 border border-[var(--border)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]" value={companyId} onChange={event => { setCompanyId(event.target.value); setExpandedCampaignId(null); }}>
+            <select className="h-10 border border-[var(--border)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]" value={companyId} onChange={event => setCompany(event.target.value)}>
               {bootstrap.companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
             </select>
           </label>

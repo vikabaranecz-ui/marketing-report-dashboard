@@ -30,7 +30,9 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
 
   useEffect(()=>{
     if(!autoEnabled)return;
-    const id=window.setInterval(()=>router.refresh(),60_000);
+    const id=window.setInterval(()=>{
+      if(document.visibilityState==="visible") router.refresh();
+    },300_000);
     return ()=>window.clearInterval(id);
   },[autoEnabled,router]);
 

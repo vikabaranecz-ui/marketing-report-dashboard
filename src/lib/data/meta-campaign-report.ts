@@ -79,6 +79,7 @@ export type MetaCampaignReportBootstrap = {
   companies: { id: string; name: string }[];
   datasets: Record<string, MetaCampaignDataset>;
   selectedMonth: string;
+  selectedCompanyId: string;
   availableMonths: string[];
 };
 
@@ -94,15 +95,17 @@ type AdRow = { id: string; name: string };
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
-export async function getMetaCampaignReportBootstrap(month = "ytd"): Promise<MetaCampaignReportBootstrap> {
+export async function getMetaCampaignReportBootstrap(month = "ytd", companyId?: string): Promise<MetaCampaignReportBootstrap> {
   const period = reportingPeriod(month);
-  if (!hasSupabaseConfig()) return { mode: "unavailable", companies: [], datasets: {}, selectedMonth: period.selectedMonth, availableMonths: availableReportingMonths() };
+  if (!hasSupabaseConfig()) return { mode: "unavailable", companies: [], datasets: {}, selectedMonth: period.selectedMonth, selectedCompanyId: "", availableMonths: availableReportingMonths() };
   const supabase = await createSupabaseServerClient();
   const companiesResult = await supabase.from("companies").select("id,name").eq("is_active", true).order("name");
   if (companiesResult.error) throw new Error(`Unable to load companies: ${companiesResult.error.message}`);
   const companies = (companiesResult.data ?? []).map(row => ({ id: row.id, name: row.name }));
-  const entries = await Promise.all(companies.map(async company => [company.id, await loadCompany(supabase, company, period)] as const));
-  return { mode: "live", companies, datasets: Object.fromEntries(entries), selectedMonth: period.selectedMonth, availableMonths: availableReportingMonths() };
+  const selectedCompany = companies.find(company => company.id === companyId) ?? companies[0];
+  const selectedCompanyId = selectedCompany?.id ?? "";
+  const datasets = selectedCompany ? { [selectedCompany.id]: await loadCompany(supabase, selectedCompany, period) } : {};
+  return { mode: "live", companies, datasets, selectedMonth: period.selectedMonth, selectedCompanyId, availableMonths: availableReportingMonths() };
 }
 
 async function loadCompany(
