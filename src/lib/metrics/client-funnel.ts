@@ -182,6 +182,26 @@ function masterLead(leads: Lead[]) {
   };
 }
 
+function applyClientOverrides(data: CompanyDataset, lead: Lead): Lead {
+  const overrides = (data.manualOverrides ?? []).filter(item =>
+    item.scopeType === "client" && item.scopeKey === lead.id
+  );
+  if (!overrides.length) return lead;
+
+  const textValue = (fieldKey: string) => {
+    const item = overrides.find(override => override.fieldKey === fieldKey);
+    return typeof item?.value === "string" && item.value.trim() ? item.value.trim() : null;
+  };
+
+  return {
+    ...lead,
+    source: textValue("source") ?? lead.source,
+    service: textValue("service") ?? lead.service,
+    campaign: textValue("campaign") ?? lead.campaign,
+    municipality: textValue("municipality") ?? lead.municipality,
+  };
+}
+
 export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   const appointments = data.commercialAppointments ?? [];
   const offers = (data.commercialOffers ?? []).filter(item => !hasDateConflict(item.attributionStatus));
@@ -189,7 +209,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   const invoices = (data.commercialInvoices ?? []).filter(item => !hasDateConflict(item.attributionStatus));
 
   return groupLeadsByIdentity(data.leads).map(group => {
-    const lead = masterLead(group);
+    const lead = applyClientOverrides(data, masterLead(group));
     const leadIds = new Set(group.map(item => item.id));
     const leadAppointments = appointments.filter(item => leadIds.has(item.leadId));
     const leadOffers = offers.filter(item => leadIds.has(item.leadId));
