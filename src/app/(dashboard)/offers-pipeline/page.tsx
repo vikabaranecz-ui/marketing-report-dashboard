@@ -3,5 +3,5 @@ import { getDashboardBootstrap } from "@/lib/data/repository";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ month?: string; company?: string }> }) {
   const params = await searchParams;
-  return <DashboardShell bootstrap={await getDashboardBootstrap(params.month, params.company)} section="offers-pipeline"/>;
+  return <DashboardShell bootstrap={await getDashboardBootstrap(params.month, params.company, "commercial")} section="offers-pipeline"/>;
 }
