@@ -111,7 +111,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <KpiCard label="Attributed project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" safely attributed clients"}/>
       <KpiCard label="Attributed open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" CRM-linked sent + open offers"}/>
       <KpiCard label="Attributed invoiced" value={formatCurrency(attributedInvoiced,true)} meta={formatPercent(clientCoverage)+" client attribution coverage"}/>
-      <KpiCard label="Attributed paid" value={formatCurrency(attributedPaid,true)} meta={formatPercent(paidCoverage)+" of ROBAWS paid cash covered"/>
+      <KpiCard label="Attributed paid" value={formatCurrency(attributedPaid,true)} meta={formatPercent(paidCoverage)+" of ROBAWS paid cash covered"}/>
     </div>
 
     <Card className="p-5">
