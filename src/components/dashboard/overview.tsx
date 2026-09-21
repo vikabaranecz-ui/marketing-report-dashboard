@@ -48,8 +48,8 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const businessPaid=allCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
   const attributedInvoiced=safeCommercialClients.reduce((sum,client)=>sum+client.invoicedTotal,0);
   const attributedPaid=safeCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
-  const clientCoverage=percentage(safeCommercialClients.length,allCommercialClients.length);
-  const paidCoverage=percentage(attributedPaid,businessPaid);
+  const clientCoverage=percentage(safeCommercialClients.length,allCommercialClients.length)??0;
+  const paidCoverage=percentage(attributedPaid,businessPaid)??0;
 
   const stages=[
     {label:"Known spend",value:formatCurrency(coveredSpend,true),note:paidSources.some(row=>row.costState==="missing")?"Some paid-source spend still missing":"Synced + manual corrections"},
