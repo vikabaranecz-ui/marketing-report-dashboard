@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
@@ -93,6 +94,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
+  const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
 
   return <div className="space-y-6">
     <Card className="p-5">
@@ -101,7 +103,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
         <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project €</th><th>Paid €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
           <td className="font-semibold">{row.source}</td>
-          <td>{row.costState==="missing"?<StatusPill tone="warn">Spend missing</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}</td>
+          <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend?<StatusPill tone="accent">Manual</StatusPill>:<Pencil size={12}/>}</button></td>
           <td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}</td>
           <td>{formatCurrency(row.projectValue)}</td><td className="font-semibold">{formatCurrency(row.paid)}</td>
@@ -123,6 +125,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       <div className="callout"><AlertTriangle size={18}/><div><strong>Spend scope matters.</strong><p>Channel spend is the tracked spend for the selected period. If a channel also ran awareness or non-lead campaigns, that spend remains included rather than being silently removed from CAC.</p></div></div>
       <div className="callout"><AlertTriangle size={18}/><div><strong>Ad set / ad / creative economics need the lead-to-ad join.</strong><p>The schema can store ad-level data, but this page will not infer creative winners from CTR or campaign totals when person-level commercial attribution is missing.</p></div></div>
     </div>
+    {editingSource&&<SpendEditor data={data} row={editingSource} onClose={()=>setEditingSource(null)}/>}
   </div>;
 }
 
@@ -206,6 +209,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
 
 export type SourceBusinessRow = {
   source:string; spend:number|null; costState:"known"|"missing"|"not-applicable";
+  isManualSpend:boolean; manualNote:string;
   leads:number; qualified:number; visits:number; offers:number; sentValue:number; openValue:number;
   signed:number; commercialClients:number; attributedClients:number; projectValue:number; paid:number;
 };
@@ -220,13 +224,16 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
   return [...groups.entries()].map(([source,group])=>{
     const leadIds=new Set(group.flatMap(item=>item.leadIds));
     const sourceInvoices=invoices.filter(item=>item.leadId!==null&&leadIds.has(item.leadId));
-    const spend=spendForSource(data,source,group);
+    const manual = sourceSpendOverride(data,source);
+    const spend = manual ? Number(manual.value) : spendForSource(data,source,group);
     const nonPaid=!paidSources.has(source);
-    const costState: SourceBusinessRow["costState"] = nonPaid ? "not-applicable" : spend === null ? "missing" : "known";
+    const costState: SourceBusinessRow["costState"] = nonPaid ? "not-applicable" : spend === null || !Number.isFinite(spend) ? "missing" : "known";
     return {
       source,
-      spend,
+      spend:Number.isFinite(spend as number)?spend:null,
       costState,
+      isManualSpend:Boolean(manual),
+      manualNote:manual?.note??"",
       leads:group.length,
       qualified:group.filter(item=>item.isQualified).length,
       visits:group.filter(hasCompletedVisitEvidence).length,
@@ -240,6 +247,74 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
       paid:sourceInvoices.reduce((total,item)=>total+item.paidTotal,0),
     };
   }).sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.openValue-a.openValue||b.leads-a.leads);
+}
+
+function sourceSpendOverride(data:CompanyDataset,source:string){
+  return (data.manualOverrides??[]).find(item=>
+    item.scopeType==="source" &&
+    item.scopeKey===source &&
+    item.fieldKey==="spend" &&
+    typeof item.value==="number"
+  )??null;
+}
+
+function SpendEditor({data,row,onClose}:{data:CompanyDataset;row:SourceBusinessRow;onClose:()=>void}){
+  const router=useRouter();
+  const [value,setValue]=useState(row.spend===null?"":String(row.spend));
+  const [note,setNote]=useState(row.manualNote);
+  const [pending,setPending]=useState(false);
+  const [error,setError]=useState("");
+
+  async function save(){
+    const amount=Number(value.replace(",","."));
+    if(!Number.isFinite(amount)||amount<0){setError("Enter a valid spend amount.");return;}
+    setPending(true);setError("");
+    const response=await fetch("/api/overrides",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      companyId:data.company.id,
+      periodKey:data.periodKey??"ytd",
+      scopeType:"source",
+      scopeKey:row.source,
+      fieldKey:"spend",
+      value:amount,
+      note,
+    })});
+    const body=await response.json().catch(()=>({}));
+    setPending(false);
+    if(!response.ok){setError(body.error??"Could not save manual spend.");return;}
+    onClose();router.refresh();
+  }
+
+  async function reset(){
+    setPending(true);setError("");
+    const response=await fetch("/api/overrides",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      companyId:data.company.id,
+      periodKey:data.periodKey??"ytd",
+      scopeType:"source",
+      scopeKey:row.source,
+      fieldKey:"spend",
+    })});
+    setPending(false);
+    if(!response.ok){const body=await response.json().catch(()=>({}));setError(body.error??"Could not reset override.");return;}
+    onClose();router.refresh();
+  }
+
+  return <div className="drawer-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <aside className="drawer max-w-[460px]" role="dialog" aria-modal="true" aria-label={"Edit "+row.source+" spend"}>
+      <header className="flex items-start justify-between border-b border-[var(--line)] p-5">
+        <div><p className="eyebrow">Manual correction</p><h2 className="mt-1 text-2xl font-bold tracking-tight">{row.source}</h2><p className="mt-2 text-sm text-[var(--muted)]">This changes dashboard calculations only. Synced ad-platform data stays untouched.</p></div>
+        <button type="button" onClick={onClose} className="icon-button"><X size={17}/></button>
+      </header>
+      <div className="space-y-5 p-5">
+        <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Spend for {data.periodKey??"selected period"}</span><div className="flex items-center border border-[var(--line)] bg-white px-3"><span className="text-[var(--muted)]">€</span><input value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" className="h-11 w-full px-2 outline-none" placeholder="0.00"/></div></label>
+        <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Reason / note</span><textarea value={note} onChange={e=>setNote(e.target.value)} className="min-h-28 w-full border border-[var(--line)] p-3 text-sm outline-none" placeholder="Example: LeadAngel invoice for September"/></label>
+        {error&&<div className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+        <div className="flex gap-2">
+          <button type="button" onClick={save} disabled={pending} className="button-primary flex-1">{pending?"Saving…":"Save manual value"}</button>
+          {row.isManualSpend&&<button type="button" onClick={reset} disabled={pending} className="button-secondary"><RotateCcw size={14}/> Reset to synced</button>}
+        </div>
+      </div>
+    </aside>
+  </div>;
 }
 
 function campaignBusinessRows(data:CompanyDataset,rows:JourneyRow[]) {
