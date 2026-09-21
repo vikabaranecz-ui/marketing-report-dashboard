@@ -117,7 +117,6 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
-  const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
   const rawAppointments = (appointmentsRes.data ?? []) as unknown as RawAppointment[];
   const rawQuotes = (quotesRes.data ?? []) as unknown as RawQuote[];
   const rawProjects = (projectsRes.data ?? []) as unknown as RawProject[];
