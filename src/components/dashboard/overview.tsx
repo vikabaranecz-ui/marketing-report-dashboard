@@ -7,11 +7,9 @@ import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
-import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
+import { Card, SectionHeader, StatusPill } from "./ui";
 import { SystemPulse } from "./system-pulse";
 import { MoneyTrendChart } from "./charts";
-
-function delta(current:number,previous:number){return previous===0?null:((current-previous)/previous)*100}
 
 export function OverviewPage({data}:{data:CompanyDataset}) {
   const searchParams=useSearchParams();
