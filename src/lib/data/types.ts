@@ -193,6 +193,33 @@ export type TrendPoint = {
   conversions: number;
 };
 
+export type BusinessPeriodMetric = {
+  label: string;
+  fromDate: string;
+  toDate: string;
+  spend: number;
+  invoiced: number;
+  paid: number;
+  leads: number;
+};
+
+export type BusinessMonthMetric = {
+  month: string;
+  label: string;
+  spend: number;
+  invoiced: number;
+  paid: number;
+  leads: number;
+  complete: boolean;
+};
+
+export type BusinessDecisionData = {
+  current: BusinessPeriodMetric;
+  comparison: BusinessPeriodMetric;
+  monthly: BusinessMonthMetric[];
+};
+
+
 export type LocationMetric = {
   municipality: string;
   leads: number;
@@ -266,6 +293,7 @@ export type CompanyDataset = {
   services: ServiceMetric[];
   campaigns: CampaignMetric[];
   trend: TrendPoint[];
+  businessDecision?: BusinessDecisionData;
   locations: LocationMetric[];
   website: { users: number; sessions: number; newUsers: number; engagedSessions: number; formSubmissions: number; whatsappClicks: number; phoneClicks: number; quoteRequests: number };
   seo: { impressions: number; clicks: number; ctr: number; position: number; brandedShare: number | null };
