@@ -112,7 +112,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
   const currentLeadIds = rawLeads.length ? rawLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
 
-  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, decisionMetricsRes, decisionInvoicesRes, decisionLeadsRes] = await Promise.all([
+  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, decisionMetricsRes, decisionInvoicesRes, decisionLeadsRes, decisionProjectsRes] = await Promise.all([
     needsMarketing ? supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate) : emptyRows,
     needsAppointments ? supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds) : emptyRows,
     needsCommercial ? supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
@@ -136,8 +136,9 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     needsDecision ? supabase.from("daily_marketing_metrics").select("date,spend").eq("company_id",company.id).gte("date",decisionFromDate).lte("date",toDate) : emptyRows,
     needsDecision ? supabase.from("commercial_invoices").select("invoice_date,total_incl_vat,paid_total,credited_total").eq("company_id",company.id).gte("invoice_date",decisionFromDate).lte("invoice_date",toDate) : emptyRows,
     needsDecision ? supabase.from("leads").select("id,created_at").eq("company_id",company.id).gte("created_at",decisionFromIso).lte("created_at",toIso) : emptyRows,
+    needsDecision ? supabase.from("projects").select("won_at,project_value,status,leads!inner(company_id)").eq("leads.company_id",company.id).gte("won_at",decisionFromIso).lte("won_at",toIso) : emptyRows,
   ]);
-  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,decisionMetricsRes,decisionInvoicesRes,decisionLeadsRes].find(result => result.error)?.error;
+  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,decisionMetricsRes,decisionInvoicesRes,decisionLeadsRes,decisionProjectsRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
@@ -158,6 +159,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
         (decisionMetricsRes.data ?? []) as unknown as Array<{date:string;spend:number|string}>,
         (decisionInvoicesRes.data ?? []) as unknown as Array<{invoice_date:string|null;total_incl_vat:number|string|null;paid_total:number|string|null;credited_total:number|string|null}>,
         (decisionLeadsRes.data ?? []) as unknown as Array<{id:string;created_at:string}>,
+        (decisionProjectsRes.data ?? []) as unknown as Array<{won_at:string|null;project_value:number|string|null;status:string}>,
         period,
         comparison,
       )
@@ -711,6 +713,7 @@ function buildBusinessDecision(
   metrics: Array<{date:string;spend:number|string}>,
   invoices: Array<{invoice_date:string|null;total_incl_vat:number|string|null;paid_total:number|string|null;credited_total:number|string|null}>,
   leads: Array<{id:string;created_at:string}>,
+  projects: Array<{won_at:string|null;project_value:number|string|null;status:string}>,
   period: DashboardPeriod,
   comparison: DashboardPeriod,
 ): BusinessDecisionData {
@@ -724,6 +727,10 @@ function buildBusinessDecision(
       const date = row.created_at.slice(0,10);
       return date >= range.fromDate && date <= range.toDate;
     });
+    const rangeWonProjects = projects.filter(row => {
+      const date = row.won_at?.slice(0,10);
+      return row.status==="won" && Boolean(date && date >= range.fromDate && date <= range.toDate);
+    });
     return {
       label: `${range.fromDate} — ${range.toDate}`,
       fromDate: range.fromDate,
@@ -732,6 +739,8 @@ function buildBusinessDecision(
       invoiced: rangeInvoices.reduce((sum,row)=>sum+Math.max(0,Number(row.total_incl_vat??0)-Number(row.credited_total??0)),0),
       paid: rangeInvoices.reduce((sum,row)=>sum+Number(row.paid_total??0),0),
       leads: rangeLeads.length,
+      wonProjects: rangeWonProjects.length,
+      wonProjectValue: rangeWonProjects.reduce((sum,row)=>sum+Number(row.project_value??0),0),
     };
   };
 
@@ -760,6 +769,8 @@ function buildBusinessDecision(
       invoiced: value.invoiced,
       paid: value.paid,
       leads: value.leads,
+      wonProjects: value.wonProjects,
+      wonProjectValue: value.wonProjectValue,
       complete: effectiveEnd === monthEnd,
     });
   }
