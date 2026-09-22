@@ -226,6 +226,12 @@ async function syncMonday(
   });
 
   const imported = await upsertLeads(admin, leads);
+  await pruneStaleCrmLeads(
+    admin,
+    companyId,
+    "monday",
+    new Set(items.map(item => item.id)),
+  );
 
   const dealItems = await fetchAllMondayItems(
     token,
@@ -302,6 +308,13 @@ async function syncMonday(
 
   const dealsImported =
     dealResult.data?.length ?? 0;
+
+  await pruneStaleCrmDeals(
+    admin,
+    companyId,
+    "monday",
+    new Set(dealItems.map(item => item.id)),
+  );
 
   return {
     recordsImported:
@@ -799,6 +812,82 @@ async function fetchHubSpotObjects<T>(
 // =========================================================
 // DATABASE HELPERS
 // =========================================================
+
+async function pruneStaleCrmLeads(
+  admin: AdminClient,
+  companyId: string,
+  crmSource: string,
+  currentExternalIds: Set<string>,
+) {
+  const existing = await admin
+    .from("leads")
+    .select("id,crm_external_id")
+    .eq("company_id", companyId)
+    .eq("crm_source", crmSource);
+
+  if (existing.error) {
+    throw new Error(`Unable to inspect stale CRM leads: ${existing.error.message}`);
+  }
+
+  const staleIds = (existing.data ?? [])
+    .filter(row => row.crm_external_id && !currentExternalIds.has(String(row.crm_external_id)))
+    .map(row => String(row.id));
+
+  for (let index = 0; index < staleIds.length; index += 100) {
+    const batch = staleIds.slice(index, index + 100);
+
+    const projectCleanup = await admin
+      .from("projects")
+      .delete()
+      .eq("crm_source", "robaws")
+      .in("lead_id", batch);
+
+    if (projectCleanup.error) {
+      throw new Error(`Unable to remove derived ROBAWS projects for stale CRM leads: ${projectCleanup.error.message}`);
+    }
+
+    const leadCleanup = await admin
+      .from("leads")
+      .delete()
+      .in("id", batch);
+
+    if (leadCleanup.error) {
+      throw new Error(`Unable to prune stale CRM leads: ${leadCleanup.error.message}`);
+    }
+  }
+}
+
+async function pruneStaleCrmDeals(
+  admin: AdminClient,
+  companyId: string,
+  crmSource: string,
+  currentExternalIds: Set<string>,
+) {
+  const existing = await admin
+    .from("crm_deals")
+    .select("id,crm_external_id")
+    .eq("company_id", companyId)
+    .eq("crm_source", crmSource);
+
+  if (existing.error) {
+    throw new Error(`Unable to inspect stale CRM deals: ${existing.error.message}`);
+  }
+
+  const staleIds = (existing.data ?? [])
+    .filter(row => row.crm_external_id && !currentExternalIds.has(String(row.crm_external_id)))
+    .map(row => String(row.id));
+
+  for (let index = 0; index < staleIds.length; index += 100) {
+    const result = await admin
+      .from("crm_deals")
+      .delete()
+      .in("id", staleIds.slice(index, index + 100));
+
+    if (result.error) {
+      throw new Error(`Unable to prune stale CRM deals: ${result.error.message}`);
+    }
+  }
+}
 
 async function upsertLeads(
   admin: AdminClient,
