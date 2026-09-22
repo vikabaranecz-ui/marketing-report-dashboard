@@ -127,7 +127,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
       .order("completed_at",{referencedTable:"sync_logs",ascending:false})
       .limit(1,{referencedTable:"sync_logs"}) : emptyRows,
     needsChanges ? supabase.from("reporting_change_events").select("id,provider,occurred_at,metric_key,title,detail,delta,before_value,after_value,severity").eq("company_id",company.id).order("occurred_at",{ascending:false}).limit(30) : emptyRows,
-    needsOverrides ? supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).eq("period_key",period.selectedMonth) : emptyRows,
+    needsOverrides ? supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).in("period_key",["all",period.selectedMonth]) : emptyRows,
     needsAutomation ? supabase.from("reporting_automation_settings").select("enabled,operational_schedule,marketing_schedule").eq("company_id",company.id).maybeSingle() : emptyOne,
   ]);
   const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes].find(result => result.error)?.error;
