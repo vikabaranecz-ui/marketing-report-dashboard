@@ -65,11 +65,8 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   });
   const knownSourceClients=sourceEvidence.filter(item=>item.safe&&item.source);
   const paidMarketingClients=knownSourceClients.filter(item=>isPaidMarketingSource(item.source));
-  const otherKnownSourceClients=knownSourceClients.filter(item=>!isPaidMarketingSource(item.source));
   const unknownSourceClients=cohortCommercialClients.length-knownSourceClients.length;
-  const cohortInvoiced=cohortCommercialClients.reduce((sum,client)=>sum+client.invoicedTotal,0);
   const cohortPaid=cohortCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
-  const knownSourceInvoiced=knownSourceClients.reduce((sum,item)=>sum+item.client.invoicedTotal,0);
   const knownSourcePaid=knownSourceClients.reduce((sum,item)=>sum+item.client.paidTotal,0);
   const paidMarketingPaid=paidMarketingClients.reduce((sum,item)=>sum+item.client.paidTotal,0);
   const sourceCoverage=percentage(knownSourceClients.length,cohortCommercialClients.length)??0;
