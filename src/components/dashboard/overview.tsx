@@ -26,7 +26,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const metaLeadAccessReady=!metaIntegration?.metaMissingPermissions?.includes("leads_retrieval");
   const leadDateCounts=new Map<string,number>();
   for(const lead of data.leads){const date=lead.date.slice(0,10);leadDateCounts.set(date,(leadDateCounts.get(date)??0)+1);}
-  const peakLeadDate=[...leadDateCounts.entries()].sort((a,b)=>b[1]-a[1])[0]??["",0] as [string,number];
+  const peakLeadDate=([...leadDateCounts.entries()].sort((a,b)=>b[1]-a[1])[0]??["",0]) as [string,number];
   const suspiciousLeadDateBatch=data.leads.length>=20&&peakLeadDate[1]>=20&&peakLeadDate[1]/data.leads.length>=0.25;
   const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
@@ -166,11 +166,12 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
     <div className="cohort-scope-note">
       <Clock3 size={17}/>
-      <div><strong>How to read this period</strong><p>Leads are selected by their creation date ({selectedFrom} — {selectedTo}). “Signed now” and “ROBAWS-confirmed” show the current outcome of that lead cohort; they do not prove the contract was signed during this period.</p></div>
+      <div><strong>How to read this period</strong><p>Leads are selected by their creation date ({selectedFrom} — {selectedTo}). “Signed now” and “ROBAWS-confirmed” show the current outcome of that cohort. Calendar-month sales below use ROBAWS project won dates instead of assuming a Monday status change is the contract date.</p></div>
     </div>
 
     {periodTotals&&<div className="decision-money-grid">
       <DecisionMoneyCard icon="spend" label="Tracked marketing spend" value={periodTotals.spend} comparison={directComparisonHasData?directComparison?.spend:null} note="Media/platform spend currently available in the dashboard"/>
+      <DecisionMoneyCard icon="invoice" label="Won project value" value={periodTotals.wonProjectValue} comparison={directComparisonHasData?directComparison?.wonProjectValue:null} note={periodTotals.wonProjects+" ROBAWS project(s) won inside the selected period"}/>
       <DecisionMoneyCard icon="invoice" label="Invoiced this period" value={periodTotals.invoiced} comparison={directComparisonHasData?directComparison?.invoiced:null} note="ROBAWS invoices dated inside the selected period"/>
       <DecisionMoneyCard icon="paid" label="Paid cash this period" value={periodTotals.paid} comparison={directComparisonHasData?directComparison?.paid:null} note="Cash recorded against ROBAWS invoices in this period"/>
       <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-periodTotals.spend} comparison={directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus tracked media spend — not company profit" accent/>
@@ -219,11 +220,11 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         <div className="bg-white p-5">
           <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">CALENDAR PERIOD · ROBAWS</p><h3 className="mt-1 text-lg font-semibold">What happened during this period</h3></div><StatusPill tone="good">Source of truth</StatusPill></div>
           <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
-            <TruthMetric label="ROBAWS records started" value={formatNumber(periodCommercialRecords.length)}/>
+            <TruthMetric label="Projects won" value={formatNumber(periodTotals?.wonProjects??0)}/>
             <TruthMetric label="Invoiced in period" value={formatCurrency(periodTotals?.invoiced??0)}/>
             <TruthMetric label="Paid in period" value={formatCurrency(periodTotals?.paid??0)}/>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatNumber(periodClientWonRecords.length)} records started in this period are currently CLIENT_WON. ROBAWS client_since is a client-record date, not a contract-signed timestamp.</p>
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatCurrency(periodTotals?.wonProjectValue??0)} of ROBAWS project value was won in this period. {formatNumber(periodCommercialRecords.length)} client record(s) have client_since in the period; {formatNumber(periodClientWonRecords.length)} of those are currently CLIENT_WON.</p>
         </div>
         <div className="bg-white p-5">
           <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">ACQUISITION COHORT</p><h3 className="mt-1 text-lg font-semibold">Current clients from leads created in this period</h3></div><StatusPill tone={unknownSourceClients===0?"good":"warn"}>{formatPercent(sourceCoverage)} source covered</StatusPill></div>
@@ -378,7 +379,7 @@ function DecisionMoneyCard({icon,label,value,comparison,note,accent=false}:{icon
 
 function SourceDecisionRow({source,clients,paid,spend,openValue,verdict}:{source:string;clients:number;paid:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string}}){
   const cashReturn=spend===null?null:paid-spend;
-  return <div className="source-decision-row"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Cohort paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></div>;
+  return <div className="source-decision-row"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Cohort paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cohort cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></div>;
 }
 
 function LossSignal({icon,label,value,detail}:{icon:"funnel"|"pipeline"|"spend";label:string;value:string;detail:string}){
