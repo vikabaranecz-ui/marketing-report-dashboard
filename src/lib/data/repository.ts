@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { aggregateGa4WebsiteMetrics } from "@/lib/metrics/website";
 import { demoCompanies, demoDatasets } from "./demo";
-import type { CampaignMetric, ChannelMetric, Company, CompanyDataset, Integration, Lead, LocationMetric, ServiceMetric, TrendPoint } from "./types";
+import type { BusinessDecisionData, CampaignMetric, ChannelMetric, Company, CompanyDataset, Integration, Lead, LocationMetric, ServiceMetric, TrendPoint } from "./types";
 
 export type DashboardBootstrap = {
   mode: "demo" | "live";
@@ -98,6 +98,10 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const needsChanges = profile === "full" || profile === "overview";
   const needsOverrides = profile === "full" || profile === "overview" || profile === "commercial" || profile === "health";
   const needsAutomation = profile === "full" || profile === "overview" || profile === "health";
+  const needsDecision = profile === "full" || profile === "overview";
+  const selectedYearStart = `${fromDate.slice(0,4)}-01-01`;
+  const decisionFromDate = comparison.fromDate < selectedYearStart ? comparison.fromDate : selectedYearStart;
+  const decisionFromIso = `${decisionFromDate}T00:00:00.000Z`;
   const emptyRows = Promise.resolve({ data: [], error: null });
   const emptyOne = Promise.resolve({ data: null, error: null });
   const leadSelect = "id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)";
@@ -108,7 +112,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
   const currentLeadIds = rawLeads.length ? rawLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
 
-  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes] = await Promise.all([
+  const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, decisionMetricsRes, decisionInvoicesRes, decisionLeadsRes] = await Promise.all([
     needsMarketing ? supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate) : emptyRows,
     needsAppointments ? supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds) : emptyRows,
     needsCommercial ? supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
@@ -129,8 +133,11 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     needsChanges ? supabase.from("reporting_change_events").select("id,provider,occurred_at,metric_key,title,detail,delta,before_value,after_value,severity").eq("company_id",company.id).order("occurred_at",{ascending:false}).limit(30) : emptyRows,
     needsOverrides ? supabase.from("reporting_overrides").select("id,period_key,scope_type,scope_key,field_key,value,note,updated_at").eq("company_id",company.id).in("period_key",["all",period.selectedMonth]) : emptyRows,
     needsAutomation ? supabase.from("reporting_automation_settings").select("enabled,operational_schedule,marketing_schedule").eq("company_id",company.id).maybeSingle() : emptyOne,
+    needsDecision ? supabase.from("daily_marketing_metrics").select("date,spend").eq("company_id",company.id).gte("date",decisionFromDate).lte("date",toDate) : emptyRows,
+    needsDecision ? supabase.from("commercial_invoices").select("invoice_date,total_incl_vat,paid_total,credited_total").eq("company_id",company.id).gte("invoice_date",decisionFromDate).lte("invoice_date",toDate) : emptyRows,
+    needsDecision ? supabase.from("leads").select("id,created_at").eq("company_id",company.id).gte("created_at",decisionFromIso).lte("created_at",toIso) : emptyRows,
   ]);
-  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes].find(result => result.error)?.error;
+  const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,decisionMetricsRes,decisionInvoicesRes,decisionLeadsRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
@@ -146,6 +153,15 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? {impressions:0,clicks:0,position_sum:0,branded_clicks:0,classified_clicks:0}) as unknown as RawSeoSummary;
   const rawGbp = (gbpRes.data ?? []) as unknown as RawGbp[];
+  const businessDecision = needsDecision
+    ? buildBusinessDecision(
+        (decisionMetricsRes.data ?? []) as unknown as Array<{date:string;spend:number|string}>,
+        (decisionInvoicesRes.data ?? []) as unknown as Array<{invoice_date:string|null;total_incl_vat:number|string|null;paid_total:number|string|null;credited_total:number|string|null}>,
+        (decisionLeadsRes.data ?? []) as unknown as Array<{id:string;created_at:string}>,
+        period,
+        comparison,
+      )
+    : undefined;
   // Keep commercial truth visible, but only use documents that are safe to
   // attribute to the CRM lead for marketing/source performance.
   const attributableQuotes = rawQuotes.filter(quote => !isDateConflict(quote.attribution_status));
@@ -313,7 +329,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
 
   const revenue=attributableProjects.reduce((sum, project) => sum + Number(project.project_value ?? 0), 0), grossProfit=attributableProjects.every(p=>p.gross_margin!==null)?attributableProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
   const previous = { spend:0, leads:0, notRelevant:0, qualified:0, visits:0, quotes:0, won:0, revenue:0 };
-  return {company,periodKey:period.selectedMonth,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:`vs ${comparison.fromDate} — ${comparison.toDate}`,metrics:{spend:total("spend"),leads:rawLeads.length,notRelevant:rawLeads.filter(isNotRelevantLead).length,qualified:rawLeads.filter(isQualifiedLead).length,visits:rawLeads.filter(hasReachedVisit).length,quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous,channels,leadSources,commercialDeals,commercialClients,commercialOffers,commercialProjects,commercialInvoices,commercialAppointments,appointmentLeadIds,leads,services,campaigns,trend,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:classifiedClicks?branded/classifiedClicks*100:null},gbp,integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[])[0]?.records_imported??0,resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),changeEvents:rawChangeEvents.map(event=>({id:event.id,provider:event.provider,occurredAt:event.occurred_at,metricKey:event.metric_key,title:event.title,detail:event.detail??"",delta:event.delta===null?null:Number(event.delta),beforeValue:event.before_value===null?null:Number(event.before_value),afterValue:event.after_value===null?null:Number(event.after_value),severity:event.severity})),manualOverrides:rawOverrides.map(item=>({id:item.id,periodKey:item.period_key,scopeType:item.scope_type,scopeKey:item.scope_key,fieldKey:item.field_key,value:item.value,note:item.note??"",updatedAt:item.updated_at})),automation:rawAutomation?{enabled:rawAutomation.enabled,operationalSchedule:rawAutomation.operational_schedule,marketingSchedule:rawAutomation.marketing_schedule}:null,dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:attributableProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:potentialDuplicateCount(rawLeads),campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
+  return {company,periodKey:period.selectedMonth,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:`vs ${comparison.fromDate} — ${comparison.toDate}`,metrics:{spend:total("spend"),leads:rawLeads.length,notRelevant:rawLeads.filter(isNotRelevantLead).length,qualified:rawLeads.filter(isQualifiedLead).length,visits:rawLeads.filter(hasReachedVisit).length,quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous,channels,leadSources,commercialDeals,commercialClients,commercialOffers,commercialProjects,commercialInvoices,commercialAppointments,appointmentLeadIds,leads,services,campaigns,trend,businessDecision,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:classifiedClicks?branded/classifiedClicks*100:null},gbp,integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[])[0]?.records_imported??0,resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),changeEvents:rawChangeEvents.map(event=>({id:event.id,provider:event.provider,occurredAt:event.occurred_at,metricKey:event.metric_key,title:event.title,detail:event.detail??"",delta:event.delta===null?null:Number(event.delta),beforeValue:event.before_value===null?null:Number(event.before_value),afterValue:event.after_value===null?null:Number(event.after_value),severity:event.severity})),manualOverrides:rawOverrides.map(item=>({id:item.id,periodKey:item.period_key,scopeType:item.scope_type,scopeKey:item.scope_key,fieldKey:item.field_key,value:item.value,note:item.note??"",updatedAt:item.updated_at})),automation:rawAutomation?{enabled:rawAutomation.enabled,operationalSchedule:rawAutomation.operational_schedule,marketingSchedule:rawAutomation.marketing_schedule}:null,dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:attributableProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:potentialDuplicateCount(rawLeads),campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
 }
 
 function isDateConflict(status: string | null | undefined) {
@@ -690,6 +706,70 @@ function dashboardPeriod(month: string): DashboardPeriod {
   };
 }
 
+
+function buildBusinessDecision(
+  metrics: Array<{date:string;spend:number|string}>,
+  invoices: Array<{invoice_date:string|null;total_incl_vat:number|string|null;paid_total:number|string|null;credited_total:number|string|null}>,
+  leads: Array<{id:string;created_at:string}>,
+  period: DashboardPeriod,
+  comparison: DashboardPeriod,
+): BusinessDecisionData {
+  const periodMetric = (range: DashboardPeriod) => {
+    const rangeMetrics = metrics.filter(row => row.date >= range.fromDate && row.date <= range.toDate);
+    const rangeInvoices = invoices.filter(row => {
+      const date = row.invoice_date?.slice(0,10);
+      return Boolean(date && date >= range.fromDate && date <= range.toDate);
+    });
+    const rangeLeads = leads.filter(row => {
+      const date = row.created_at.slice(0,10);
+      return date >= range.fromDate && date <= range.toDate;
+    });
+    return {
+      label: `${range.fromDate} — ${range.toDate}`,
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+      spend: rangeMetrics.reduce((sum,row)=>sum+Number(row.spend??0),0),
+      invoiced: rangeInvoices.reduce((sum,row)=>sum+Math.max(0,Number(row.total_incl_vat??0)-Number(row.credited_total??0)),0),
+      paid: rangeInvoices.reduce((sum,row)=>sum+Number(row.paid_total??0),0),
+      leads: rangeLeads.length,
+    };
+  };
+
+  const year = Number(period.fromDate.slice(0,4));
+  const start = new Date(Date.UTC(year,0,1));
+  const end = new Date(`${period.toDate}T00:00:00.000Z`);
+  const monthly = [];
+  for (let cursor = start; cursor <= end; cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth()+1, 1))) {
+    const month = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth()+1).padStart(2,"0")}`;
+    const monthStart = `${month}-01`;
+    const monthLastDay = new Date(Date.UTC(cursor.getUTCFullYear(),cursor.getUTCMonth()+1,0)).getUTCDate();
+    const monthEnd = `${month}-${String(monthLastDay).padStart(2,"0")}`;
+    const effectiveEnd = monthEnd > period.toDate ? period.toDate : monthEnd;
+    const range: DashboardPeriod = {
+      selectedMonth: month,
+      fromDate: monthStart,
+      toDate: effectiveEnd,
+      fromIso: `${monthStart}T00:00:00.000Z`,
+      toIso: `${effectiveEnd}T23:59:59.999Z`,
+    };
+    const value = periodMetric(range);
+    monthly.push({
+      month,
+      label: new Intl.DateTimeFormat("en-BE",{month:"short"}).format(cursor),
+      spend: value.spend,
+      invoiced: value.invoiced,
+      paid: value.paid,
+      leads: value.leads,
+      complete: effectiveEnd === monthEnd,
+    });
+  }
+
+  return {
+    current: periodMetric(period),
+    comparison: periodMetric(comparison),
+    monthly,
+  };
+}
 
 function previousDashboardPeriod(period: DashboardPeriod): DashboardPeriod {
   if (period.selectedMonth === "ytd") {
