@@ -151,8 +151,8 @@ export async function reconcileInvoicedRobawsClientsToMonday(
 
   const token = required("MONDAY_API_TOKEN");
   let existingUpdated = 0;
-  let createdInCrm = 0;
   let skippedWithoutExternalId = 0;
+  const createdItems: Array<{ itemId: string; client: CommercialClientRow; source?: string }> = [];
 
   for (const client of clients) {
     const existing =
@@ -173,14 +173,31 @@ export async function reconcileInvoicedRobawsClientsToMonday(
       continue;
     }
 
-    await createSignedMondayItem(token, boardId, client, sourceByRobawsId.get(client.external_id));
-    createdInCrm += 1;
+    const itemId = await createMondayItemShell(token, boardId, client);
+    createdItems.push({
+      itemId,
+      client,
+      source: sourceByRobawsId.get(client.external_id),
+    });
+  }
+
+  if (createdItems.length) {
+    await sleep(4000);
+    for (const item of createdItems) {
+      await finalizeCreatedMondayItem(
+        token,
+        boardId,
+        item.itemId,
+        item.client,
+        item.source,
+      );
+    }
   }
 
   return {
     evaluated: clients.length,
     existingUpdated,
-    createdInCrm,
+    createdInCrm: createdItems.length,
     skippedWithoutExternalId,
     crmRefreshed: false,
     robawsRefreshed: false,
@@ -213,14 +230,12 @@ async function updateMondayStatus(
   });
 }
 
-async function createSignedMondayItem(
+async function createMondayItemShell(
   token: string,
   boardId: string,
   client: CommercialClientRow,
-  confirmedSource?: string,
 ) {
   const values: Record<string, unknown> = {
-    lead_status: { label: "signed" },
     text_mm27ak9k:
       `Automatically transferred from ROBAWS because an invoice exists. ROBAWS client #${client.external_id}. Source is left unassigned unless confirmed.`,
   };
@@ -234,17 +249,6 @@ async function createSignedMondayItem(
 
   const phone = mondayPhone(client.phone);
   if (phone) values.lead_phone = phone;
-
-  if (client.client_since) {
-    values.date_mm2ez375 = {
-      date: client.client_since.slice(0, 10),
-    };
-  }
-
-  const sourceLabel = mondaySourceLabel(confirmedSource);
-  if (sourceLabel) {
-    values.color_mkyb8krc = { label: sourceLabel };
-  }
 
   const mutation = `
     mutation (
@@ -264,19 +268,76 @@ async function createSignedMondayItem(
     }
   `;
 
-  await mondayRequest(token, mutation, {
+  const data = await mondayRequest<{ create_item?: { id?: string } }>(token, mutation, {
     boardId,
     groupId: SIGNED_GROUP_ID,
     itemName: client.name.slice(0, 255),
     columnValues: JSON.stringify(values),
   });
+
+  const itemId = data.create_item?.id;
+  if (!itemId) {
+    throw new Error(`Monday created ROBAWS client #${client.external_id} but returned no item id.`);
+  }
+  return itemId;
 }
 
-async function mondayRequest(
+async function finalizeCreatedMondayItem(
+  token: string,
+  boardId: string,
+  itemId: string,
+  client: CommercialClientRow,
+  confirmedSource?: string,
+) {
+  const sourceLabel = mondaySourceLabel(confirmedSource);
+  const columnValues: Record<string, unknown> = {
+    lead_status: { label: "signed" },
+    color_mkyb8krc: sourceLabel ? { label: sourceLabel } : null,
+  };
+
+  if (client.client_since) {
+    columnValues.date_mm2ez375 = {
+      date: client.client_since.slice(0, 10),
+    };
+  }
+
+  const updateMutation = `
+    mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+      change_multiple_column_values(
+        board_id: $boardId,
+        item_id: $itemId,
+        column_values: $columnValues
+      ) {
+        id
+      }
+    }
+  `;
+
+  await mondayRequest(token, updateMutation, {
+    boardId,
+    itemId,
+    columnValues: JSON.stringify(columnValues),
+  });
+
+  const moveMutation = `
+    mutation ($itemId: ID!, $groupId: String!) {
+      move_item_to_group(item_id: $itemId, group_id: $groupId) {
+        id
+      }
+    }
+  `;
+
+  await mondayRequest(token, moveMutation, {
+    itemId,
+    groupId: SIGNED_GROUP_ID,
+  });
+}
+
+async function mondayRequest<T = unknown>(
   token: string,
   query: string,
   variables: Record<string, unknown>,
-) {
+): Promise<T> {
   const response = await fetch("https://api.monday.com/v2", {
     method: "POST",
     headers: {
@@ -289,7 +350,7 @@ async function mondayRequest(
   });
 
   const json = await response.json() as {
-    data?: unknown;
+    data?: T;
     errors?: Array<{ message?: string }>;
   };
 
@@ -341,6 +402,10 @@ function mondaySourceLabel(value: string | undefined) {
 
 function normalize(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function required(name: string) {
