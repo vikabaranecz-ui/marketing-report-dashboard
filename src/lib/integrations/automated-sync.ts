@@ -4,7 +4,7 @@ import { syncCrmProvider } from "@/lib/integrations/crm-sync";
 import { isGoogleProvider } from "@/lib/integrations/google/client";
 import { syncGoogleProvider } from "@/lib/integrations/google-sync";
 import { syncMetaProvider } from "@/lib/integrations/meta-sync";
-import { syncRobawsWithCrmReconciliation } from "@/lib/integrations/robaws-crm-reconciliation";
+import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -227,7 +227,7 @@ async function dispatchSync(connection: ConnectionRow) {
   const configuration = (connection.configuration ?? {}) as ConnectionConfiguration;
 
   if (connection.provider === "robaws") {
-    return syncRobawsWithCrmReconciliation(connection.company_id);
+    return syncRobawsProvider(connection.company_id);
   }
   if (connection.provider === "meta") {
     return syncMetaProvider(connection.id, connection.company_id, configuration);
