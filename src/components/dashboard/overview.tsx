@@ -19,7 +19,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const rows=buildJourneyRows(data);
   const summary=buildFunnelSummary(data);
   const sources=sourceBusinessRows(data,rows);
-  const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel"].includes(row.source));
+  const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou"].includes(row.source));
   const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
@@ -41,25 +41,42 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
 
   const allCommercialClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
-  const matchedCommercialClients=allCommercialClients.filter(client=>Boolean(client.matchedLeadId));
-  const safeLeadIds=new Set(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.leadIds));
-  const safeCommercialClients=allCommercialClients.filter(client=>Boolean(client.matchedLeadId)&&safeLeadIds.has(client.matchedLeadId!));
+  const rowByLeadId=new Map<string,JourneyRow>();
+  rows.forEach(row=>row.leadIds.forEach(id=>rowByLeadId.set(id,row)));
+  const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
+  const overrideSource=(client:NonNullable<CompanyDataset["commercialClients"]>[number])=>{
+    const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
+    const matches=sourceOverrides.filter(item=>keys.includes(item.scopeKey));
+    const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
+    return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
+  };
+  const sourceEvidence=allCommercialClients.map(client=>{
+    const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
+    const manual=overrideSource(client);
+    const source=manual??row?.lead.source?.trim()??"";
+    const safe=Boolean(manual)||Boolean(row?.isAttributableClient);
+    return {client,source,safe,manual:Boolean(manual)};
+  });
+  const knownSourceClients=sourceEvidence.filter(item=>item.safe&&item.source);
+  const paidMarketingClients=knownSourceClients.filter(item=>isPaidMarketingSource(item.source));
+  const otherKnownSourceClients=knownSourceClients.filter(item=>!isPaidMarketingSource(item.source));
+  const unknownSourceClients=allCommercialClients.length-knownSourceClients.length;
   const businessInvoiced=allCommercialClients.reduce((sum,client)=>sum+client.invoicedTotal,0);
   const businessPaid=allCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
-  const attributedInvoiced=safeCommercialClients.reduce((sum,client)=>sum+client.invoicedTotal,0);
-  const attributedPaid=safeCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
-  const clientCoverage=percentage(safeCommercialClients.length,allCommercialClients.length)??0;
-  const paidCoverage=percentage(attributedPaid,businessPaid)??0;
+  const knownSourceInvoiced=knownSourceClients.reduce((sum,item)=>sum+item.client.invoicedTotal,0);
+  const knownSourcePaid=knownSourceClients.reduce((sum,item)=>sum+item.client.paidTotal,0);
+  const paidMarketingPaid=paidMarketingClients.reduce((sum,item)=>sum+item.client.paidTotal,0);
+  const sourceCoverage=percentage(knownSourceClients.length,allCommercialClients.length)??0;
+  const paidCashSourceCoverage=percentage(knownSourcePaid,businessPaid)??0;
 
   const stages=[
-    {label:"Known spend",value:formatCurrency(coveredSpend,true),note:paidSources.some(row=>row.costState==="missing")?"Some paid-source spend still missing":"Synced + manual corrections"},
-    {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows"},
+    {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows · all sources"},
     {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
     {label:"Visits",value:formatNumber(rows.filter(hasCompletedVisitEvidence).length),note:"Completed / post-visit evidence"},
     {label:"Offers sent",value:formatNumber(summary.offersSent),note:formatCurrency(summary.sentQuotedValue,true)+" sent value"},
     {label:"CRM signed",value:formatNumber(summary.crmSigned),note:"Monday status"},
-    {label:"Attributed clients",value:formatNumber(summary.attributableClients),note:formatNumber(summary.commercialClients)+" CRM-linked commercial"},
-    {label:"Attributed paid",value:formatCurrency(attributedPaid,true),note:"Safely linked to marketing"},
+    {label:"Known-source clients",value:formatNumber(knownSourceClients.length),note:formatNumber(unknownSourceClients)+" ROBAWS clients still source-unknown"},
+    {label:"Known-source paid",value:formatCurrency(knownSourcePaid,true),note:formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash"},
   ];
 
   const actionItems=buildActionItems(data,rows,openOffers,paidSources);
@@ -70,9 +87,9 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
-        <SectionHeader title="Can I trust these numbers?" description="Business truth from ROBAWS is kept separate from marketing attribution. A low attribution number does not mean the company has only a few clients."/>
+        <SectionHeader title="Can I trust these numbers?" description="ROBAWS business truth, known acquisition source and paid-marketing evidence are separate. Source attribution does not imply an exact campaign."/>
       </div>
-      <div className="grid gap-px bg-[var(--line)] lg:grid-cols-2">
+      <div className="grid gap-px bg-[var(--line)] xl:grid-cols-3">
         <div className="bg-white p-5">
           <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">BUSINESS TRUTH · ROBAWS</p><h3 className="mt-1 text-lg font-semibold">What actually happened commercially</h3></div><StatusPill tone="good">Source of truth</StatusPill></div>
           <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
@@ -80,23 +97,32 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
             <TruthMetric label="Invoiced" value={formatCurrency(businessInvoiced)}/>
             <TruthMetric label="Paid" value={formatCurrency(businessPaid)}/>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">These totals come from ROBAWS client records and do not require a marketing match.</p>
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">ROBAWS totals. No marketing assumption is required.</p>
         </div>
         <div className="bg-white p-5">
-          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">MARKETING ATTRIBUTION</p><h3 className="mt-1 text-lg font-semibold">What we can safely connect to CRM</h3></div><StatusPill tone={safeCommercialClients.length===allCommercialClients.length?"good":"warn"}>{formatPercent(clientCoverage)} covered</StatusPill></div>
+          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">SOURCE ATTRIBUTION</p><h3 className="mt-1 text-lg font-semibold">Clients with a known acquisition source</h3></div><StatusPill tone={unknownSourceClients===0?"good":"warn"}>{formatPercent(sourceCoverage)} covered</StatusPill></div>
           <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
-            <TruthMetric label="Safe attributed" value={formatNumber(safeCommercialClients.length)}/>
-            <TruthMetric label="Attributed invoiced" value={formatCurrency(attributedInvoiced)}/>
-            <TruthMetric label="Attributed paid" value={formatCurrency(attributedPaid)}/>
+            <TruthMetric label="Known source" value={formatNumber(knownSourceClients.length)}/>
+            <TruthMetric label="Known-source paid" value={formatCurrency(knownSourcePaid)}/>
+            <TruthMetric label="Unknown source" value={formatNumber(unknownSourceClients)}/>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatNumber(allCommercialClients.length-safeCommercialClients.length)} commercial clients are not safely attributable to a CRM lead. Paid-cash coverage is {formatPercent(paidCoverage)}.</p>
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatNumber(paidMarketingClients.length)} paid-marketing clients + {formatNumber(otherKnownSourceClients.length)} other known-source clients. This is source-level evidence, not campaign-level attribution.</p>
+        </div>
+        <div className="bg-white p-5">
+          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">PAID MARKETING EVIDENCE</p><h3 className="mt-1 text-lg font-semibold">Only paid acquisition sources</h3></div><StatusPill tone="warn">Partial attribution</StatusPill></div>
+          <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
+            <TruthMetric label="Paid-source clients" value={formatNumber(paidMarketingClients.length)}/>
+            <TruthMetric label="Paid-source paid" value={formatCurrency(paidMarketingPaid)}/>
+            <TruthMetric label="Known spend" value={formatCurrency(coveredSpend)}/>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">Meta/Facebook, Google Ads, LeadAngel and AgenciYou are treated as paid acquisition. Exact campaign attribution is shown only where a deterministic campaign link exists.</p>
         </div>
       </div>
     </Card>
 
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
-        <SectionHeader title="Is marketing producing business?" description="One chain from tracked spend to paid revenue. Detailed evidence lives in the drill-down pages."/>
+        <SectionHeader title="Acquisition funnel — all CRM sources" description="This funnel includes every CRM source. Paid-marketing economics are kept separate below."/>
       </div>
       <div className="story-chain">
         {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
@@ -108,10 +134,10 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(data.metrics.leads)+" CRM rows · target not configured"}/>
       <KpiCard label="Qualified people" value={formatNumber(summary.qualified)} meta={formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"}/>
       <KpiCard label="Visits" value={formatNumber(rows.filter(hasCompletedVisitEvidence).length)} meta="Deduplicated visit evidence"/>
-      <KpiCard label="Attributed project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" safely attributed clients"}/>
-      <KpiCard label="Attributed open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" CRM-linked sent + open offers"}/>
-      <KpiCard label="Attributed invoiced" value={formatCurrency(attributedInvoiced,true)} meta={formatPercent(clientCoverage)+" client attribution coverage"}/>
-      <KpiCard label="Attributed paid" value={formatCurrency(attributedPaid,true)} meta={formatPercent(paidCoverage)+" of ROBAWS paid cash covered"}/>
+      <KpiCard label="CRM-linked project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" safely linked commercial clients"}/>
+      <KpiCard label="CRM-linked open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" linked sent + open offers"}/>
+      <KpiCard label="Known-source invoiced" value={formatCurrency(knownSourceInvoiced,true)} meta={formatPercent(sourceCoverage)+" client source coverage"}/>
+      <KpiCard label="Known-source paid" value={formatCurrency(knownSourcePaid,true)} meta={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash has known source"}/>
     </div>
 
     <Card className="p-5">
@@ -136,14 +162,14 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       </Card>
 
       <Card className="p-5">
-        <SectionHeader title="Attributed revenue stages" description="This section contains only CRM-linked commercial evidence. The full ROBAWS business totals are shown above."/>
+        <SectionHeader title="CRM-linked revenue stages" description="These stages use CRM-linked commercial evidence only. They are not the total business revenue and not automatically paid-marketing attribution."/>
         <div className="space-y-1">
           <MoneyRow label="Total offered" value={sentOffers.reduce((sum,item)=>sum+item.priceInclVat,0)}/>
           <MoneyRow label="Open pipeline" value={openValue}/>
           <MoneyRow label="Accepted / contracted" value={acceptedValue}/>
           <MoneyRow label="Project value" value={projectValue}/>
           <MoneyRow label="Linked invoice rows" value={invoiced}/>
-          <MoneyRow label="Safely attributed paid" value={attributedPaid} accent/>
+          <MoneyRow label="CRM-linked paid" value={paid} accent/>
         </div>
         <Link href={scopedHref("/revenue")} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open revenue evidence <ArrowRight size={14}/></Link>
       </Card>
@@ -162,14 +188,24 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Trust label="Google Ads spend" ok={!paidSources.some(row=>row.source==="Google Ads"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="Google Ads"&&row.costState==="missing")?"Missing — no CAC/ROAS":"Available or no Google cohort"}/>
         <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
-        <Trust label="Attribution coverage" ok={safeCommercialClients.length===allCommercialClients.length} detail={safeCommercialClients.length+" / "+allCommercialClients.length+" commercial clients safely attributed"}/>
-        <Trust label="Paid-cash coverage" ok={paidCoverage>=90} detail={formatPercent(paidCoverage)+" of ROBAWS paid cash attributable"}/>
+        <Trust label="Source coverage" ok={unknownSourceClients===0} detail={knownSourceClients.length+" / "+allCommercialClients.length+" commercial clients have a safe acquisition source"}/>
+        <Trust label="Paid-cash source coverage" ok={paidCashSourceCoverage>=90} detail={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash has a known acquisition source"}/>
         <Trust label="Potential duplicates" ok={data.dataHealth.duplicates===0} detail={data.dataHealth.duplicates+" flagged"}/>
         <Trust label="Signed reconciliation" ok={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length===0} detail={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length+" signed not ROBAWS-confirmed"}/>
       </div>
       <Link href={scopedHref("/data-health")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
     </Card>
   </div>;
+}
+
+function isPaidMarketingSource(source:string){
+  const value=source.trim().toLowerCase();
+  return value.includes("facebook")
+    || value.includes("meta")
+    || value.includes("instagram")
+    || value==="google ads"
+    || value==="leadangel"
+    || value==="agenciyou";
 }
 
 function buildActionItems(data:CompanyDataset,rows:JourneyRow[],openOffers:NonNullable<CompanyDataset["commercialOffers"]>,sources:SourceBusinessRow[]) {
