@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "WAT Reporting", template: "%s · WAT Reporting" },
-  description: "Marketing and sales performance reporting for WAT Agency clients.",
+  title: { default: "WAT Agency Dashboard", template: "%s · WAT Agency Dashboard" },
+  description: "Marketing, sales and revenue intelligence by WAT Agency.",
   icons: { icon: "/favicon.svg" },
 };
 

@@ -37,13 +37,13 @@ export function TopControls({
   }
 
   return (
-    <div className="border-b border-[var(--line)] bg-white px-4 py-3 lg:px-7">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="control control-company"><span className="h-2 w-2 bg-[var(--accent)]"/><select aria-label="Company" value={companyId} onChange={(e) => setCompany(e.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select><ChevronDown size={14}/></label>
+    <div className="top-controls">
+      <div className="top-controls-inner">
+        <label className="control control-company"><span className="control-dot"/><select aria-label="Company" value={companyId} onChange={(e) => setCompany(e.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select><ChevronDown size={14}/></label>
         <label className="control"><CalendarDays size={15}/><select aria-label="Reporting month" value={selectedMonth} onChange={(e) => setMonth(e.target.value)}>{availableMonths.map(value => <option key={value} value={value}>{monthLabel(value)}</option>)}</select><ChevronDown size={14}/></label>
-        <span className="control text-xs text-[var(--muted)]">Cohort by lead creation month</span>
-        <span className="control text-xs text-[var(--muted)]">All sources · all services · all campaigns</span>
-        <div className="ml-auto flex gap-2"><button className="icon-button" type="button" onClick={onExport} aria-label="Export table to CSV"><Download size={16}/></button><button className="icon-button" type="button" onClick={() => window.print()} aria-label="Print report"><Printer size={16}/></button></div>
+        <span className="control control-muted">Cohort · lead creation month</span>
+        <span className="control control-muted">All sources · services · campaigns</span>
+        <div className="top-actions"><button className="icon-button" type="button" onClick={onExport} aria-label="Export table to CSV"><Download size={16}/></button><button className="icon-button" type="button" onClick={() => window.print()} aria-label="Print report"><Printer size={16}/></button></div>
       </div>
     </div>
   );

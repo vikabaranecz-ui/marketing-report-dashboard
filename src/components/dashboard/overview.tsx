@@ -85,6 +85,23 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   return <div className="space-y-6">
     <SystemPulse data={data}/>
 
+    <div className="wat-kpi-grid">
+      <KpiCard label="Known-source paid" value={formatCurrency(knownSourcePaid,true)} meta={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash"}/>
+      <KpiCard label="Commercial clients" value={formatNumber(allCommercialClients.length)} meta={formatNumber(knownSourceClients.length)+" with known acquisition source"}/>
+      <KpiCard label="Project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" CRM-linked clients"}/>
+      <KpiCard label="Paid ROAS" value={coveredSpend?formatNumber(coveredPaid/coveredSpend)+"×":"—"} meta={formatCurrency(coveredSpend,true)+" covered spend"}/>
+      <KpiCard label="Source coverage" value={formatPercent(sourceCoverage)} meta={formatNumber(unknownSourceClients)+" commercial clients still unknown"}/>
+    </div>
+
+    <Card className="overflow-hidden">
+      <div className="border-b border-[var(--line)] p-5">
+        <SectionHeader title="Acquisition funnel — all CRM sources" description="This funnel includes every CRM source. Paid-marketing economics are kept separate below."/>
+      </div>
+      <div className="story-chain">
+        {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
+      </div>
+    </Card>
+
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
         <SectionHeader title="Can I trust these numbers?" description="ROBAWS business truth, known acquisition source and paid-marketing evidence are separate. Source attribution does not imply an exact campaign."/>
@@ -119,26 +136,6 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         </div>
       </div>
     </Card>
-
-    <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5">
-        <SectionHeader title="Acquisition funnel — all CRM sources" description="This funnel includes every CRM source. Paid-marketing economics are kept separate below."/>
-      </div>
-      <div className="story-chain">
-        {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
-      </div>
-    </Card>
-
-    <div className="kpi-grid border-l border-t border-[var(--line)]">
-      <KpiCard label="Known paid-source spend" value={formatCurrency(coveredSpend,true)} meta={(paidSources.some(row=>row.isManualSpend)?"Includes manual correction · ":"")+"Target: not configured"}/>
-      <KpiCard label="Unique leads" value={formatNumber(summary.uniquePeople)} meta={formatNumber(data.metrics.leads)+" CRM rows · target not configured"}/>
-      <KpiCard label="Qualified people" value={formatNumber(summary.qualified)} meta={formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"}/>
-      <KpiCard label="Visits" value={formatNumber(rows.filter(hasCompletedVisitEvidence).length)} meta="Deduplicated visit evidence"/>
-      <KpiCard label="CRM-linked project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" safely linked commercial clients"}/>
-      <KpiCard label="CRM-linked open pipeline" value={formatCurrency(openValue,true)} meta={formatNumber(openOffers.length)+" linked sent + open offers"}/>
-      <KpiCard label="Known-source invoiced" value={formatCurrency(knownSourceInvoiced,true)} meta={formatPercent(sourceCoverage)+" client source coverage"}/>
-      <KpiCard label="Known-source paid" value={formatCurrency(knownSourcePaid,true)} meta={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash has known source"}/>
-    </div>
 
     <Card className="p-5">
       <SectionHeader title="Economics with complete cost coverage" description="Cost KPIs include only sources whose spend is actually available; missing spend never becomes €0."/>
