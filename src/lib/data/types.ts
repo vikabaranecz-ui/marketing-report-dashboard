@@ -201,6 +201,8 @@ export type BusinessPeriodMetric = {
   invoiced: number;
   paid: number;
   leads: number;
+  wonProjects: number;
+  wonProjectValue: number;
 };
 
 export type BusinessMonthMetric = {
@@ -210,6 +212,8 @@ export type BusinessMonthMetric = {
   invoiced: number;
   paid: number;
   leads: number;
+  wonProjects: number;
+  wonProjectValue: number;
   complete: boolean;
 };
 
