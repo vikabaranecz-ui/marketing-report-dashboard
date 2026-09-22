@@ -69,6 +69,38 @@ function normalized(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+const SENT_OFFER_STATUSES = new Set([
+  "opvolgen",
+  "gelezen",
+  "goedgekeurd",
+  "gefactureerd",
+  "deelfactuur",
+  "afgekeurd",
+  "accepted",
+  "approved",
+  "rejected",
+  "declined",
+]);
+
+export function hasOfferSentEvidence(offer: CommercialOffer) {
+  if (offer.sentAt) return true;
+  return SENT_OFFER_STATUSES.has(normalized(offer.status));
+}
+
+export function hasLeadOfferEvidence(lead: Lead) {
+  const status = normalized(lead.crmStatus);
+  const stage = normalized(lead.stage);
+  return stage.includes("quote")
+    || stage.includes("won")
+    || [
+      "offer sent",
+      "email offerte",
+      "signed",
+      "offerte afgekeurd",
+      "offerte afgekeurd",
+    ].includes(status);
+}
+
 function isExplicitlyNotRelevant(lead: Lead) {
   const status = normalized(lead.crmStatus);
   return [
@@ -254,8 +286,8 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       projects: leadProjects,
       invoices: leadInvoices,
       offerValue: leadOffers.reduce((sum, item) => sum + item.priceInclVat, 0),
-      sentOfferValue: leadOffers.filter(item => Boolean(item.sentAt)).reduce((sum, item) => sum + item.priceInclVat, 0),
-      openOfferValue: leadOffers.filter(item => item.isOpen && Boolean(item.sentAt)).reduce((sum, item) => sum + item.priceInclVat, 0),
+      sentOfferValue: leadOffers.filter(hasOfferSentEvidence).reduce((sum, item) => sum + item.priceInclVat, 0),
+      openOfferValue: leadOffers.filter(item => item.isOpen && hasOfferSentEvidence(item)).reduce((sum, item) => sum + item.priceInclVat, 0),
       acceptedOfferValue: leadOffers.filter(item => item.isAccepted).reduce((sum, item) => sum + item.priceInclVat, 0),
       projectValue: leadProjects.reduce((sum, item) => sum + Number(item.valueInclVat ?? 0), 0),
       hasVisit: visit,
@@ -280,7 +312,7 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     qualified: rows.filter(row => row.isQualified).length,
     visits: rows.filter(row => row.hasVisit).length,
     offersCreated: rows.filter(row => row.offers.length > 0).length,
-    offersSent: rows.filter(row => row.offers.some(item => Boolean(item.sentAt))).length,
+    offersSent: rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
     quotedValue: rows.reduce((sum, row) => sum + row.offerValue, 0),
     sentQuotedValue: rows.reduce((sum, row) => sum + row.sentOfferValue, 0),
     openOffers: rows.filter(row => row.openOfferValue > 0).length,
@@ -326,7 +358,7 @@ function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => str
       qualified: group.filter(row => row.isQualified).length,
       visits: group.filter(row => row.hasVisit).length,
       offersCreated: group.filter(row => row.offers.length > 0).length,
-      offersSent: group.filter(row => row.offers.some(item => Boolean(item.sentAt))).length,
+      offersSent: group.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
       sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: group.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: group.filter(row => row.isSigned).length,
@@ -366,7 +398,7 @@ export function sourcePipelineRows(data: CompanyDataset) {
       qualified: sourceRows.filter(row => row.isQualified).length,
       visits: sourceRows.filter(row => row.hasVisit).length,
       offersCreated: sourceRows.filter(row => row.offers.length > 0).length,
-      offers: sourceRows.filter(row => row.offers.some(item => Boolean(item.sentAt))).length,
+      offers: sourceRows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
       quotedValue: sourceRows.reduce((sum, row) => sum + row.offerValue, 0),
       sentQuotedValue: sourceRows.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: sourceRows.reduce((sum, row) => sum + row.openOfferValue, 0),
