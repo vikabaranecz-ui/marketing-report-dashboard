@@ -95,6 +95,15 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
+        <SectionHeader title="Acquisition funnel — all CRM sources" description="This funnel includes every CRM source. Paid-marketing economics are kept separate below."/>
+      </div>
+      <div className="story-chain">
+        {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
+      </div>
+    </Card>
+
+    <Card className="overflow-hidden">
+      <div className="border-b border-[var(--line)] p-5">
         <SectionHeader title="Can I trust these numbers?" description="ROBAWS business truth, known acquisition source and paid-marketing evidence are separate. Source attribution does not imply an exact campaign."/>
       </div>
       <div className="grid gap-px bg-[var(--line)] xl:grid-cols-3">
@@ -125,15 +134,6 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
           </div>
           <p className="mt-3 text-xs leading-5 text-[var(--muted)]">Meta/Facebook, Google Ads, LeadAngel and AgenciYou are treated as paid acquisition. Exact campaign attribution is shown only where a deterministic campaign link exists.</p>
         </div>
-      </div>
-    </Card>
-
-    <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5">
-        <SectionHeader title="Acquisition funnel — all CRM sources" description="This funnel includes every CRM source. Paid-marketing economics are kept separate below."/>
-      </div>
-      <div className="story-chain">
-        {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
       </div>
     </Card>
 
