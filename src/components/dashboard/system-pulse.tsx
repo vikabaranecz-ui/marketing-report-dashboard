@@ -24,6 +24,13 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
   const [message,setMessage]=useState("");
   const [tone,setTone]=useState<"good"|"warn">("good");
   const connected = data.integrations.filter(item=>item.status==="Connected"&&syncableProviders.has(item.provider)&&item.resource!=="Not selected");
+  const setupRequired = data.integrations.filter(item=>item.status==="Connected"&&syncableProviders.has(item.provider)&&item.resource==="Not selected");
+  const metaLeadPermissionMissing = data.integrations.some(item=>item.provider==="meta"&&item.metaMissingPermissions?.includes("leads_retrieval"));
+  const healthWarnings=[
+    setupRequired.length?`${setupRequired.map(item=>item.name).join(", ")} need a resource selected before they can sync`:"",
+    metaLeadPermissionMissing?"Meta Lead Ads matching is missing leads_retrieval permission":"",
+  ].filter(Boolean);
+  const scheduleLabel=`CRM + ROBAWS hourly · marketing every 3 hours${healthWarnings.length?` · ${healthWarnings.length} blocker(s)`:""}`;
   const lastSync = useMemo(() => latestDate(data.integrations.map(item=>item.lastSuccess)), [data.integrations]);
   const changes=(data.changeEvents??[]).slice(0,6);
   const autoEnabled=Boolean(data.automation?.enabled);
@@ -63,7 +70,7 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
     <div className="system-pulse-head">
       <div className="system-live">
         <span className={`system-live-dot ${autoEnabled?"is-on":"is-off"}`}/>
-        <div><strong>{autoEnabled?"Auto-sync is on":"Auto-sync is not configured"}</strong><span>{autoEnabled?"CRM + ROBAWS hourly · marketing every 3 hours":"Use Data Health to finish automation setup"}</span></div>
+        <div><strong>{autoEnabled?"Auto-sync is on":"Auto-sync is not configured"}</strong><span>{autoEnabled?scheduleLabel:"Use Data Health to finish automation setup"}</span></div>
       </div>
       <div className="system-pulse-meta">
         <span><Clock3 size={14}/> Last update {lastSync?relativeTime(lastSync):"never"}</span>
@@ -72,6 +79,7 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
       </div>
     </div>
     {message&&<div className={`system-sync-message ${tone==="warn"?"is-warn":"is-good"}`}>{tone==="warn"?<TriangleAlert size={15}/>:<CheckCircle2 size={15}/>}<span>{message}</span></div>}
+    {!message&&healthWarnings.length>0&&<div className="system-sync-message is-warn"><TriangleAlert size={15}/><span>{healthWarnings.join(" · ")}</span></div>}
     <div className="system-change-strip">
       <div className="system-change-label"><span>WHAT CHANGED</span><strong>{changes.length?"Since recent syncs":"No recorded changes yet"}</strong></div>
       {changes.length?changes.map(event=><ChangeChip key={event.id} event={event}/>):<div className="system-change-empty">Automatic sync changes will appear here: new leads, signed clients, offer value, paid cash and ad spend.</div>}
