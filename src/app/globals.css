@@ -203,7 +203,7 @@ tbody tr:hover { background: #f8f8f4; }
   --background: #f5f5f2;
   --surface: #fafaf8;
   --ink: #090909;
-  --muted: #74746f;
+  --muted: #5f605b;
   --line: #e8e8e2;
   --line-strong: #d7d7d0;
   --accent: #ffe100;
@@ -904,3 +904,39 @@ tbody tr:hover { background: #fffdf0; }
   .source-decision-row { grid-template-columns: 1fr 1fr; }
   .source-decision-name { grid-column: 1/-1; }
 }
+
+
+/* Reporting scope + contrast hardening */
+.cohort-scope-note {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  border: 1px solid #ddd9b2;
+  border-radius: 14px;
+  background: #fffdea;
+  padding: .9rem 1rem;
+  color: #28271f;
+}
+.cohort-scope-note svg { margin-top: .1rem; flex: none; color: #776900; }
+.cohort-scope-note strong { display: block; font-size: .82rem; color: #171712; }
+.cohort-scope-note p { margin-top: .22rem; font-size: .78rem; line-height: 1.55; color: #504e43; }
+
+.system-pulse-head strong,
+.system-pulse-head h1,
+.system-pulse-head h2,
+.system-pulse-head h3,
+.funnel-spend strong,
+.decision-money-card.is-accent strong { color: #fff; }
+.system-pulse-head p,
+.system-pulse-head small,
+.system-pulse-head .eyebrow { color: rgba(255,255,255,.76); }
+.decision-money-card.is-accent span,
+.decision-money-card.is-accent small { color: rgba(255,255,255,.76); }
+
+.source-decision-row > div:not(.source-decision-name) span,
+.source-decision-name > small,
+.loss-signal span,
+.loss-signal p,
+.economy-cell span,
+.economy-cell small,
+.trust-card p { color: #61615c; }
