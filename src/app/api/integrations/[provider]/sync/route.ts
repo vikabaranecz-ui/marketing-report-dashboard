@@ -6,7 +6,7 @@ import { syncCrmProvider } from "@/lib/integrations/crm-sync";
 import { isGoogleProvider } from "@/lib/integrations/google/client";
 import { syncGoogleProvider, type GoogleSyncResult } from "@/lib/integrations/google-sync";
 import { syncMetaProvider } from "@/lib/integrations/meta-sync";
-import { syncRobawsWithCrmReconciliation } from "@/lib/integrations/robaws-crm-reconciliation";
+import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -25,14 +25,6 @@ type StandardSyncResult = {
   projectsImported: number;
   invoicesImported?: number;
   revenueImported: number;
-  crmReconciliation?: {
-    evaluated: number;
-    existingUpdated: number;
-    createdInCrm: number;
-    skippedWithoutExternalId: number;
-    crmRefreshed: boolean;
-    robawsRefreshed: boolean;
-  };
 };
 
 type MetaSyncResult = Awaited<ReturnType<typeof syncMetaProvider>>;
@@ -140,7 +132,7 @@ export async function POST(
 
   try {
     result = provider === "robaws"
-      ? await syncRobawsWithCrmReconciliation(body.companyId)
+      ? await syncRobawsProvider(body.companyId)
       : provider === "meta"
         ? await syncMetaProvider(
             access.connection.id,
@@ -271,11 +263,7 @@ function successMessage(provider: "meta" | "google_ads" | "ga4" | "search_consol
   const standard = result as StandardSyncResult;
 
   if (provider === "robaws") {
-    const reconciliation = standard.crmReconciliation;
-    const crmSummary = reconciliation
-      ? ` · CRM reconciliation: ${reconciliation.existingUpdated} updated to Signed, ${reconciliation.createdInCrm} created`
-      : "";
-    return `ROBAWS synced successfully: ${standard.clientsImported ?? 0} clients (${standard.clientsMatched ?? 0} matched, ${standard.clientsUnmatched ?? 0} unmatched) · ${standard.leadsMatched ?? standard.leadsImported} matched CRM leads · ${standard.quotesImported ?? 0} offers · ${standard.projectsImported} projects · ${standard.invoicesImported ?? 0} invoices${crmSummary}.`;
+    return `ROBAWS synced successfully: ${standard.clientsImported ?? 0} clients (${standard.clientsMatched ?? 0} matched, ${standard.clientsUnmatched ?? 0} unmatched) · ${standard.leadsMatched ?? standard.leadsImported} matched CRM leads · ${standard.quotesImported ?? 0} offers · ${standard.projectsImported} projects · ${standard.invoicesImported ?? 0} invoices.`;
   }
 
   return `${providerCatalog[provider].name} synced successfully: ${standard.leadsImported} leads · ${standard.dealsImported} deals · ${standard.projectsImported} projects · ${standard.revenueImported} revenue records.`;
@@ -360,7 +348,6 @@ function standardSyncMetadata(
     projectsImported: result.projectsImported,
     invoicesImported: result.invoicesImported ?? 0,
     revenueImported: result.revenueImported,
-    crmReconciliation: result.crmReconciliation ?? null,
   };
 }
 
