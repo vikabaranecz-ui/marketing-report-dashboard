@@ -136,7 +136,10 @@ async function loadCompany(
   // attribution ad IDs. The impossible UUID keeps empty scopes empty instead
   // of accidentally turning them into unfiltered reads.
   const companyLeadIds = [...new Set(leads.map(row => row.id).filter(Boolean))];
-  const relevantAdIds = [...new Set(attributionRows.flatMap(row => row.ad_id ? [row.ad_id] : []))];
+  const relevantAdIds = [...new Set([
+    ...attributionRows.flatMap(row => row.ad_id ? [row.ad_id] : []),
+    ...leads.flatMap(row => row.ad_id ? [row.ad_id] : []),
+  ])];
   const leadScope = companyLeadIds.length ? companyLeadIds : [EMPTY_UUID];
   const adScope = relevantAdIds.length ? relevantAdIds : [EMPTY_UUID];
 
@@ -166,13 +169,17 @@ async function loadCompany(
   const campaignIds = new Set([
     ...metricRows.flatMap(row => row.campaign_id ? [row.campaign_id] : []),
     ...attributionRows.flatMap(row => row.campaign_id ? [row.campaign_id] : []),
+    ...leads.flatMap(row => row.campaign_id ? [row.campaign_id] : []),
   ]);
 
-  const campaigns = [...campaignIds].map(campaignId => {
+  const exactCampaigns = [...campaignIds].map(campaignId => {
     const campaign = campaignById.get(campaignId);
     const campaignMetrics = metricRows.filter(row => row.campaign_id === campaignId);
     const campaignAttribution = attributionRows.filter(row => row.campaign_id === campaignId && row.match_status === "MATCHED" && row.matched_lead_id);
-    const leadIds = new Set(campaignAttribution.map(row => row.matched_lead_id as string));
+    const leadIds = new Set([
+      ...campaignAttribution.map(row => row.matched_lead_id as string),
+      ...leads.filter(row => row.campaign_id === campaignId && isFacebookSource(row.source)).map(row => row.id),
+    ]);
     const campaignLeads = [...leadIds].flatMap(leadId => {
       const lead = leadById.get(leadId);
       if (!lead) return [];
@@ -194,7 +201,10 @@ async function loadCompany(
     const funnel = commercialFunnelTotals(leadIds, campaignQuotes, campaignProjects, campaignInvoices);
     const spend = sum(campaignMetrics, row => number(row.spend));
     const platformLeads = sum(campaignMetrics, row => number(row.platform_conversions));
-    const appointmentCount = [...leadIds].filter(id => (appointmentsByLead.get(id) ?? []).length > 0).length;
+    const appointmentCount = [...leadIds].filter(id => {
+      const lead = leadById.get(id);
+      return Boolean(lead && hasAppointmentEvidence(lead, appointmentsByLead.get(id) ?? []));
+    }).length;
     const clients = new Set(campaignProjects.map(row => row.leadId)).size;
     return {
       id: campaignId,
@@ -229,6 +239,102 @@ async function loadCompany(
     } satisfies MetaCampaignMetric;
   }).sort((a, b) => b.spend - a.spend);
 
+  const exactAttributedLeadIds = new Set([
+    ...attributionRows
+      .filter(row => row.match_status === "MATCHED" && row.campaign_id && row.matched_lead_id)
+      .map(row => row.matched_lead_id as string),
+    ...leads
+      .filter(row => row.campaign_id && isFacebookSource(row.source))
+      .map(row => row.id),
+  ]);
+  const unattributedLeads = leads.filter(lead =>
+    isFacebookSource(lead.source)
+    && !exactAttributedLeadIds.has(lead.id)
+    && !lead.campaign_id
+  );
+  const unattributedLeadIds = new Set(unattributedLeads.map(lead => lead.id));
+
+  const unattributedQuotes = quotes
+    .filter(row => row.lead_id && unattributedLeadIds.has(row.lead_id))
+    .map(row => ({
+      id: row.id,
+      leadId: row.lead_id as string,
+      status: row.status,
+      valueInclVat: number(row.quote_value_incl_vat ?? row.quote_value),
+    }));
+  const unattributedProjects = projects
+    .filter(row => row.lead_id && unattributedLeadIds.has(row.lead_id))
+    .map(row => ({
+      id: row.id,
+      leadId: row.lead_id as string,
+      valueInclVat: number(row.project_value),
+      attributionStatus: row.attribution_status,
+    }));
+  const unattributedInvoices = invoices
+    .filter(row => row.lead_id && unattributedLeadIds.has(row.lead_id))
+    .map(row => ({
+      id: row.id,
+      leadId: row.lead_id as string,
+      invoicedInclVat: netInvoiced(row),
+      paid: number(row.paid_total),
+      attributionStatus: row.attribution_status,
+    }));
+  const unattributedFunnel = commercialFunnelTotals(
+    unattributedLeadIds,
+    unattributedQuotes,
+    unattributedProjects,
+    unattributedInvoices,
+  );
+  const unattributedAppointments = unattributedLeads.filter(lead =>
+    hasAppointmentEvidence(lead, appointmentsByLead.get(lead.id) ?? [])
+  ).length;
+  const unattributedCampaignLeads = unattributedLeads.map(lead => {
+    const attribution = attributionRows.find(row => row.matched_lead_id === lead.id);
+    return buildLeadDetail(
+      lead,
+      "Campaign unknown",
+      attribution,
+      adById,
+      appointmentsByLead.get(lead.id) ?? [],
+      quotesByLead.get(lead.id) ?? [],
+      projectsByLead.get(lead.id) ?? [],
+      invoicesByLead.get(lead.id) ?? [],
+    );
+  });
+  const unattributedRow: MetaCampaignMetric | null = unattributedLeads.length ? {
+    id: "__meta_unattributed__",
+    name: "Meta CRM — campaign unknown",
+    status: "Needs attribution",
+    spend: 0,
+    impressions: 0,
+    clicks: 0,
+    platformLeads: 0,
+    crmLeads: unattributedLeadIds.size,
+    appointments: unattributedAppointments,
+    qualified: unattributedLeads.filter(lead => isQualified(lead.sales_stage) || hasAppointmentEvidence(lead, appointmentsByLead.get(lead.id) ?? [])).length,
+    offers: unattributedFunnel.offers,
+    openOffers: unattributedFunnel.openOffers,
+    viewedOffers: unattributedFunnel.viewedOffers,
+    rejectedOffers: unattributedFunnel.rejectedOffers,
+    acceptedOffers: unattributedFunnel.acceptedOffers,
+    projects: unattributedFunnel.projects,
+    pipelineValue: unattributedFunnel.pipelineValue,
+    wonValue: unattributedFunnel.wonValue,
+    projectValue: unattributedFunnel.projectValue,
+    invoiced: unattributedFunnel.invoiced,
+    paid: unattributedFunnel.paid,
+    cpl: null,
+    costPerAppointment: null,
+    costPerOffer: null,
+    cac: null,
+    pipelineRoas: null,
+    wonRoas: null,
+    cashRoas: null,
+    leads: unattributedCampaignLeads,
+  } : null;
+
+  const campaigns = unattributedRow ? [unattributedRow, ...exactCampaigns] : exactCampaigns;
+
   const matched = attributionRows.filter(row => row.match_status === "MATCHED").length;
   const dates = attributionRows.map(row => row.created_time).sort();
   return {
@@ -243,7 +349,7 @@ async function loadCompany(
       matchRate: attributionRows.length ? matched / attributionRows.length : null,
       earliest: dates[0] ?? null,
       latest: dates.at(-1) ?? null,
-      unattributedFacebookLeads: leads.filter(lead => isFacebookSource(lead.source) && !lead.campaign_id && lead.created_at.slice(0, 10) >= dateFrom && lead.created_at.slice(0, 10) <= dateTo).length,
+      unattributedFacebookLeads: unattributedLeads.length,
     },
   };
 }
@@ -268,7 +374,11 @@ function buildLeadDetail(
     createdAt: lead.created_at,
     source: lead.source ?? "Unknown",
     campaign,
-    ad: attribution?.ad_id ? adById.get(attribution.ad_id) ?? "Unnamed ad" : "Unattributed",
+    ad: attribution?.ad_id
+      ? adById.get(attribution.ad_id) ?? "Unnamed ad"
+      : lead.ad_id
+        ? adById.get(lead.ad_id) ?? "Unnamed ad"
+        : "Unattributed",
     crmStatus: lead.crm_status ?? lead.sales_stage,
     appointment: appointments.sort((a, b) => b.scheduled_at.localeCompare(a.scheduled_at))[0]?.scheduled_at ?? null,
     offers: quotes.length,
@@ -311,6 +421,24 @@ function divide(numerator: number, denominator: number) {
 
 function isQualified(stage: string | undefined) {
   return ["qualified", "visit_booked", "visit_completed", "quote_sent", "won"].includes(stage ?? "");
+}
+
+function hasAppointmentEvidence(lead: LeadRow, appointments: AppointmentRow[]) {
+  if (appointments.length > 0) return true;
+  const status = String(lead.crm_status ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const stage = String(lead.sales_stage ?? "").trim().toLowerCase();
+  return stage.includes("visit")
+    || stage.includes("quote")
+    || stage.includes("won")
+    || [
+      "afspraak ingeboekt",
+      "visited offerte to be done",
+      "offer sent",
+      "email offerte",
+      "signed",
+      "offerte afgekeurd",
+      "offerte afgekeurd",
+    ].includes(status);
 }
 
 function reportingPeriod(month: string) {
