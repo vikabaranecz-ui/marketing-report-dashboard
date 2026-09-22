@@ -88,7 +88,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const { fromIso, toIso, fromDate, toDate } = period;
   const comparison = previousDashboardPeriod(period);
   const needsLeads = profile !== "website";
-  const needsMarketing = profile === "full" || profile === "overview" || profile === "health";
+  const needsMarketing = profile === "full" || profile === "overview" || profile === "health" || profile === "commercial";
   const needsCommercial = profile === "full" || profile === "overview" || profile === "commercial";
   const needsAppointments = needsCommercial;
   const needsClients = profile === "full" || profile === "overview" || profile === "health";
