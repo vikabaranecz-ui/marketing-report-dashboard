@@ -55,7 +55,8 @@ export async function runAutomatedSync(scope: AutomationScope) {
 
   const connections = ((data ?? []) as ConnectionRow[])
     .filter((connection) => shouldRun(scope, connection.provider))
-    .filter(isConfiguredForAutomation);
+    .filter(isConfiguredForAutomation)
+    .sort((a, b) => syncPriority(a.provider) - syncPriority(b.provider));
 
   const results: Array<{
     companyId: string;
@@ -98,6 +99,12 @@ function isConfiguredForAutomation(connection: ConnectionRow) {
   if (connection.provider === "monday") return Boolean(configuration.board_id);
   if (connection.provider === "hubspot") return Boolean(configuration.portal_id);
   return connection.provider === "robaws";
+}
+
+function syncPriority(provider: IntegrationProvider) {
+  if (provider === "monday" || provider === "hubspot") return 0;
+  if (provider === "robaws") return 1;
+  return 2;
 }
 
 function shouldRun(scope: AutomationScope, provider: IntegrationProvider) {
