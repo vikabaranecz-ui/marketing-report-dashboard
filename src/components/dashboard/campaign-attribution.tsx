@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { MetaCampaignMetric, MetaCampaignReportBootstrap } from "@/lib/data/meta-campaign-report";
+import type { SourceClientValue } from "@/lib/data/source-client-types";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
 import { Sidebar } from "./sidebar";
 
-export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCampaignReportBootstrap }) {
+export function CampaignAttributionDashboard({ bootstrap, sourceClients }: { bootstrap: MetaCampaignReportBootstrap; sourceClients: SourceClientValue[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -85,6 +86,26 @@ export function CampaignAttributionDashboard({ bootstrap }: { bootstrap: MetaCam
                 <tbody>{data.campaigns.map(campaign => <CampaignRows key={campaign.id} campaign={campaign} expanded={expandedCampaignId === campaign.id} onToggle={() => setExpandedCampaignId(current => current === campaign.id ? null : campaign.id)} />)}</tbody>
               </table>
             </div>
+          </section>
+
+          <section className="mb-8 overflow-hidden border border-[var(--border)] bg-white">
+            <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
+              <div><p className="eyebrow">Known client value</p><h2 className="mt-1 text-xl font-semibold tracking-tight">Which source produced a real client</h2></div>
+              <p className="max-w-xl text-right text-xs leading-5 text-[var(--muted)]">Project value is shown when a safe ROBAWS project link exists. Invoiced and paid come from the ROBAWS client record. Exact campaign stays blank until a deterministic campaign link exists.</p>
+            </div>
+            {sourceClients.length ? <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-xs">
+              <thead className="bg-[#f7f8f5] text-[10px] uppercase tracking-[.1em] text-[var(--muted)]"><tr><Th>Client</Th><Th>Source</Th><Th>Campaign</Th><Th>Client since</Th><Th number>Project value</Th><Th number>Invoiced</Th><Th number>Paid</Th><Th>Attribution</Th></tr></thead>
+              <tbody>{sourceClients.map(client => <tr key={client.id} className="border-t border-[var(--border)]">
+                <Td><span className="font-semibold">{client.name}</span></Td>
+                <Td>{client.source}</Td>
+                <Td>{client.campaign ?? "Unattributed"}</Td>
+                <Td>{formatDate(client.clientSince)}</Td>
+                <Td number>{client.projectValue === null ? "—" : formatCurrency(client.projectValue)}</Td>
+                <Td number>{formatCurrency(client.invoiced)}</Td>
+                <Td number><span className="font-semibold">{formatCurrency(client.paid)}</span></Td>
+                <Td>{client.attribution}</Td>
+              </tr>)}</tbody>
+            </table></div> : <div className="p-6 text-sm text-[var(--muted)]">No commercial clients with a known source in this period.</div>}
           </section>
 
           <section className="border border-[var(--border)] bg-white">
