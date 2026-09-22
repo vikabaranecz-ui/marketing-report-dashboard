@@ -2,15 +2,14 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Clock3, Database, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, CircleDollarSign, Clock3, Database, Minus, ReceiptText, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
-import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
+import { Card, SectionHeader, StatusPill } from "./ui";
 import { SystemPulse } from "./system-pulse";
-
-function delta(current:number,previous:number){return previous===0?null:((current-previous)/previous)*100}
+import { MoneyTrendChart } from "./charts";
 
 export function OverviewPage({data}:{data:CompanyDataset}) {
   const searchParams=useSearchParams();
@@ -69,6 +68,73 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const sourceCoverage=percentage(knownSourceClients.length,allCommercialClients.length)??0;
   const paidCashSourceCoverage=percentage(knownSourcePaid,businessPaid)??0;
 
+  const decision=data.businessDecision;
+  const periodTotals=decision?.current??null;
+  const directComparison=decision?.comparison??null;
+  const directComparisonHasData=Boolean(directComparison && (directComparison.spend>0||directComparison.invoiced>0||directComparison.paid>0||directComparison.leads>0));
+  const completeActiveMonths=(decision?.monthly??[]).filter(item=>item.complete&&(item.spend>0||item.invoiced>0||item.paid>0||item.leads>0));
+  const latestComplete=completeActiveMonths.at(-1)??null;
+  const previousComplete=completeActiveMonths.at(-2)??null;
+  const momentumCurrent=directComparisonHasData&&periodTotals ? periodTotals : latestComplete;
+  const momentumPrevious=directComparisonHasData ? directComparison : previousComplete;
+  const momentumLabel=directComparisonHasData
+    ? `${periodTotals?.label??"Selected period"} vs ${directComparison?.label??"previous period"}`
+    : latestComplete&&previousComplete
+      ? `${latestComplete.label} vs ${previousComplete.label}`
+      : "No reliable comparison period";
+  const momentum=buildMomentum(momentumCurrent,momentumPrevious,momentumLabel);
+
+  const selectedFrom=periodTotals?.fromDate??data.periodLabel.split(" — ")[0]??"";
+  const selectedTo=periodTotals?.toDate??data.periodLabel.split(" — ")[1]??"";
+  const selectedSourceEvidence=sourceEvidence.filter(item=>{
+    const date=item.client.clientSince?.slice(0,10);
+    return Boolean(date&&date>=selectedFrom&&date<=selectedTo&&item.safe&&item.source);
+  });
+  const sourceOutcomeMap=new Map<string,{source:string;clients:number;paid:number;invoiced:number;spend:number|null;openValue:number}>();
+  for(const item of selectedSourceEvidence){
+    const source=decisionSourceName(item.source);
+    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,spend:null,openValue:0};
+    current.clients+=1;
+    current.paid+=item.client.paidTotal;
+    current.invoiced+=item.client.invoicedTotal;
+    sourceOutcomeMap.set(source,current);
+  }
+  for(const row of sources){
+    const source=decisionSourceName(row.source);
+    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,spend:null,openValue:0};
+    if(row.spend!==null) current.spend=(current.spend??0)+row.spend;
+    current.openValue+=row.openValue;
+    sourceOutcomeMap.set(source,current);
+  }
+  const sourceOutcomes=[...sourceOutcomeMap.values()]
+    .filter(row=>row.clients>0||(row.spend??0)>0||row.openValue>0)
+    .map(row=>({...row,verdict:sourceVerdict(row)}))
+    .sort((a,b)=>b.paid-a.paid||b.clients-a.clients||(b.spend??0)-(a.spend??0));
+  const unknownSelectedClients=allCommercialClients.filter(client=>{
+    const date=client.clientSince?.slice(0,10);
+    const evidence=sourceEvidence.find(item=>item.client.id===client.id);
+    return Boolean(date&&date>=selectedFrom&&date<=selectedTo&&!evidence?.safe);
+  });
+  const unknownSelectedPaid=unknownSelectedClients.reduce((sum,client)=>sum+client.paidTotal,0);
+
+  const funnelNumbers=[
+    {label:"Unique leads",value:summary.uniquePeople},
+    {label:"Qualified",value:summary.qualified},
+    {label:"Visits",value:rows.filter(hasCompletedVisitEvidence).length},
+    {label:"Offers sent",value:summary.offersSent},
+    {label:"CRM signed",value:summary.crmSigned},
+    {label:"ROBAWS clients",value:summary.commercialClients},
+  ];
+  const funnelLeaks=funnelNumbers.slice(0,-1).map((item,index)=>{
+    const next=funnelNumbers[index+1];
+    const loss=Math.max(0,item.value-next.value);
+    return {from:item.label,to:next.label,loss,rate:item.value?loss/item.value*100:0};
+  }).sort((a,b)=>b.rate-a.rate);
+  const biggestLeak=funnelLeaks[0]??null;
+  const staleOffers=openOffers.filter(item=>(item.daysWaiting??0)>7);
+  const staleValue=staleOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
+  const noReturnSpend=sourceOutcomes.filter(item=>(item.spend??0)>0&&item.paid===0).reduce((sum,item)=>sum+Number(item.spend??0),0);
+
   const stages=[
     {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows · all sources"},
     {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
@@ -83,15 +149,40 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const budgetCards=paidSources.map(source=>budgetConclusion(source));
 
   return <div className="space-y-6">
-    <SystemPulse data={data}/>
+    <DecisionHero momentum={momentum} periodLabel={periodTotals?.label??data.periodLabel}/>
 
-    <div className="wat-kpi-grid">
-      <KpiCard label="Known-source paid" value={formatCurrency(knownSourcePaid,true)} meta={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash"}/>
-      <KpiCard label="Commercial clients" value={formatNumber(allCommercialClients.length)} meta={formatNumber(knownSourceClients.length)+" with known acquisition source"}/>
-      <KpiCard label="Project value" value={formatCurrency(projectValue,true)} meta={formatNumber(summary.attributableClients)+" CRM-linked clients"}/>
-      <KpiCard label="Paid ROAS" value={coveredSpend?formatNumber(coveredPaid/coveredSpend)+"×":"—"} meta={formatCurrency(coveredSpend,true)+" covered spend"}/>
-      <KpiCard label="Source coverage" value={formatPercent(sourceCoverage)} meta={formatNumber(unknownSourceClients)+" commercial clients still unknown"}/>
+    {periodTotals&&<div className="decision-money-grid">
+      <DecisionMoneyCard icon="spend" label="Tracked marketing spend" value={periodTotals.spend} comparison={directComparisonHasData?directComparison?.spend:null} note="Media/platform spend currently available in the dashboard"/>
+      <DecisionMoneyCard icon="invoice" label="Invoiced this period" value={periodTotals.invoiced} comparison={directComparisonHasData?directComparison?.invoiced:null} note="ROBAWS invoices dated inside the selected period"/>
+      <DecisionMoneyCard icon="paid" label="Paid cash this period" value={periodTotals.paid} comparison={directComparisonHasData?directComparison?.paid:null} note="Cash recorded against ROBAWS invoices in this period"/>
+      <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-periodTotals.spend} comparison={directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus tracked media spend — not company profit" accent/>
+    </div>}
+
+    <div className="decision-grid">
+      <Card className="p-5">
+        <SectionHeader title="Are we moving in the right direction?" description={momentum.context}/>
+        <MoneyTrendChart data={(decision?.monthly??[]).map(item=>({label:item.label,paid:item.paid,spend:item.spend,complete:item.complete}))}/>
+        <div className="decision-chart-legend"><span><i className="legend-paid"/> Paid cash</span><span><i className="legend-spend"/> Tracked marketing spend</span></div>
+      </Card>
+
+      <Card className="p-5">
+        <SectionHeader title="Where the money comes from" description="Client acquisition cohort for the selected period. Source-level attribution only; campaign detail stays separate."/>
+        <div className="source-decision-list">
+          {sourceOutcomes.slice(0,6).map(row=><SourceDecisionRow key={row.source} {...row}/>)}
+          {!sourceOutcomes.length&&<p className="decision-empty">No safely attributed source outcome is available for this period yet.</p>}
+        </div>
+        {unknownSelectedClients.length>0&&<div className="unknown-attribution-note"><AlertTriangle size={16}/><div><strong>{unknownSelectedClients.length} client(s) still have no safe source</strong><p>{formatCurrency(unknownSelectedPaid)} paid cash from those clients cannot yet be assigned to a marketing source.</p></div></div>}
+      </Card>
     </div>
+
+    <Card className="p-5">
+      <SectionHeader title="Where are we losing momentum?" description="This separates funnel leakage, stale commercial value and paid spend with no collected return yet."/>
+      <div className="loss-signal-grid">
+        <LossSignal icon="funnel" label="Biggest funnel drop" value={biggestLeak?formatPercent(biggestLeak.rate):"—"} detail={biggestLeak?`${biggestLeak.loss} people drop between ${biggestLeak.from} and ${biggestLeak.to}`:"Not enough funnel evidence"}/>
+        <LossSignal icon="pipeline" label="Open value older than 7 days" value={formatCurrency(staleValue,true)} detail={staleOffers.length+` offer(s) need follow-up`}/>
+        <LossSignal icon="spend" label="Spend with no paid return yet" value={formatCurrency(noReturnSpend,true)} detail="Not automatically a loss — pipeline may still convert"/>
+      </div>
+    </Card>
 
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5">
@@ -180,6 +271,8 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <Link href={scopedHref("/campaigns")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open full source & campaign economics <ArrowRight size={14}/></Link>
     </Card>
 
+    <SystemPulse data={data}/>
+
     <Card className="p-5">
       <SectionHeader title="Data trust" description="Performance conclusions are separated from data-quality blockers."/>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -193,6 +286,81 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <Link href={scopedHref("/data-health")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
     </Card>
   </div>;
+}
+
+type MomentumMetric = { label?:string; spend:number; invoiced:number; paid:number; leads:number } | null | undefined;
+
+function buildMomentum(current:MomentumMetric,previous:MomentumMetric,context:string){
+  if(!current||!previous)return{tone:"neutral" as const,title:"Not enough history yet",summary:"The dashboard can show the current period, but there is not enough comparable history to call a trend.",context};
+  const paidChange=relativeChange(current.paid,previous.paid);
+  const leadChange=relativeChange(current.leads,previous.leads);
+  const spendChange=relativeChange(current.spend,previous.spend);
+  if(previous.paid===0&&current.paid>0){
+    return{tone:"good" as const,title:"Business momentum is improving",summary:`Paid cash moved from €0 to ${formatCurrency(current.paid,true)}. Tracked spend is ${formatCurrency(current.spend,true)} for the comparison period.`,context};
+  }
+  if(paidChange!==null&&paidChange>=10&&leadChange!==null&&leadChange>=-10){
+    return{tone:"good" as const,title:"Growth signal is positive",summary:`Paid cash is up ${formatPercent(paidChange)} while leads are ${changeWords(leadChange)}. Tracked spend is ${changeWords(spendChange)}.`,context};
+  }
+  if(paidChange!==null&&paidChange>=10){
+    return{tone:"warn" as const,title:"Cash is up, but demand needs watching",summary:`Paid cash is up ${formatPercent(paidChange)}, but leads are ${changeWords(leadChange)}. Check whether growth is coming from older pipeline rather than new demand.`,context};
+  }
+  if(paidChange!==null&&paidChange<=-10&&leadChange!==null&&leadChange>10){
+    return{tone:"warn" as const,title:"Demand is up, cash is down",summary:`Leads are up ${formatPercent(leadChange)}, but paid cash is down ${formatPercent(Math.abs(paidChange))}. The issue is likely later in the funnel or invoice timing.`,context};
+  }
+  if(paidChange!==null&&paidChange<=-10){
+    return{tone:"bad" as const,title:"Business momentum is down",summary:`Paid cash is down ${formatPercent(Math.abs(paidChange))}. Leads are ${changeWords(leadChange)} and tracked spend is ${changeWords(spendChange)}.`,context};
+  }
+  return{tone:"neutral" as const,title:"Business momentum is broadly stable",summary:`Paid cash is ${changeWords(paidChange)}. Leads are ${changeWords(leadChange)} and tracked spend is ${changeWords(spendChange)}.`,context};
+}
+
+function relativeChange(current:number,previous:number){
+  if(previous===0)return current===0?0:null;
+  return (current-previous)/previous*100;
+}
+function changeWords(value:number|null){
+  if(value===null)return"not comparable";
+  if(Math.abs(value)<2)return"roughly flat";
+  return value>0?`up ${formatPercent(value)}`:`down ${formatPercent(Math.abs(value))}`;
+}
+
+function decisionSourceName(source:string){
+  const value=source.trim().toLowerCase();
+  if(value.includes("facebook")||value.includes("meta")||value.includes("instagram"))return"Meta Ads / Facebook";
+  if(value==="google ads"||value.includes("google ad"))return"Google Ads";
+  if(value==="leadangel")return"LeadAngel";
+  if(value==="agenciyou")return"AgenciYou";
+  if(value==="web"||value.includes("website"))return"Web";
+  return source.trim()||"Unknown";
+}
+
+function sourceVerdict(row:{clients:number;paid:number;spend:number|null;openValue:number}){
+  if(row.spend===null)return{tone:"neutral" as const,label:"Cost missing"};
+  if(row.paid>0&&row.spend>0&&row.paid/row.spend>=3)return{tone:"good" as const,label:"Working"};
+  if(row.paid>0)return{tone:"good" as const,label:"Producing cash"};
+  if(row.openValue>0)return{tone:"warn" as const,label:"Pipeline only"};
+  if(row.spend>0)return{tone:"bad" as const,label:"No paid return yet"};
+  return{tone:"neutral" as const,label:"Organic / no spend"};
+}
+
+function DecisionHero({momentum,periodLabel}:{momentum:{tone:"good"|"warn"|"bad"|"neutral";title:string;summary:string;context:string};periodLabel:string}){
+  const icon=momentum.tone==="good"?<TrendingUp size={22}/>:momentum.tone==="bad"?<TrendingDown size={22}/>:momentum.tone==="warn"?<AlertTriangle size={22}/>:<Minus size={22}/>;
+  return <section className={`decision-hero tone-${momentum.tone}`}><div className="decision-hero-icon">{icon}</div><div className="min-w-0 flex-1"><p className="decision-kicker">Management read · {periodLabel}</p><h2>{momentum.title}</h2><p>{momentum.summary}</p><small>{momentum.context}</small></div></section>;
+}
+
+function DecisionMoneyCard({icon,label,value,comparison,note,accent=false}:{icon:"spend"|"invoice"|"paid"|"return";label:string;value:number;comparison:number|null|undefined;note:string;accent?:boolean}){
+  const Icon=icon==="spend"?CircleDollarSign:icon==="invoice"?ReceiptText:icon==="paid"?WalletCards:TrendingUp;
+  const change=comparison===null||comparison===undefined?null:relativeChange(value,comparison);
+  return <div className={`decision-money-card ${accent?"is-accent":""}`}><div className="decision-money-head"><span><Icon size={16}/>{label}</span>{change!==null&&<span className={`decision-delta ${change>=0?"is-up":"is-down"}`}>{change>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {formatPercent(Math.abs(change))}</span>}</div><strong>{formatCurrency(value,true)}</strong><p>{note}</p></div>;
+}
+
+function SourceDecisionRow({source,clients,paid,spend,openValue,verdict}:{source:string;clients:number;paid:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string}}){
+  const cashReturn=spend===null?null:paid-spend;
+  return <div className="source-decision-row"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></div>;
+}
+
+function LossSignal({icon,label,value,detail}:{icon:"funnel"|"pipeline"|"spend";label:string;value:string;detail:string}){
+  const Icon=icon==="funnel"?TrendingDown:icon==="pipeline"?Clock3:CircleDollarSign;
+  return <div className="loss-signal"><div className="loss-icon"><Icon size={17}/></div><div><span>{label}</span><strong>{value}</strong><p>{detail}</p></div></div>;
 }
 
 function isPaidMarketingSource(source:string){

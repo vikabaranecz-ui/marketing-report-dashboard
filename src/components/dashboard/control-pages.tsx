@@ -9,7 +9,7 @@ import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } f
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
 
-const paidSources = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel"]);
+const paidSources = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou"]);
 
 export function FunnelPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
@@ -272,7 +272,7 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
       leads:group.length,
       qualified:group.filter(item=>item.isQualified).length,
       visits:group.filter(hasCompletedVisitEvidence).length,
-      offers:group.filter(item=>item.offers.some(offer=>Boolean(offer.sentAt))).length,
+      offers:group.filter(item=>item.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(item.lead)).length,
       sentValue:group.reduce((total,item)=>total+item.sentOfferValue,0),
       openValue:group.reduce((total,item)=>total+item.openOfferValue,0),
       signed:group.filter(item=>item.isSigned).length,

@@ -1,6 +1,6 @@
 "use client";
 
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { TrendPoint } from "@/lib/data/types";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
 
@@ -14,6 +14,10 @@ export function TrendChart({ data, metric, accent: _accent }: { data: TrendPoint
 
 export function ComparisonBars({ data, accent: _accent }: { data: { name: string; value: number; secondary?: number }[]; accent: string }) {
   return <div className="h-[260px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={data} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}><CartesianGrid stroke="#eeeeea" vertical={false}/><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#72746f", fontSize: 11 }}/><YAxis axisLine={false} tickLine={false} tick={{ fill: "#72746f", fontSize: 11 }} tickFormatter={(v) => formatNumber(v)}/><Tooltip contentStyle={tooltipStyle}/><Bar dataKey="value" fill={WAT_YELLOW} radius={[6,6,0,0]}/>{data.some(d => d.secondary !== undefined) && <Bar dataKey="secondary" fill={WAT_BLACK} radius={[6,6,0,0]}/>}</BarChart></ResponsiveContainer></div>;
+}
+
+export function MoneyTrendChart({ data }: { data: { label: string; paid: number; spend: number; complete: boolean }[] }) {
+  return <div className="h-[280px] w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}><CartesianGrid stroke="#eeeeea" vertical={false}/><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#777873", fontSize: 11 }}/><YAxis axisLine={false} tickLine={false} tick={{ fill: "#777873", fontSize: 11 }} tickFormatter={(value)=>formatCurrency(Number(value),true)}/><Tooltip contentStyle={tooltipStyle} formatter={(value,name)=>[formatCurrency(Number(value)),name==="paid"?"Paid cash":"Marketing spend"]}/><Bar dataKey="paid" fill={WAT_BLACK} radius={[6,6,0,0]}/><Line type="monotone" dataKey="spend" stroke={WAT_YELLOW} strokeWidth={3} dot={{ r: 3, fill: WAT_YELLOW, stroke: WAT_BLACK, strokeWidth: 1 }}/></ComposedChart></ResponsiveContainer></div>;
 }
 
 export function QualityBars({ data }: { data: { name: string; value: number }[] }) {
