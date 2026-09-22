@@ -224,12 +224,8 @@ async function syncMonday(
   });
 
   const imported = await upsertLeads(admin, leads);
-  await pruneStaleCrmLeads(
-    admin,
-    companyId,
-    "monday",
-    new Set(items.map(item => item.id)),
-  );
+  // Keep historical Monday records even if an item leaves the current board snapshot.
+  // Removing it here destroys cohort history and can break ROBAWS reconciliation.
 
   const dealItems = await fetchAllMondayItems(
     token,
@@ -307,12 +303,8 @@ async function syncMonday(
   const dealsImported =
     dealResult.data?.length ?? 0;
 
-  await pruneStaleCrmDeals(
-    admin,
-    companyId,
-    "monday",
-    new Set(dealItems.map(item => item.id)),
-  );
+  // Keep historical deal rows for the same reason: board membership is not
+  // a reliable signal that a historical reporting record should be deleted.
 
   return {
     recordsImported:
