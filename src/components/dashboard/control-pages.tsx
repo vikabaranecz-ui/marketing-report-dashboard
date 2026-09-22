@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
-import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
@@ -16,14 +16,14 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const summary = buildFunnelSummary(data);
   const appointments = rows.filter(hasAppointmentEvidence).length;
   const completedVisits = rows.filter(hasCompletedVisitEvidence).length;
-  const sentOffers = rows.filter(row => row.offers.some(offer => Boolean(offer.sentAt))).length;
+  const sentOffers = rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
   const commercialClients = rows.filter(row => row.isCommercialClient).length;
   const stages = [
     { label:"Unique leads", value:summary.uniquePeople, note:"Deduplicated CRM people" },
     { label:"Qualified", value:summary.qualified, note:"Relevant / progressed" },
     { label:"Appointments", value:appointments, note:"Booked appointment evidence" },
     { label:"Visits", value:completedVisits, note:"Completed / post-visit evidence" },
-    { label:"Offers sent", value:sentOffers, note:"ROBAWS sent date present" },
+    { label:"Offers sent", value:sentOffers, note:"ROBAWS status / sent date or CRM offer-stage evidence" },
     { label:"Accepted", value:summary.acceptedOffers, note:"Accepted commercial offer" },
     { label:"CRM signed", value:summary.crmSigned, note:"Monday status = signed" },
     { label:"ROBAWS clients", value:commercialClients, note:"Commercially confirmed" },

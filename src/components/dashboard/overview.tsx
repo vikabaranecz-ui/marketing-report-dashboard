@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Clock3, Database, TrendingUp } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
-import { buildFunnelSummary, buildJourneyRows, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildFunnelSummary, buildJourneyRows, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
 import { Card, KpiCard, SectionHeader, StatusPill } from "./ui";
@@ -23,7 +23,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  const sentOffers=offers.filter(item=>Boolean(item.sentAt));
+  const sentOffers=offers.filter(hasOfferSentEvidence);
   const openOffers=sentOffers.filter(item=>item.isOpen);
   const acceptedOffers=offers.filter(item=>item.isAccepted);
   const paid=invoices.reduce((sum,item)=>sum+item.paidTotal,0);
