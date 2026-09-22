@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <section className={`border border-[var(--line)] bg-white ${className}`}>{children}</section>;
+  return <section className={`dashboard-card border border-[var(--line)] bg-white ${className}`}>{children}</section>;
 }
 
 export function SectionHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
@@ -17,8 +17,8 @@ export function SectionHeader({ title, description, action }: { title: string; d
 export function KpiCard({ label, value, delta, meta }: { label: string; value: string; delta?: number | null; meta?: string }) {
   const positive = (delta ?? 0) >= 0;
   return (
-    <div className="kpi-card min-w-0 border-r border-b border-[var(--line)] bg-white p-4 last:border-r-0">
-      <p className="truncate text-xs font-semibold uppercase tracking-[.08em] text-[var(--muted)]">{label}</p>
+    <div className="kpi-card min-w-0 bg-white p-4">
+      <div className="flex items-center gap-2"><span className="kpi-accent-dot"/><p className="truncate text-xs font-semibold text-[var(--muted)]">{label}</p></div>
       <div className="mt-3 flex items-end justify-between gap-2">
         <p className="truncate text-[1.45rem] font-semibold tracking-[-.05em] text-[var(--ink)]">{value}</p>
         {delta !== undefined && delta !== null && <span className={`mb-1 flex items-center text-xs font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}>{positive ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{Math.abs(delta).toFixed(1)}%</span>}
