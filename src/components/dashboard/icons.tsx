@@ -10,7 +10,7 @@ export const navItems = [
 ] as const;
 
 export const sectionMeta = {
-  overview: { eyebrow: "One operating system", title: "Business Control Center", icon: LayoutDashboard },
+  overview: { eyebrow: "WAT Agency dashboard", title: "Marketing Overview", icon: LayoutDashboard },
   "client-journey": { eyebrow: "People, evidence & corrections", title: "Clients", icon: UsersRound },
   "offers-pipeline": { eyebrow: "Offers, follow-up & cash", title: "Pipeline", icon: FileText },
   campaigns: { eyebrow: "Source economics", title: "Marketing", icon: Megaphone },
