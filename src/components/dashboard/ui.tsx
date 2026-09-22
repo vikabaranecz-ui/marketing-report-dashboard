@@ -29,10 +29,10 @@ export function KpiCard({ label, value, delta, meta }: { label: string; value: s
 }
 
 export function EmptyState({ title = "No data for this selection", body = "Change the filters or connect a data source to populate this view." }: { title?: string; body?: string }) {
-  return <div className="flex min-h-48 flex-col items-center justify-center border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 text-center"><p className="font-semibold">{title}</p><p className="mt-2 max-w-md text-sm text-[var(--muted)]">{body}</p></div>;
+  return <div className="empty-state flex min-h-48 flex-col items-center justify-center border border-dashed border-[var(--line-strong)] bg-[var(--surface)] px-6 text-center"><p className="font-semibold">{title}</p><p className="mt-2 max-w-md text-sm text-[var(--muted)]">{body}</p></div>;
 }
 
 export function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "good" | "warn" | "bad" | "accent" }) {
   const colors = { neutral: "bg-slate-100 text-slate-700", good: "bg-emerald-50 text-emerald-800", warn: "bg-amber-50 text-amber-800", bad: "bg-rose-50 text-rose-800", accent: "bg-[var(--accent-soft)] text-[var(--accent-ink)]" };
-  return <span className={`inline-flex items-center whitespace-nowrap px-2 py-1 text-xs font-semibold ${colors[tone]}`}>{children}</span>;
+  return <span className={`status-pill inline-flex items-center whitespace-nowrap px-2 py-1 text-xs font-semibold ${colors[tone]}`}>{children}</span>;
 }
