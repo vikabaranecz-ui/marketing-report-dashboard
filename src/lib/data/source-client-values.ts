@@ -12,12 +12,12 @@ type LeadRow = {
 
 type CampaignRow = {
   id: string;
-  external_id: string;
   name: string;
 };
 
 type ClientRow = {
   id: string;
+  external_id: string;
   name: string;
   client_since: string | null;
   matched_lead_id: string | null;
