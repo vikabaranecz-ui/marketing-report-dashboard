@@ -22,7 +22,12 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const googleAdsIntegration=data.integrations.find(item=>item.provider==="google_ads");
   const googleBusinessIntegration=data.integrations.find(item=>item.provider==="google_business");
   const metaIntegration=data.integrations.find(item=>item.provider==="meta");
+  const websiteFormsIntegration=data.integrations.find(item=>item.provider==="website_forms");
   const metaLeadAccessReady=!metaIntegration?.metaMissingPermissions?.includes("leads_retrieval");
+  const leadDateCounts=new Map<string,number>();
+  for(const lead of data.leads){const date=lead.date.slice(0,10);leadDateCounts.set(date,(leadDateCounts.get(date)??0)+1);}
+  const peakLeadDate=[...leadDateCounts.entries()].sort((a,b)=>b[1]-a[1])[0]??["",0] as [string,number];
+  const suspiciousLeadDateBatch=data.leads.length>=20&&peakLeadDate[1]>=20&&peakLeadDate[1]/data.leads.length>=0.25;
   const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
@@ -43,6 +48,9 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const coveredClients=knownSpendRows.reduce((sum,row)=>sum+row.attributedClients,0);
   const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
 
+  const robawsClientRecords=data.commercialClients??[];
+  const robawsWonRecords=robawsClientRecords.filter(client=>client.commercialStatus==="CLIENT_WON");
+  const robawsMatchedWonRecords=robawsWonRecords.filter(client=>Boolean(client.matchedLeadId));
   const rowByLeadId=new Map<string,JourneyRow>();
   rows.forEach(row=>row.leadIds.forEach(id=>rowByLeadId.set(id,row)));
   const cohortCommercialClients=(data.commercialClients??[]).filter(client=>
@@ -289,6 +297,9 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         <Trust label="Google Ads sync" ok={Boolean(googleAdsIntegration?.lastSuccess)} detail={googleAdsIntegration?.lastSuccess?"Live data has synced":"OAuth is connected, but no Google Ads customer has completed a sync"}/>
         <Trust label="Google Business sync" ok={Boolean(googleBusinessIntegration?.lastSuccess)} detail={googleBusinessIntegration?.lastSuccess?"Live data has synced":"Connected account, but no Business Profile location has completed a sync"}/>
         <Trust label="Meta Lead Ads attribution" ok={metaLeadAccessReady} detail={metaLeadAccessReady?"Lead retrieval permission available":"Missing leads_retrieval permission — direct Meta lead matching is incomplete"}/>
+        <Trust label="Website lead capture" ok={websiteFormsIntegration?.status==="Connected"&&Boolean(websiteFormsIntegration.lastSuccess)} detail={websiteFormsIntegration?.lastSuccess?"Website form source is syncing":"Website forms are not connected; GA4 currently shows visits but no tracked form submissions"}/>
+        <Trust label="ROBAWS ↔ CRM matching" ok={robawsMatchedWonRecords.length===robawsWonRecords.length} detail={robawsMatchedWonRecords.length+" / "+robawsWonRecords.length+" won ROBAWS clients are matched to a CRM lead; unmatched clients cannot be source-attributed"}/>
+        <Trust label="Lead-date quality" ok={!suspiciousLeadDateBatch} detail={suspiciousLeadDateBatch?peakLeadDate[1]+" / "+data.leads.length+" selected leads share "+peakLeadDate[0]+" — verify bulk-import dates before treating this as a true acquisition cohort":"No extreme single-day concentration in the selected lead dates"}/>
         <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
         <Trust label="Source coverage" ok={unknownSourceClients===0} detail={knownSourceClients.length+" / "+cohortCommercialClients.length+" commercial clients have a safe acquisition source"}/>
         <Trust label="Paid-cash source coverage" ok={paidCashSourceCoverage>=90} detail={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash has a known acquisition source"}/>
