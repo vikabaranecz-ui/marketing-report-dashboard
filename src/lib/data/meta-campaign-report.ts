@@ -301,8 +301,6 @@ async function loadCompany(
       invoicesByLead.get(lead.id) ?? [],
     );
   });
-  const unattributedClients = new Set(unattributedProjects.map(row => row.leadId)).size;
-
   const unattributedRow: MetaCampaignMetric | null = unattributedLeads.length ? {
     id: "__meta_unattributed__",
     name: "Meta CRM — campaign unknown",
@@ -328,7 +326,7 @@ async function loadCompany(
     cpl: null,
     costPerAppointment: null,
     costPerOffer: null,
-    cac: unattributedClients > 0 ? null : null,
+    cac: null,
     pipelineRoas: null,
     wonRoas: null,
     cashRoas: null,
