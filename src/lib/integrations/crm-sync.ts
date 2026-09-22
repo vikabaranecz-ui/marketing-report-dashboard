@@ -215,10 +215,8 @@ async function syncMonday(
       sales_stage: stage,
       crm_status: rawStatus || null,
       notes: notes || null,
-      closed_at:
-        stage === "won" || stage === "lost"
-          ? new Date().toISOString()
-          : null,
+      // Monday does not expose a trustworthy historical closed/signed timestamp
+      // in this board mapping. Do not write the sync time into closed_at.
       lost_reason: stage === "lost" ? rejection || rawStatus || null : null,
       crm_source: "monday",
       crm_external_id: item.id,
