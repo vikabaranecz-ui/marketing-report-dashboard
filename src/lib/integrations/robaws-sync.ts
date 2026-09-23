@@ -218,6 +218,13 @@ export async function syncRobawsProvider(
     const clientProjects = projectsByClient.get(client.id) ?? [];
     const clientInvoices = invoicesByClient.get(client.id) ?? [];
     const acceptedOffers = clientOffers.filter(isAccepted);
+    const projectIds = new Set(clientProjects.map(project => project.id));
+    const projectLinkedOffers = clientOffers.filter(offer => Boolean(offer.projectId) && projectIds.has(offer.projectId!));
+    const projectValueOffers = projectLinkedOffers.length
+      ? projectLinkedOffers
+      : clientProjects.length === 1
+        ? (acceptedOffers.length ? acceptedOffers : clientOffers)
+        : acceptedOffers;
     const openOffers = clientOffers.filter(offer => !isAccepted(offer) && !isRejected(offer));
     const hasInvoice = clientInvoices.some(invoice =>
       normalize(invoice.status) !== "gecrediteerd" &&
@@ -263,10 +270,10 @@ export async function syncRobawsProvider(
         0,
       ),
       project_value_total: clientProjects.length
-        ? acceptedOffers.reduce((sum, offer) => sum + Number(offer.totalInclVat ?? 0), 0)
+        ? projectValueOffers.reduce((sum, offer) => sum + Number(offer.totalInclVat ?? 0), 0)
         : 0,
       project_value_total_excl_vat: clientProjects.length
-        ? acceptedOffers.reduce((sum, offer) => sum + Number(offer.totalExclVat ?? 0), 0)
+        ? projectValueOffers.reduce((sum, offer) => sum + Number(offer.totalExclVat ?? 0), 0)
         : 0,
       invoiced_total: clientInvoices.reduce(
         (sum, invoice) => sum + Math.max(0, Number(invoice.totalInclVat ?? 0) - Number(invoice.creditedTotal ?? 0)),
@@ -472,15 +479,24 @@ export async function syncRobawsProvider(
     }
 
     for (const project of clientProjects) {
-      const linkedAccepted =
+      const linkedOffers =
         clientOffers.filter(
           offer =>
-            offer.projectId === project.id &&
-            isAccepted(offer),
+            offer.projectId === project.id,
         );
+      const linkedAccepted =
+        linkedOffers.filter(isAccepted);
+      const projectOffers =
+        linkedAccepted.length
+          ? linkedAccepted
+          : linkedOffers.length
+            ? linkedOffers
+            : clientProjects.length === 1
+              ? (acceptedOffers.length ? acceptedOffers : clientOffers)
+              : [];
 
       const valueIncl =
-        linkedAccepted.reduce(
+        projectOffers.reduce(
           (sum, offer) =>
             sum +
             Number(offer.totalInclVat ?? 0),
@@ -488,7 +504,7 @@ export async function syncRobawsProvider(
         );
 
       const valueExcl =
-        linkedAccepted.reduce(
+        projectOffers.reduce(
           (sum, offer) =>
             sum +
             Number(offer.totalExclVat ?? 0),
@@ -496,8 +512,8 @@ export async function syncRobawsProvider(
         );
 
       const projectAttribution =
-        linkedAccepted.length
-          ? linkedAccepted.some(
+        projectOffers.length
+          ? projectOffers.some(
               offer =>
                 documentAttribution(
                   offer.date,
@@ -522,7 +538,7 @@ export async function syncRobawsProvider(
         status: "won",
         won_at:
           toTimestamp(
-            linkedAccepted[0]?.date ||
+            projectOffers[0]?.date ||
             project.date,
           ),
         completed_at: null,
