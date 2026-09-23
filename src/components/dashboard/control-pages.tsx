@@ -173,19 +173,30 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const unmatchedClients=clients.filter(client=>!client.matchedLeadId).length;
   const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
   const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
+  const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
+  const manualSourceForClient=(client:NonNullable<CompanyDataset["commercialClients"]>[number])=>{
+    const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
+    const matches=sourceOverrides.filter(item=>keys.includes(item.scopeKey));
+    const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
+    return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
+  };
   const safelyAttributed=rows.filter(row=>row.isAttributableClient);
-  const attributionCoverage=percentage(safelyAttributed.length,wonClients.length)??0;
-  const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
   const safeLeadIds=new Set(safelyAttributed.flatMap(row=>row.leadIds));
-  const attributedPaid=wonClients.filter(client=>client.matchedLeadId&&safeLeadIds.has(client.matchedLeadId)).reduce((sum,client)=>sum+client.paidTotal,0);
+  const safelyAttributedClientIds=new Set(wonClients.filter(client=>client.matchedLeadId&&safeLeadIds.has(client.matchedLeadId)).map(client=>client.id));
+  const manuallyAttributedClientIds=new Set(wonClients.filter(client=>Boolean(manualSourceForClient(client))).map(client=>client.id));
+  const attributedClientIds=new Set([...safelyAttributedClientIds,...manuallyAttributedClientIds]);
+  const manualAttributedWon=wonClients.filter(client=>manuallyAttributedClientIds.has(client.id));
+  const attributionCoverage=percentage(attributedClientIds.size,wonClients.length)??0;
+  const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
+  const attributedPaid=wonClients.filter(client=>attributedClientIds.has(client.id)).reduce((sum,client)=>sum+client.paidTotal,0);
   const paidCoverage=percentage(attributedPaid,businessPaid)??0;
   const checks=[
     {label:"CRM source completeness",ok:data.dataHealth.missingSource===0,detail:data.dataHealth.missingSource+" leads missing source"},
     {label:"Duplicate control",ok:data.dataHealth.duplicates===0,detail:data.dataHealth.duplicates+" potential duplicate CRM rows"},
     {label:"Campaign attribution",ok:data.dataHealth.missingCampaign===0,detail:data.dataHealth.missingCampaign+" leads missing campaign"},
     {label:"ROBAWS client reconciliation",ok:wonClients.length>0&&unmatchedWon.length===0,detail:wonClients.length===0?"Full ROBAWS client snapshot not populated":unmatchedWon.length+" commercial clients unmatched"},
-    {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:safelyAttributed.length+" / "+wonClients.length+" commercial clients safely attributed ("+formatPercent(attributionCoverage)+")"},
-    {label:"Paid cash attribution",ok:paidCoverage>=90,detail:formatCurrency(attributedPaid)+" / "+formatCurrency(businessPaid)+" safely attributed ("+formatPercent(paidCoverage)+")"},
+    {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:attributedClientIds.size+" / "+wonClients.length+" commercial clients have a safe source ("+manualAttributedWon.length+" manually assigned, "+formatPercent(attributionCoverage)+")"},
+    {label:"Paid cash attribution",ok:paidCoverage>=90,detail:formatCurrency(attributedPaid)+" / "+formatCurrency(businessPaid)+" source-attributed ("+formatPercent(paidCoverage)+")"},
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
     {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Spend available":"Spend not synced"},
   ];
@@ -215,11 +226,11 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
       <SectionHeader title="Reconciliation queue" description="This is the work required before marketing CAC / ROAS can be treated as complete business truth."/>
       <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
         <div>
-          <div className="mb-3 flex items-center justify-between gap-3"><div><strong className="text-sm">Unmatched ROBAWS commercial clients</strong><p className="mt-1 text-xs text-[var(--muted)]">{unmatchedWon.length} of {wonClients.length} commercial clients are not linked to a CRM person.</p></div><StatusPill tone={unmatchedWon.length?"warn":"good"}>{formatPercent(attributionCoverage)} attributed</StatusPill></div>
-          {unmatchedWon.length?<div className="table-scroll"><table><thead><tr><th>ROBAWS client</th><th>Offers</th><th>Projects</th><th>Invoiced</th><th>Paid</th><th>Match</th></tr></thead><tbody>
-            {unmatchedWon.slice(0,20).map(client=><tr key={client.id}><td className="font-semibold">{client.name}</td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td><td><StatusPill tone="warn">{client.matchMethod||"NONE"}</StatusPill></td></tr>)}
+          <div className="mb-3 flex items-center justify-between gap-3"><div><strong className="text-sm">Unmatched ROBAWS commercial clients</strong><p className="mt-1 text-xs text-[var(--muted)]">{unmatchedWon.length} of {wonClients.length} commercial clients are not linked to a CRM person. Assign a source manually when you know where the client came from; this changes reporting only and does not edit ROBAWS.</p></div><StatusPill tone={attributionCoverage>=90?"good":"warn"}>{formatPercent(attributionCoverage)} source covered</StatusPill></div>
+          {unmatchedWon.length?<div className="table-scroll"><table><thead><tr><th>ROBAWS client</th><th>Offers</th><th>Projects</th><th>Invoiced</th><th>Paid</th><th>Match</th><th>Manual source</th></tr></thead><tbody>
+            {unmatchedWon.slice(0,40).map(client=><tr key={client.id}><td className="font-semibold">{client.name}</td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td><td><StatusPill tone="warn">{client.matchMethod||"NONE"}</StatusPill></td><td><RobawsSourceEditor companyId={data.company.id} client={client} initialSource={manualSourceForClient(client)}/></td></tr>)}
           </tbody></table></div>:<EmptyState title="ROBAWS reconciliation complete" body="Every commercial client is linked to a CRM lead."/>}
-          {unmatchedWon.length>20&&<p className="mt-3 text-xs text-[var(--muted)]">Showing the 20 highest-value unmatched clients of {unmatchedWon.length}.</p>}
+          {unmatchedWon.length>40&&<p className="mt-3 text-xs text-[var(--muted)]">Showing the 40 highest-value unmatched clients of {unmatchedWon.length}.</p>}
         </div>
         <div>
           <strong className="text-sm">CRM signed exceptions</strong>
@@ -455,3 +466,42 @@ function formatTimestamp(value:string|null){if(!value)return "—";return new In
 function Leak({label,value}:{label:string;value:number}){return <div className="bg-white p-4"><span className="text-xs text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{formatNumber(value)}</strong></div>}
 function RevenueStage({label,value,note}:{label:string;value:number;note:string}){return <div className="revenue-stage"><span>{label}</span><strong>{formatCurrency(value,true)}</strong><small>{note}</small></div>}
 function HealthMetric({icon,label,value}:{icon:ReactNode;label:string;value:number}){return <div className="bg-white p-4"><div className="flex items-center gap-2 text-[var(--muted)]">{icon}<span className="text-xs font-semibold uppercase tracking-wide">{label}</span></div><strong className={`mt-3 block text-2xl ${value>0?"text-amber-700":"text-emerald-700"}`}>{formatNumber(value)}</strong></div>}
+
+
+function RobawsSourceEditor({companyId,client,initialSource}:{companyId:string;client:NonNullable<CompanyDataset["commercialClients"]>[number];initialSource:string|null}) {
+  const router=useRouter();
+  const [source,setSource]=useState(initialSource??"");
+  const [pending,setPending]=useState(false);
+  const [error,setError]=useState("");
+
+  async function save(){
+    const value=source.trim();
+    if(!value){setError("Enter a source first.");return;}
+    setPending(true);setError("");
+    const response=await fetch("/api/overrides",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      companyId,periodKey:"all",scopeType:"client",scopeKey:`robaws:${client.externalId}`,fieldKey:"source",value,
+      note:"Manual ROBAWS client source attribution",
+    })});
+    if(!response.ok){const body=await response.json().catch(()=>({}));setError(body.error??"Could not save source.");setPending(false);return;}
+    setPending(false);router.refresh();
+  }
+
+  async function reset(){
+    setPending(true);setError("");
+    const response=await fetch("/api/overrides",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      companyId,periodKey:"all",scopeType:"client",scopeKey:`robaws:${client.externalId}`,fieldKey:"source",
+    })});
+    if(!response.ok){const body=await response.json().catch(()=>({}));setError(body.error??"Could not reset source.");setPending(false);return;}
+    setSource("");setPending(false);router.refresh();
+  }
+
+  return <div className="min-w-[220px]">
+    <div className="flex gap-2">
+      <input aria-label={`Source for ${client.name}`} className="h-9 min-w-0 flex-1 border border-[var(--line)] px-2 text-sm" value={source} onChange={event=>setSource(event.target.value)} placeholder="e.g. LeadAngel"/>
+      <button type="button" className="button-primary px-3" onClick={save} disabled={pending}>{pending?"…":"Save"}</button>
+      {initialSource&&<button type="button" className="button-secondary px-2" onClick={reset} disabled={pending} aria-label="Reset manual source"><RotateCcw size={13}/></button>}
+    </div>
+    {initialSource&&<p className="mt-1 text-[11px] font-semibold text-emerald-700">Manual: {initialSource}</p>}
+    {error&&<p className="mt-1 text-[11px] text-rose-700">{error}</p>}
+  </div>;
+}
