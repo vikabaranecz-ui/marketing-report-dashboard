@@ -254,6 +254,20 @@ export async function syncRobawsProvider(
       offer_count: clientOffers.length,
       project_count: clientProjects.length,
       invoice_count: clientInvoices.length,
+      accepted_offer_total: acceptedOffers.reduce(
+        (sum, offer) => sum + Number(offer.totalInclVat ?? 0),
+        0,
+      ),
+      accepted_offer_total_excl_vat: acceptedOffers.reduce(
+        (sum, offer) => sum + Number(offer.totalExclVat ?? 0),
+        0,
+      ),
+      project_value_total: clientProjects.length
+        ? acceptedOffers.reduce((sum, offer) => sum + Number(offer.totalInclVat ?? 0), 0)
+        : 0,
+      project_value_total_excl_vat: clientProjects.length
+        ? acceptedOffers.reduce((sum, offer) => sum + Number(offer.totalExclVat ?? 0), 0)
+        : 0,
       invoiced_total: clientInvoices.reduce(
         (sum, invoice) => sum + Math.max(0, Number(invoice.totalInclVat ?? 0) - Number(invoice.creditedTotal ?? 0)),
         0,

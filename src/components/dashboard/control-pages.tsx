@@ -95,12 +95,17 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
   const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
-  const safeAttributed=rows.filter(row=>row.isAttributableClient).length;
+  const safelyAttributedLeadIds=new Set(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.leadIds));
+  const attributedWonClients=allWonClients.filter(client=>
+    Boolean(manualRobawsSource(data,client)) ||
+    Boolean(client.matchedLeadId&&safelyAttributedLeadIds.has(client.matchedLeadId))
+  );
+  const safeAttributed=attributedWonClients.length;
   const attributionCoverage=percentage(safeAttributed,allWonClients.length)??0;
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
 
   return <div className="space-y-6">
-    <div className="callout"><AlertTriangle size={18}/><div><strong>Source economics currently cover {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>CAC and ROAS below describe only clients safely linked back to CRM. Unmatched ROBAWS clients are not treated as marketing failures or assigned to a source by guesswork.</p></div></div>
+    <div className="callout"><AlertTriangle size={18}/><div><strong>Source economics currently cover {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>CRM-linked clients use verified lead attribution. Unmatched ROBAWS clients are included only when a manual source has been explicitly assigned; they never receive a guessed source.</p></div></div>
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Paid sources are compared only when their actual spend exists. Organic sources keep cost metrics blank."/>
       <div className="table-scroll"><table className="wide-decision-table">
@@ -267,7 +272,7 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     groups.set(key,[...(groups.get(key)??[]),row]);
   }
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  return [...groups.entries()].map(([source,group])=>{
+  const result=[...groups.entries()].map(([source,group])=>{
     const leadIds=new Set(group.flatMap(item=>item.leadIds));
     const sourceInvoices=invoices.filter(item=>item.leadId!==null&&leadIds.has(item.leadId));
     const manual = sourceSpendOverride(data,source);
@@ -292,7 +297,50 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
       projectValue:group.reduce((total,item)=>total+item.projectValue,0),
       paid:sourceInvoices.reduce((total,item)=>total+item.paidTotal,0),
     };
-  }).sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.openValue-a.openValue||b.leads-a.leads);
+  });
+
+  const bySource=new Map(result.map(row=>[row.source,row]));
+  const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
+  const manualOnlyClients=(data.commercialClients??[]).filter(client=>
+    client.commercialStatus==="CLIENT_WON" &&
+    Boolean(manualRobawsSource(data,client)) &&
+    !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
+  );
+
+  for(const client of manualOnlyClients){
+    const source=decisionSource(manualRobawsSource(data,client)??"Unattributed");
+    let row=bySource.get(source);
+    if(!row){
+      const manualSpend=sourceSpendOverride(data,source);
+      const spend=manualSpend?Number(manualSpend.value):spendForSource(data,source,[]);
+      const nonPaid=!paidSources.has(source);
+      row={
+        source,
+        spend:Number.isFinite(spend as number)?spend:null,
+        costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
+        isManualSpend:Boolean(manualSpend),
+        manualNote:manualSpend?.note??"",
+        leads:0,qualified:0,visits:0,offers:0,sentValue:0,openValue:0,signed:0,
+        commercialClients:0,attributedClients:0,projectValue:0,paid:0,
+      };
+      bySource.set(source,row);
+      result.push(row);
+    }
+    row.commercialClients+=1;
+    row.attributedClients+=1;
+    row.projectValue+=client.projectValueTotal||client.acceptedOfferTotal;
+    row.paid+=client.paidTotal;
+  }
+
+  return result.sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.openValue-a.openValue||b.leads-a.leads);
+}
+
+function manualRobawsSource(data:CompanyDataset,client:NonNullable<CompanyDataset["commercialClients"]>[number]){
+  const overrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
+  const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
+  const matches=overrides.filter(item=>keys.includes(item.scopeKey));
+  const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
+  return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
 }
 
 function sourceSpendOverride(data:CompanyDataset,source:string){

@@ -48,6 +48,10 @@ export type CommercialClient = {
   offerCount: number;
   projectCount: number;
   invoiceCount: number;
+  acceptedOfferTotal: number;
+  acceptedOfferTotalExclVat: number;
+  projectValueTotal: number;
+  projectValueTotalExclVat: number;
   invoicedTotal: number;
   paidTotal: number;
 };

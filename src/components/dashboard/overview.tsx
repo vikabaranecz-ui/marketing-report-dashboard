@@ -106,30 +106,37 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
     return Boolean(date&&date>=selectedFrom&&date<=selectedTo);
   });
   const periodClientWonRecords=periodCommercialRecords.filter(client=>client.commercialStatus==="CLIENT_WON");
-  const selectedSourceEvidence=sourceEvidence.filter(item=>item.safe&&item.source);
-  const sourceOutcomeMap=new Map<string,{source:string;clients:number;paid:number;invoiced:number;spend:number|null;openValue:number}>();
+  const selectedSourceEvidence=periodClientWonRecords.map(client=>{
+    const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
+    const manual=overrideSource(client);
+    const source=manual??row?.lead.source?.trim()??"";
+    const safe=Boolean(manual)||Boolean(row?.isAttributableClient);
+    return {client,source,safe,manual:Boolean(manual)};
+  }).filter(item=>item.safe&&item.source);
+  const sourceOutcomeMap=new Map<string,{source:string;clients:number;paid:number;invoiced:number;projectValue:number;spend:number|null;openValue:number}>();
   for(const item of selectedSourceEvidence){
     const source=decisionSourceName(item.source);
-    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,spend:null,openValue:0};
+    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,projectValue:0,spend:null,openValue:0};
     current.clients+=1;
     current.paid+=item.client.paidTotal;
     current.invoiced+=item.client.invoicedTotal;
+    current.projectValue+=item.client.projectValueTotal||item.client.acceptedOfferTotal;
     sourceOutcomeMap.set(source,current);
   }
   for(const row of sources){
     const source=decisionSourceName(row.source);
-    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,spend:null,openValue:0};
+    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,projectValue:0,spend:null,openValue:0};
     if(row.spend!==null) current.spend=(current.spend??0)+row.spend;
     current.openValue+=row.openValue;
     sourceOutcomeMap.set(source,current);
   }
   const sourceOutcomes=[...sourceOutcomeMap.values()]
-    .filter(row=>row.clients>0||(row.spend??0)>0||row.openValue>0)
+    .filter(row=>row.clients>0||(row.spend??0)>0||row.openValue>0||row.projectValue>0)
     .map(row=>({...row,verdict:sourceVerdict(row)}))
-    .sort((a,b)=>b.paid-a.paid||b.clients-a.clients||(b.spend??0)-(a.spend??0));
-  const unknownSelectedClients=cohortCommercialClients.filter(client=>{
-    const evidence=sourceEvidence.find(item=>item.client.id===client.id);
-    return !evidence?.safe;
+    .sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.clients-a.clients||(b.spend??0)-(a.spend??0));
+  const unknownSelectedClients=periodClientWonRecords.filter(client=>{
+    const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
+    return !overrideSource(client)&&!row?.isAttributableClient;
   });
   const unknownSelectedPaid=unknownSelectedClients.reduce((sum,client)=>sum+client.paidTotal,0);
 
@@ -380,9 +387,9 @@ function DecisionMoneyCard({icon,label,value,comparison,note,accent=false}:{icon
   return <div className={`decision-money-card ${accent?"is-accent":""}`}><div className="decision-money-head"><span><Icon size={16}/>{label}</span>{change!==null&&<span className={`decision-delta ${change>=0?"is-up":"is-down"}`}>{change>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {formatPercent(Math.abs(change))}</span>}</div><strong>{formatCurrency(value,true)}</strong><p>{note}</p></div>;
 }
 
-function SourceDecisionRow({source,clients,paid,spend,openValue,verdict}:{source:string;clients:number;paid:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string}}){
+function SourceDecisionRow({source,clients,paid,projectValue,spend,openValue,verdict}:{source:string;clients:number;paid:number;projectValue:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string}}){
   const cashReturn=spend===null?null:paid-spend;
-  return <div className="source-decision-row"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Cohort paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cohort cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></div>;
+  return <div className="source-decision-row"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Project value</span><strong>{formatCurrency(projectValue,true)}</strong></div><div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></div>;
 }
 
 function LossSignal({icon,label,value,detail}:{icon:"funnel"|"pipeline"|"spend";label:string;value:string;detail:string}){

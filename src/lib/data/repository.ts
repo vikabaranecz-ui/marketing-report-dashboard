@@ -62,7 +62,7 @@ type RawAppointment = { lead_id:string; scheduled_at:string; completed_at:string
 type RawQuote = { id:string; lead_id:string; quote_number:string; quote_value:number|string; quote_value_incl_vat:number|string|null; created_at:string; sent_at:string|null; follow_up_at:string|null; status:string; accepted_at:string|null; external_source:string|null; project_external_id:string|null; attribution_status:string|null };
 type RawProject = { id:string; lead_id:string; service_id:string|null; project_value:number|string|null; project_value_excl_vat:number|string|null; gross_margin:number|string|null; status:string; won_at:string|null; crm_source:string|null; crm_external_id:string|null; external_status:string|null; attribution_status:string|null };
 type RawCommercialInvoice = { id:string; lead_id:string|null; invoice_number:string|null; invoice_date:string|null; status:string|null; document_id:string|null; total_excl_vat:number|string|null; total_incl_vat:number|string|null; paid_total:number|string|null; credited_total:number|string|null; attribution_status:string|null };
-type RawCommercialClient = { id:string; external_source:string; external_id:string; name:string; email:string|null; phone:string|null; client_since:string|null; matched_lead_id:string|null; match_method:string|null; commercial_status:string|null; offer_count:number; project_count:number; invoice_count:number; invoiced_total:number|string; paid_total:number|string };
+type RawCommercialClient = { id:string; external_source:string; external_id:string; name:string; email:string|null; phone:string|null; client_since:string|null; matched_lead_id:string|null; match_method:string|null; commercial_status:string|null; offer_count:number; project_count:number; invoice_count:number; accepted_offer_total:number|string; accepted_offer_total_excl_vat:number|string; project_value_total:number|string; project_value_total_excl_vat:number|string; invoiced_total:number|string; paid_total:number|string };
 type RawCrmDeal = {
   id:string;
   name:string;
@@ -118,7 +118,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     needsCommercial ? supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
     needsCommercial ? supabase.from("projects").select("id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,crm_source,crm_external_id,external_status,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
     needsCommercial ? supabase.from("commercial_invoices").select("id,lead_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id).in("lead_id", currentLeadIds) : emptyRows,
-    needsClients ? supabase.from("commercial_clients").select("id,external_source,external_id,name,email,phone,client_since,matched_lead_id,match_method,commercial_status,offer_count,project_count,invoice_count,invoiced_total,paid_total").eq("company_id",company.id) : emptyRows,
+    needsClients ? supabase.from("commercial_clients").select("id,external_source,external_id,name,email,phone,client_since,matched_lead_id,match_method,commercial_status,offer_count,project_count,invoice_count,accepted_offer_total,accepted_offer_total_excl_vat,project_value_total,project_value_total_excl_vat,invoiced_total,paid_total").eq("company_id",company.id) : emptyRows,
     profile === "full" ? supabase.from("crm_deals").select("id,name,stage,pipeline_group,deal_value,offer_status,offer_number,lost_reason,linked_lead_id,created_at_external").eq("company_id",company.id).gte("created_at_external",fromIso).lte("created_at_external",toIso) : emptyRows,
     needsCatalog ? supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true) : emptyRows,
     needsCatalog ? supabase.from("campaigns").select("id,name,channel_id,marketing_channels(name)").eq("company_id",company.id) : emptyRows,
@@ -231,6 +231,10 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     offerCount: Number(client.offer_count ?? 0),
     projectCount: Number(client.project_count ?? 0),
     invoiceCount: Number(client.invoice_count ?? 0),
+    acceptedOfferTotal: Number(client.accepted_offer_total ?? 0),
+    acceptedOfferTotalExclVat: Number(client.accepted_offer_total_excl_vat ?? 0),
+    projectValueTotal: Number(client.project_value_total ?? 0),
+    projectValueTotalExclVat: Number(client.project_value_total_excl_vat ?? 0),
     invoicedTotal: Number(client.invoiced_total ?? 0),
     paidTotal: Number(client.paid_total ?? 0),
   }));
