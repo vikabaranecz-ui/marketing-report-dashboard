@@ -64,6 +64,9 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
     const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
     return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
   };
+  const manualSourceWonRecords=robawsWonRecords.filter(client=>Boolean(overrideSource(client)));
+  const manualSourceUnmatchedWonRecords=manualSourceWonRecords.filter(client=>!client.matchedLeadId);
+  const sourceResolvedWonRecords=robawsWonRecords.filter(client=>Boolean(client.matchedLeadId)||Boolean(overrideSource(client)));
   const sourceEvidence=cohortCommercialClients.map(client=>{
     const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
     const manual=overrideSource(client);
@@ -299,7 +302,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         <Trust label="Google Business sync" ok={Boolean(googleBusinessIntegration?.lastSuccess)} detail={googleBusinessIntegration?.lastSuccess?"Live data has synced":"Connected account, but no Business Profile location has completed a sync"}/>
         <Trust label="Meta Lead Ads attribution" ok={metaLeadAccessReady} detail={metaLeadAccessReady?"Lead retrieval permission available":"Missing leads_retrieval permission — direct Meta lead matching is incomplete"}/>
         <Trust label="Website lead capture" ok={websiteFormsIntegration?.status==="Connected"&&Boolean(websiteFormsIntegration.lastSuccess)} detail={websiteFormsIntegration?.lastSuccess?"Website form source is syncing":"Website forms are not connected; GA4 currently shows visits but no tracked form submissions"}/>
-        <Trust label="ROBAWS ↔ CRM matching" ok={robawsMatchedWonRecords.length===robawsWonRecords.length} detail={robawsMatchedWonRecords.length+" / "+robawsWonRecords.length+" won ROBAWS clients are matched to a CRM lead; unmatched clients cannot be source-attributed"}/>
+        <Trust label="ROBAWS source attribution" ok={sourceResolvedWonRecords.length===robawsWonRecords.length} detail={robawsMatchedWonRecords.length+" / "+robawsWonRecords.length+" won clients are CRM-matched; "+manualSourceUnmatchedWonRecords.length+" unmatched client(s) have a manual source; "+(robawsWonRecords.length-sourceResolvedWonRecords.length)+" still have no source"}/>
         <Trust label="Lead-date quality" ok={!suspiciousLeadDateBatch} detail={suspiciousLeadDateBatch?peakLeadDate[1]+" / "+data.leads.length+" selected leads share "+peakLeadDate[0]+" — verify bulk-import dates before treating this as a true acquisition cohort":"No extreme single-day concentration in the selected lead dates"}/>
         <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
         <Trust label="Source coverage" ok={unknownSourceClients===0} detail={knownSourceClients.length+" / "+cohortCommercialClients.length+" commercial clients have a safe acquisition source"}/>
