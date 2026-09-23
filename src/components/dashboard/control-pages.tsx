@@ -94,7 +94,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
-  const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
+  const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&commercialClientInPeriod(data,client));
   const safelyAttributedLeadIds=new Set(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.leadIds));
   const attributedWonClients=allWonClients.filter(client=>
     Boolean(manualRobawsSource(data,client)) ||
@@ -303,6 +303,7 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
   const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
   const manualOnlyClients=(data.commercialClients??[]).filter(client=>
     client.commercialStatus==="CLIENT_WON" &&
+    commercialClientInPeriod(data,client) &&
     Boolean(manualRobawsSource(data,client)) &&
     !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
   );
@@ -333,6 +334,12 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
   }
 
   return result.sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.openValue-a.openValue||b.leads-a.leads);
+}
+
+function commercialClientInPeriod(data:CompanyDataset,client:NonNullable<CompanyDataset["commercialClients"]>[number]){
+  const [from,to]=data.periodLabel.split(" — ");
+  const date=client.clientSince?.slice(0,10)??"";
+  return Boolean(date&&from&&to&&date>=from&&date<=to);
 }
 
 function manualRobawsSource(data:CompanyDataset,client:NonNullable<CompanyDataset["commercialClients"]>[number]){
