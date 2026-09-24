@@ -9,10 +9,11 @@ import {
 } from "lucide-react";
 import type { CommercialClient, CommercialInvoice, CompanyDataset } from "@/lib/data/types";
 import {
-  buildOverviewAnalytics, manualClientSource, normalizeAcquisitionSource,
+  buildOverviewAnalytics, hasCompletedVisitEvidence, manualClientSource, normalizeAcquisitionSource,
   PAID_ACQUISITION_SOURCES, type SourcePerformanceRow,
 } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics/kpis";
+import { hasOfferSentEvidence } from "@/lib/metrics/client-funnel";
 import { Card, SectionHeader, StatusPill } from "./ui";
 import {
   BusinessActivityChart, CohortPaybackChart, CostOutcomeChart, SourcePerformanceChart,
@@ -40,7 +41,9 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   );
   const sourceRows=analytics.sourceRows;
   const sourceOptions=sourceRows.map(item=>item.source);
-  const campaignOptions=[...new Set(analytics.allRows.map(row=>row.lead.campaign).filter(value=>value&&value!=="—"))].sort();
+  const campaignOptions=[...new Set(analytics.allRows
+    .filter(row=>sourceFilter==="all"||normalizeAcquisitionSource(row.lead.source)===sourceFilter)
+    .map(row=>row.lead.campaign).filter(value=>value&&value!=="—"))].sort();
   const scopeLabel=[
     sourceFilter==="all"?"All sources":sourceFilter,
     campaignFilter==="all"?null:campaignFilter,
@@ -49,6 +52,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const spendRows=buildSpendEvidence(data,sourceRows,sourceFilter,campaignFilter);
   const selectedLeadIds=new Set(analytics.rows.flatMap(row=>row.leadIds));
   const selectedOffers=(data.commercialOffers??[]).filter(item=>selectedLeadIds.has(item.leadId));
+  const selectedSentOffers=selectedOffers.filter(hasOfferSentEvidence);
   const selectedClients=clientsForRows(data,analytics.rows);
   const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=Date.now());
   const outstandingInvoices=analytics.business.invoices.filter(item=>netInvoice(item)>item.paidTotal);
@@ -62,9 +66,30 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     month:item.month,label:item.label,won:item.wonProjectValue,invoiced:item.invoiced,
     paid:item.paid,spend:item.spend,complete:item.complete,
   }));
-  const sortedSources=[...sourceRows].sort((a,b)=>sourceComparator(a,b,sourceSort));
+  const displayedSourceRows=sourceFilter==="all"
+    ? sourceRows
+    : sourceRows.filter(row=>row.source===sourceFilter);
+  const scopedPerformanceRows:SourcePerformanceRow[]=campaignFilter==="all"
+    ? displayedSourceRows
+    : [{
+        source:campaignFilter,
+        spend:analytics.economics.costState==="missing"?null:analytics.economics.coveredSpend,
+        costState:analytics.economics.costState==="missing"?"missing":"known",
+        spendNote:"Campaign-level acquisition scope",
+        isManualSpend:false,recurringSpend:0,
+        leads:analytics.cohort.unique,qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
+        offers:analytics.cohort.offers,customers:analytics.cohort.customers,
+        attributableClients:analytics.economics.attributableCustomers,
+        projectValueExclVat:analytics.economics.cohortValueExclVat,
+        projectValueInclVat:analytics.cohort.projectValueInclVat,
+        paidValue:analytics.economics.cohortPaidValue,
+        cpl:analytics.economics.cpl,costQualified:analytics.economics.costQualified,
+        costVisit:analytics.economics.costVisit,costOffer:analytics.economics.costOffer,
+        cac:analytics.economics.cac,cohortCashRoas:analytics.economics.cohortCashRoas,
+      }];
+  const sortedSources=[...scopedPerformanceRows].sort((a,b)=>sourceComparator(a,b,sourceSort));
   const sourceChartRows=sortedSources.map(row=>({
-    source:row.source,spend:row.spend,paid:row.paidValue,customers:row.attributedClients,
+    source:row.source,spend:row.spend,paid:row.paidValue,customers:row.attributableClients,
   }));
 
   const openSource=(source:string)=>{
@@ -96,8 +121,8 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const openMilestone=(key:string)=>{
     if(key==="leads") return setDrilldown({title:"Unique acquired leads",subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead)});
     if(key==="qualified") return setDrilldown({title:"Qualified acquired leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isQualified).map(row=>row.lead)});
-    if(key==="visits") return setDrilldown({title:"Completed visit evidence",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.hasVisit).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>selectedLeadIds.has(item.leadId))});
-    if(key==="offers") return setDrilldown({title:"Offers for acquired leads",subtitle:scopeLabel,offers:selectedOffers});
+    if(key==="visits") return setDrilldown({title:"Completed visit evidence",subtitle:scopeLabel,leads:analytics.rows.filter(hasCompletedVisitEvidence).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>selectedLeadIds.has(item.leadId)&&Boolean(item.completedAt))});
+    if(key==="offers") return setDrilldown({title:"Offers sent for acquired leads",subtitle:scopeLabel,offers:selectedSentOffers});
     if(key==="signed") return setDrilldown({title:"Signed CRM leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isSigned).map(row=>row.lead)});
     return setDrilldown({title:"Confirmed commercial customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients});
   };
@@ -230,13 +255,13 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         </div>
       </div>
       <Card className="p-5">
-        <SourcePerformanceChart data={sourceChartRows} onSourceClick={openSource}/>
+        <SourcePerformanceChart data={sourceChartRows} onSourceClick={campaignFilter==="all"?openSource:()=>setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}/>
         <div className="mt-4 flex justify-between gap-3">
           <p className="chart-footnote">Yellow = covered spend. Black = lifetime paid value attributable to the acquisition source.</p>
           <button type="button" className="button-secondary" onClick={()=>setShowSourceTable(value=>!value)}>{showSourceTable?"Hide detailed table":"Show detailed table"}</button>
         </div>
         {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Customers</th><th>Project value excl. VAT</th><th>Paid value</th><th>CAC</th><th>Cohort cash ROAS</th></tr></thead><tbody>
-          {sortedSources.map(row=><tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>openSource(row.source)}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributedClients}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>)}
+          {sortedSources.map(row=><tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributedClients}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>)}
         </tbody></table></div>}
       </Card>
     </section>
@@ -322,7 +347,7 @@ function BusinessMoneyFlow({analytics,onProjects,onInvoices}:{analytics:ReturnTy
       {steps.map((item,index)=><div className="business-flow-step" key={item.label}>
         <button type="button" onClick={item.onClick} className="business-flow-value">
           <span>{item.label}</span><strong>{formatCurrency(item.value)}</strong>
-          <i style={{width:String(Math.max(2,item.value/max*100))+"%"}}/>
+          <i style={{width:String(item.value/max*100)+"%"}}/>
         </button>
         {index<steps.length-1&&<div className="business-flow-arrow"><ArrowRight size={18}/><span>{item.ratio===null?"":formatPercent(item.ratio)}</span></div>}
       </div>)}
@@ -379,8 +404,8 @@ function trustIntegration(label:string,integration:CompanyDataset["integrations"
   return{label,state:"Complete" as TrustState,detail:"Last successful sync: "+formatTimestamp(integration.lastSuccess)};
 }
 function reconciliationTrust(value:ReturnType<typeof buildOverviewAnalytics>["reconciliation"]){
-  const ok=value.coveredSpendDifference===0&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
-  return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?"Source spend and period project/invoice aggregates reconcile to their underlying records.":"One or more dashboard aggregates do not reconcile to their underlying records."};
+  const ok=(!value.spendComparable||value.coveredSpendDifference===0)&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
+  return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?(value.spendComparable?"Source spend and period project/invoice aggregates reconcile to their underlying records.":"Period project/invoice aggregates reconcile; campaign-level spend is checked against campaign evidence separately."):"One or more dashboard aggregates do not reconcile to their underlying records."};
 }
 
 function managementInsight(analytics:ReturnType<typeof buildOverviewAnalytics>){
