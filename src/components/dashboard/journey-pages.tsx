@@ -84,11 +84,11 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     <Card className="p-5">
       <SectionHeader title="Cash realization by invoice month" description="For the selected acquisition cohort, this shows when later invoices appear and how much paid value is currently attached to those invoices."/>
       {monthlyCash.length?<div className="payback-month-grid">
-        {monthlyCash.map(item=><button type="button" key={item.month} className="payback-month" onClick={()=>setSearch(monthName(item.month))}>
+        {monthlyCash.map(item=><div key={item.month} className="payback-month">
           <span>{monthName(item.month)}</span>
           <strong>{formatCurrency(item.paid,true)}</strong>
           <small>{item.clients.size} client(s) · {formatCurrency(item.invoiced,true)} invoiced</small>
-        </button>)}
+        </div>)}
       </div>:<EmptyState title="No invoices for this acquisition cohort yet" body="Customers will appear here when linked ROBAWS invoices are available."/>}
     </Card>
 
