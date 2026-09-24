@@ -94,6 +94,8 @@ export type CommercialProject = {
   leadName: string;
   source: string;
   externalId: string;
+  externalClientId?: string | null;
+  date: string;
   status: string;
   valueInclVat: number | null;
   valueExclVat: number | null;
@@ -105,6 +107,7 @@ export type CommercialInvoice = {
   leadId: string | null;
   leadName: string;
   source: string;
+  externalClientId?: string | null;
   date: string;
   number: string;
   status: string;
@@ -295,6 +298,8 @@ export type CompanyDataset = {
   commercialOffers?: CommercialOffer[];
   commercialProjects?: CommercialProject[];
   commercialInvoices?: CommercialInvoice[];
+  periodCommercialProjects?: CommercialProject[];
+  periodCommercialInvoices?: CommercialInvoice[];
   appointmentLeadIds?: string[];
   commercialAppointments?: CommercialAppointment[];
   leads: Lead[];

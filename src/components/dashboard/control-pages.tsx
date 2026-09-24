@@ -8,12 +8,14 @@ import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOffe
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
+import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
 const paidSources = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"]);
 
 export function FunnelPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const summary = buildFunnelSummary(data);
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   const appointments = rows.filter(hasAppointmentEvidence).length;
   const completedVisits = rows.filter(hasCompletedVisitEvidence).length;
   const sentOffers = rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
@@ -41,12 +43,29 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
           const conversion = previous===null ? null : stageConversion(stage.value,previous);
-          return <div className="control-funnel-stage" key={stage.label}>
+          const relevant=stage.label==="Unique leads"?rows
+            :stage.label==="Qualified"?rows.filter(row=>row.isQualified)
+            :stage.label==="Appointments"?rows.filter(hasAppointmentEvidence)
+            :stage.label==="Visits"?rows.filter(hasCompletedVisitEvidence)
+            :stage.label==="Offers sent"?rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead))
+            :stage.label==="Accepted"?rows.filter(row=>row.offers.some(item=>item.isAccepted))
+            :stage.label==="CRM signed"?rows.filter(row=>row.isSigned)
+            :rows.filter(row=>row.isCommercialClient);
+          const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
+          const selection:RecordDrilldown={
+            title:stage.label,
+            subtitle:data.periodLabel,
+            leads:relevant.map(row=>row.lead),
+            appointments:["Appointments","Visits"].includes(stage.label)?(data.commercialAppointments??[]).filter(item=>leadIds.has(item.leadId)):undefined,
+            offers:["Offers sent","Accepted"].includes(stage.label)?relevant.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index):undefined,
+            clients:stage.label==="ROBAWS clients"?(data.commercialClients??[]).filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))):undefined,
+          };
+          return <button type="button" className="control-funnel-stage drillable text-left" key={stage.label} onClick={()=>setDrilldown(selection)}>
             <span>{stage.label}</span>
-            <strong>{formatNumber(stage.value)}</strong>
+            <strong className="drillable-value">{formatNumber(stage.value)}</strong>
             <small>{stage.note}</small>
             {conversion!==null && <em>{formatPercent(conversion)} from previous stage</em>}
-          </div>;
+          </button>;
         })}
       </div>
     </Card>
@@ -87,6 +106,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
         <div><p>SALES / OPERATIONS</p><strong>Contact → appointment → visit → offer → client</strong><span>Response, follow-up, visit execution, quote speed and closing.</span></div>
       </div>
     </Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 
@@ -103,6 +123,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const safeAttributed=attributedWonClients.length;
   const attributionCoverage=percentage(safeAttributed,allWonClients.length)??0;
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
 
   return <div className="space-y-6">
     <div className="callout"><AlertTriangle size={18}/><div><strong>Source economics currently cover {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>CRM-linked clients use verified lead attribution. Unmatched ROBAWS clients are included only when a manual source has been explicitly assigned; they never receive a guessed source.</p></div></div>
@@ -111,7 +132,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       <div className="table-scroll"><table className="wide-decision-table">
         <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project €</th><th>Paid €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
-          <td className="font-semibold">{row.source}</td>
+          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||decisionSource(manualRobawsSource(data,client)??"")===row.source),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
           <td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}</td>
@@ -126,7 +147,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       <SectionHeader title="Campaign → commercial outcome" description="Campaigns are judged beyond CPL: lead quality, visits, offers, attributable clients and project value are kept together."/>
       {campaignRows.length ? <div className="table-scroll"><table>
         <thead><tr><th>Campaign</th><th>Channel</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Attributed clients</th><th>Project €</th><th>CAC</th><th>Project ROAS</th></tr></thead>
-        <tbody>{campaignRows.map(row=><tr key={row.campaign}><td className="font-semibold">{row.campaign}</td><td>{row.channel}</td><td>{row.spend>0?formatCurrency(row.spend):"—"}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.clients}</td><td>{formatCurrency(row.projectValue)}</td><td>{row.spend>0?costMetric(row.spend,row.clients):"—"}</td><td>{row.spend>0?ratioMetric(row.projectValue,row.spend):"—"}</td></tr>)}</tbody>
+        <tbody>{campaignRows.map(row=><tr key={row.campaign}><td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const campaignLeads=data.leads.filter(lead=>lead.campaign===row.campaign);const ids=new Set(campaignLeads.map(lead=>lead.id));setDrilldown({title:row.campaign+" campaign details",subtitle:data.periodLabel,leads:campaignLeads,offers:(data.commercialOffers??[]).filter(item=>ids.has(item.leadId)),projects:(data.commercialProjects??[]).filter(item=>ids.has(item.leadId)),invoices:(data.commercialInvoices??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId)))})}}>{row.campaign}</button></td><td>{row.channel}</td><td>{row.spend>0?formatCurrency(row.spend):"—"}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.clients}</td><td>{formatCurrency(row.projectValue)}</td><td>{row.spend>0?costMetric(row.spend,row.clients):"—"}</td><td>{row.spend>0?ratioMetric(row.projectValue,row.spend):"—"}</td></tr>)}</tbody>
       </table></div> : <EmptyState title="No campaign attribution" body="Campaign-level rows appear when CRM leads retain a campaign relationship."/>}
     </Card>
 
@@ -135,6 +156,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       <div className="callout"><AlertTriangle size={18}/><div><strong>Ad set / ad / creative economics need the lead-to-ad join.</strong><p>The schema can store ad-level data, but this page will not infer creative winners from CTR or campaign totals when person-level commercial attribution is missing.</p></div></div>
     </div>
     {editingSource&&<SpendEditor data={data} row={editingSource} onClose={()=>setEditingSource(null)}/>}
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 
@@ -142,30 +164,34 @@ export function RevenuePage({ data }: { data: CompanyDataset }) {
   const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
+  const periodProjects=(data.periodCommercialProjects??projects).filter(item=>!hasDateConflict(item.attributionStatus));
+  const periodInvoices=(data.periodCommercialInvoices??invoices).filter(item=>!hasDateConflict(item.attributionStatus));
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   const sent=offers.filter(item=>Boolean(item.sentAt));
   const open=sent.filter(item=>item.isOpen);
   const accepted=offers.filter(item=>item.isAccepted);
   const offeredValue=sum(sent.map(item=>item.priceInclVat));
   const openValue=sum(open.map(item=>item.priceInclVat));
   const acceptedValue=sum(accepted.map(item=>item.priceInclVat));
-  const projectValue=sum(projects.map(item=>Number(item.valueInclVat??0)));
-  const invoiced=sum(invoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
-  const paid=sum(invoices.map(item=>item.paidTotal));
+  const projectValue=sum(periodProjects.map(item=>Number(item.valueInclVat??0)));
+  const invoiced=sum(periodInvoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
+  const paid=sum(periodInvoices.map(item=>item.paidTotal));
 
   return <div className="space-y-6">
     <div className="revenue-stage-grid">
-      <RevenueStage label="Total offered" value={offeredValue} note={sent.length+" sent offers"}/>
-      <RevenueStage label="Open pipeline" value={openValue} note={open.length+" still open"}/>
-      <RevenueStage label="Accepted / contracted" value={acceptedValue} note={accepted.length+" accepted offers"}/>
-      <RevenueStage label="Project value" value={projectValue} note={projects.length+" project records"}/>
-      <RevenueStage label="Invoiced" value={invoiced} note="Net of credits"/>
-      <RevenueStage label="Paid" value={paid} note="Cash received"/>
+      <RevenueStage label="Total offered" value={offeredValue} note={sent.length+" sent offers"} onClick={()=>setDrilldown({title:"Sent offers",subtitle:data.periodLabel,offers:sent})}/>
+      <RevenueStage label="Open pipeline" value={openValue} note={open.length+" still open"} onClick={()=>setDrilldown({title:"Open offers",subtitle:data.periodLabel,offers:open})}/>
+      <RevenueStage label="Accepted / contracted" value={acceptedValue} note={accepted.length+" accepted offers"} onClick={()=>setDrilldown({title:"Accepted offers",subtitle:data.periodLabel,offers:accepted})}/>
+      <RevenueStage label="Project value" value={projectValue} note={periodProjects.length+" project records"} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:periodProjects})}/>
+      <RevenueStage label="Invoiced" value={invoiced} note="Net of credits" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
+      <RevenueStage label="Paid" value={paid} note="Cash recorded on period invoices" onClick={()=>setDrilldown({title:"Paid invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
     </div>
 
     <Card className="p-5">
       <SectionHeader title="Commercial client ledger" description="Signed status, ROBAWS confirmation, project value, invoiced and paid stay separate."/>
       <RevenueClientTable data={data}/>
     </Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 
@@ -562,7 +588,7 @@ function hasDateConflict(value:string|null|undefined){return String(value??"").t
 function sum(values:number[]){return values.reduce((total,value)=>total+Number(value||0),0)}
 function formatTimestamp(value:string|null){if(!value)return "—";return new Intl.DateTimeFormat("nl-BE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Brussels"}).format(new Date(value))}
 function Leak({label,value}:{label:string;value:number}){return <div className="bg-white p-4"><span className="text-xs text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{formatNumber(value)}</strong></div>}
-function RevenueStage({label,value,note}:{label:string;value:number;note:string}){return <div className="revenue-stage"><span>{label}</span><strong>{formatCurrency(value,true)}</strong><small>{note}</small></div>}
+function RevenueStage({label,value,note,onClick}:{label:string;value:number;note:string;onClick?:()=>void}){const content=<><span>{label}</span><strong className={onClick?"drillable-value":""}>{formatCurrency(value,true)}</strong><small>{note}</small></>;return onClick?<button type="button" className="revenue-stage drillable text-left" onClick={onClick}>{content}</button>:<div className="revenue-stage">{content}</div>}
 function HealthMetric({icon,label,value}:{icon:ReactNode;label:string;value:number}){return <div className="bg-white p-4"><div className="flex items-center gap-2 text-[var(--muted)]">{icon}<span className="text-xs font-semibold uppercase tracking-wide">{label}</span></div><strong className={`mt-3 block text-2xl ${value>0?"text-amber-700":"text-emerald-700"}`}>{formatNumber(value)}</strong></div>}
 
 

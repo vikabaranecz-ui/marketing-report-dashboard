@@ -959,3 +959,30 @@ tbody tr:hover { background: #fffdf0; }
 .economy-cell span,
 .economy-cell small,
 .trust-card p { color: #61615c; }
+
+
+/* Record-level drill-downs */
+.record-drilldown-drawer { width:min(980px,100%); }
+.record-drilldown-header { position:sticky; top:0; z-index:12; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; border-bottom:1px solid var(--line); background:rgba(255,255,255,.96); padding:1.2rem 1.35rem; backdrop-filter:blur(14px); }
+.record-drilldown-header h2 { margin-top:.25rem; font-size:1.65rem; font-weight:780; letter-spacing:-.045em; }
+.record-drilldown-header p:last-child { margin-top:.35rem; color:var(--muted); font-size:.78rem; line-height:1.5; }
+.record-drilldown-body { overflow-y:auto; padding:1.2rem 1.35rem 2rem; }
+.record-summary-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin-bottom:1rem; }
+.record-summary-grid > div { border:1px solid var(--line); border-radius:12px; background:#fbfbf8; padding:.75rem; }
+.record-summary-grid span { display:block; color:var(--muted); font-size:.58rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.record-summary-grid strong { display:block; margin-top:.35rem; font-size:1.15rem; }
+.record-section { margin-top:1rem; border:1px solid var(--line); border-radius:14px; background:white; padding:1rem; }
+.record-section h3 { display:flex; align-items:center; gap:.45rem; margin-bottom:.75rem; font-size:.82rem; font-weight:780; }
+.record-table { min-width:860px; }
+.record-table th { font-size:.57rem; }
+.record-table td { vertical-align:top; }
+.record-contact { display:grid; gap:.18rem; white-space:normal; min-width:165px; }
+.record-contact span { overflow-wrap:anywhere; }
+.record-empty { border:1px dashed var(--line-strong); border-radius:12px; background:var(--surface); padding:2rem; color:var(--muted); text-align:center; font-size:.8rem; }
+.drillable { cursor:pointer; transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease; }
+.drillable:hover { transform:translateY(-1px); border-color:#b9b9b0 !important; box-shadow:var(--wat-shadow-hover); }
+.drillable:focus-visible { outline:3px solid rgba(255,225,0,.55); outline-offset:2px; }
+.drillable-value { text-decoration:underline; text-decoration-color:transparent; text-underline-offset:3px; }
+.drillable:hover .drillable-value { text-decoration-color:currentColor; }
+@media (max-width:900px){ .record-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media (max-width:600px){ .record-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.record-drilldown-body,.record-drilldown-header{padding-left:.9rem;padding-right:.9rem} }
