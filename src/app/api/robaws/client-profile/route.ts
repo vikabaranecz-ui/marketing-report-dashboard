@@ -38,7 +38,7 @@ export async function GET(request:Request){
     return json({
       client:{
         id:client.id,
-        name:client.name??client.companyName??[client.firstName,client.lastName].filter(Boolean).join(" ")||"—",
+        name:client.name??client.companyName??([client.firstName,client.lastName].filter(Boolean).join(" ")||"—"),
         companyName:client.companyName??null,
         firstName:client.firstName??null,lastName:client.lastName??null,
         email:client.email??null,invoiceEmail:client.invoiceEmail??null,
