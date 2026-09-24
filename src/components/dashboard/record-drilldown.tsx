@@ -16,7 +16,8 @@ export type RecordDrilldown = {
   projects?:CommercialProject[];
   invoices?:CommercialInvoice[];
   appointments?:CommercialAppointment[];
-  initialKind?: "all"|"leads"|"clients"|"offers"|"projects"|"invoices"|"appointments";
+  spendRows?:Array<{id:string;label:string;source:string;campaign?:string;spend:number|null;state:"known"|"missing"|"not-applicable";note?:string}>;
+  initialKind?: "all"|"leads"|"clients"|"offers"|"projects"|"invoices"|"appointments"|"spend";
 };
 
 export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyDataset;selection:RecordDrilldown;onClose:()=>void}){
@@ -26,6 +27,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
   const projects=selection.projects??[];
   const invoices=selection.invoices??[];
   const appointments=selection.appointments??[];
+  const spendRows=selection.spendRows??[];
   const [search,setSearch]=useState("");
   const [kind,setKind]=useState(selection.initialKind??"all");
   const [selectedClient,setSelectedClient]=useState<CommercialClient|null>(null);
@@ -46,6 +48,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
   const filteredProjects=useMemo(()=>projects.filter(item=>contains(item.leadName,item.externalId,item.source,item.status,item.externalClientId)),[projects,query]);
   const filteredInvoices=useMemo(()=>invoices.filter(item=>contains(item.leadName,item.number,item.status,item.source,item.externalClientId)),[invoices,query]);
   const filteredAppointments=useMemo(()=>appointments.filter(item=>contains(item.leadName,item.status,item.scheduledAt,item.completedAt)),[appointments,query]);
+  const filteredSpend=useMemo(()=>spendRows.filter(item=>contains(item.label,item.source,item.campaign,item.state,item.note,item.spend)),[spendRows,query]);
   const clientForLead=(leadId:string)=>data.commercialClients?.find(client=>client.matchedLeadId===leadId)??null;
   const sourceForClient=(client:CommercialClient)=>{
     const synced=client.matchedLeadId?data.leads.find(lead=>lead.id===client.matchedLeadId)?.source:null;
@@ -54,7 +57,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
     const match=(data.manualOverrides??[]).find(item=>item.scopeType==="client"&&item.fieldKey==="source"&&keys.includes(item.scopeKey)&&typeof item.value==="string");
     return typeof match?.value==="string"&&match.value.trim()?match.value.trim():"Unattributed";
   };
-  const totalRecords=leads.length+clients.length+offers.length+projects.length+invoices.length+appointments.length;
+  const totalRecords=leads.length+clients.length+offers.length+projects.length+invoices.length+appointments.length+spendRows.length;
   const types=[
     ["leads","Leads",leads.length],
     ["clients","Clients",clients.length],
@@ -62,9 +65,10 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
     ["projects","Projects",projects.length],
     ["invoices","Invoices",invoices.length],
     ["appointments","Visits",appointments.length],
+    ["spend","Spend",spendRows.length],
   ].filter(([, ,count])=>Number(count)>0) as Array<[string,string,number]>;
   const show=(value:string)=>kind==="all"||kind===value;
-  const visibleCount=(show("leads")?filteredLeads.length:0)+(show("clients")?filteredClients.length:0)+(show("offers")?filteredOffers.length:0)+(show("projects")?filteredProjects.length:0)+(show("invoices")?filteredInvoices.length:0)+(show("appointments")?filteredAppointments.length:0);
+  const visibleCount=(show("leads")?filteredLeads.length:0)+(show("clients")?filteredClients.length:0)+(show("offers")?filteredOffers.length:0)+(show("projects")?filteredProjects.length:0)+(show("invoices")?filteredInvoices.length:0)+(show("appointments")?filteredAppointments.length:0)+(show("spend")?filteredSpend.length:0);
 
   return <div className="drawer-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
     <aside className="drawer record-drilldown-drawer" role="dialog" aria-modal="true" aria-label={selection.title}>
@@ -80,6 +84,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
           {projects.length>0&&<Summary label="Projects" value={projects.length}/>}
           {invoices.length>0&&<Summary label="Invoices" value={invoices.length}/>}
           {appointments.length>0&&<Summary label="Appointments" value={appointments.length}/>}
+          {spendRows.length>0&&<Summary label="Spend records" value={spendRows.length}/>}
         </div>
 
         {totalRecords>0&&<div className="record-filter-bar">
@@ -125,6 +130,12 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
         {show("invoices")&&filteredInvoices.length>0&&<Section title="Invoices" icon={<ReceiptText size={16}/>}>
           <div className="table-scroll"><table className="record-table"><thead><tr><th>Client</th><th>Date</th><th>Invoice</th><th>Status</th><th>Incl. VAT</th><th>Credited</th><th>Paid</th><th>Open</th></tr></thead><tbody>
             {filteredInvoices.slice(0,limit).map(item=>{const net=Math.max(0,item.totalInclVat-item.creditedTotal);const open=Math.max(0,net-item.paidTotal);return <tr key={item.id}><td className="font-semibold">{item.leadName}</td><td>{date(item.date)}</td><td>{item.number}</td><td><StatusPill tone={open>0?"warn":"good"}>{item.status}</StatusPill></td><td>{formatCurrency(item.totalInclVat)}</td><td>{formatCurrency(item.creditedTotal)}</td><td className="font-semibold">{formatCurrency(item.paidTotal)}</td><td>{formatCurrency(open)}</td></tr>})}
+          </tbody></table></div>
+        </Section>}
+
+        {show("spend")&&filteredSpend.length>0&&<Section title="Acquisition spend evidence" icon={<ReceiptText size={16}/>}>
+          <div className="table-scroll"><table className="record-table"><thead><tr><th>Source / campaign</th><th>Source</th><th>Campaign</th><th>Spend</th><th>Coverage</th><th>Note</th></tr></thead><tbody>
+            {filteredSpend.slice(0,limit).map(item=><tr key={item.id}><td className="font-semibold">{item.label}</td><td>{item.source}</td><td>{item.campaign||"—"}</td><td>{item.spend===null?"Cost missing":formatCurrency(item.spend)}</td><td><StatusPill tone={item.state==="known"?"good":item.state==="missing"?"warn":"neutral"}>{item.state}</StatusPill></td><td>{item.note||"—"}</td></tr>)}
           </tbody></table></div>
         </Section>}
 
