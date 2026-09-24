@@ -198,7 +198,7 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
 
   const sourceRows=buildSourcePerformance(data,allRows);
   const economics=buildEconomics(data,rows,sourceRows,scope);
-  const payback=buildPayback(data,rows,economics.coveredSpend);
+  const payback=buildPayback(data,rows,economics.coveredSpend,scope);
   const coverage=buildCoverage(data);
   const attribution=buildAttributionCoverage(data,sourceRows);
   const reconciliation=buildReconciliation(sourceRows,economics,business,coverage);
@@ -271,10 +271,17 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   };
 }
 
-function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number){
+function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,scope:OverviewScope){
   const clientByLead=new Map((data.commercialClients??[]).filter(item=>item.matchedLeadId).map(item=>[item.matchedLeadId as string,item]));
   const cohorts=new Map<string,{month:string;customers:Set<string>;projectValue:number;invoiced:number;paid:number}>();
   const offsets=new Map<number,number>();
+  const syncedSpendByMonth=new Map<string,number>();
+  for(const point of data.trend){
+    const month=point.date.slice(0,7);
+    syncedSpendByMonth.set(month,(syncedSpendByMonth.get(month)??0)+point.spend);
+  }
+  const [periodFrom,periodTo]=data.periodLabel.split(" — ");
+  const selectedSingleMonth=Boolean(periodFrom&&periodTo&&periodFrom.slice(0,7)===periodTo.slice(0,7));
 
   for(const row of rows){
     const month=row.lead.date.slice(0,7);
@@ -306,7 +313,13 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number)
   });
 
   return {
-    cohorts:[...cohorts.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(item=>({...item,customers:item.customers.size})),
+    cohorts:[...cohorts.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(item=>{
+      const exactScopedSpend=selectedSingleMonth&&item.month===periodFrom.slice(0,7)?coveredSpend:null;
+      const syncedMonthlySpend=scope.source==="all"&&scope.campaign==="all"?(syncedSpendByMonth.get(item.month)??null):null;
+      const acquisitionSpend=exactScopedSpend??syncedMonthlySpend;
+      const spendState=exactScopedSpend!==null?"covered":syncedMonthlySpend!==null?"synced-only":"missing";
+      return {...item,customers:item.customers.size,acquisitionSpend,spendState};
+    }),
     series,
     acquisitionSpendReference:coveredSpend>0?coveredSpend:null,
     paymentTimingAvailable:false,
