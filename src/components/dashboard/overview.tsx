@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, CircleDollarSign, Clock3, Database, Minus, ReceiptText, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
@@ -10,6 +11,7 @@ import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
 import { Card, SectionHeader, StatusPill } from "./ui";
 import { SystemPulse } from "./system-pulse";
 import { MoneyTrendChart } from "./charts";
+import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
 export function OverviewPage({data}:{data:CompanyDataset}) {
   const searchParams=useSearchParams();
@@ -17,6 +19,9 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const scopedHref=(href:string)=>month?`${href}?month=${encodeURIComponent(month)}`:href;
   const rows=buildJourneyRows(data);
   const summary=buildFunnelSummary(data);
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
+  const periodProjects=data.periodCommercialProjects??[];
+  const periodInvoices=data.periodCommercialInvoices??[];
   const sources=sourceBusinessRows(data,rows);
   const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou"].includes(row.source));
   const googleAdsIntegration=data.integrations.find(item=>item.provider==="google_ads");
@@ -158,6 +163,15 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const staleValue=staleOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
   const noReturnSpend=sourceOutcomes.filter(item=>(item.spend??0)>0&&item.paid===0).reduce((sum,item)=>sum+Number(item.spend??0),0);
 
+  const stageDrilldowns:Record<string,()=>RecordDrilldown>={
+    "Unique leads":()=>({title:"Unique leads",subtitle:data.periodLabel,leads:rows.map(row=>row.lead)}),
+    "Qualified":()=>({title:"Qualified leads",subtitle:data.periodLabel,leads:rows.filter(row=>row.isQualified).map(row=>row.lead)}),
+    "Visits":()=>{const visitRows=rows.filter(hasCompletedVisitEvidence);const ids=new Set(visitRows.flatMap(row=>row.leadIds));return{title:"Visited leads",subtitle:data.periodLabel,leads:visitRows.map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>ids.has(item.leadId))}},
+    "Offers sent":()=>({title:"Offers sent",subtitle:data.periodLabel,leads:rows.filter(row=>row.offers.some(hasOfferSentEvidence)).map(row=>row.lead),offers:sentOffers}),
+    "Signed now":()=>({title:"Signed CRM leads",subtitle:data.periodLabel,leads:rows.filter(row=>row.isSigned).map(row=>row.lead)}),
+    "ROBAWS-confirmed":()=>({title:"ROBAWS-confirmed clients",subtitle:data.periodLabel,clients:cohortCommercialClients}),
+    "Cohort paid cash":()=>({title:"Clients behind cohort paid cash",subtitle:"Lifetime cash for clients acquired in "+data.periodLabel,clients:cohortCommercialClients}),
+  };
   const stages=[
     {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows · all sources"},
     {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
@@ -181,10 +195,10 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
 
     {periodTotals&&<div className="decision-money-grid">
       <DecisionMoneyCard icon="spend" label="Tracked marketing spend" value={periodTotals.spend} comparison={directComparisonHasData?directComparison?.spend:null} note="Media/platform spend currently available in the dashboard"/>
-      <DecisionMoneyCard icon="invoice" label="Won project value" value={periodTotals.wonProjectValue} comparison={directComparisonHasData?directComparison?.wonProjectValue:null} note={periodTotals.wonProjects+" ROBAWS project(s) won inside the selected period"}/>
-      <DecisionMoneyCard icon="invoice" label="Invoiced this period" value={periodTotals.invoiced} comparison={directComparisonHasData?directComparison?.invoiced:null} note="ROBAWS invoices dated inside the selected period"/>
-      <DecisionMoneyCard icon="paid" label="Paid cash this period" value={periodTotals.paid} comparison={directComparisonHasData?directComparison?.paid:null} note="Cash recorded against ROBAWS invoices in this period"/>
-      <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-periodTotals.spend} comparison={directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus tracked media spend — not company profit" accent/>
+      <DecisionMoneyCard icon="invoice" label="Won project value" value={periodTotals.wonProjectValue} comparison={directComparisonHasData?directComparison?.wonProjectValue:null} note={periodTotals.wonProjects+" ROBAWS project(s) won inside the selected period"} onClick={()=>setDrilldown({title:"Won projects",subtitle:data.periodLabel,projects:periodProjects})}/>
+      <DecisionMoneyCard icon="invoice" label="Invoiced this period" value={periodTotals.invoiced} comparison={directComparisonHasData?directComparison?.invoiced:null} note="ROBAWS invoices dated inside the selected period" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
+      <DecisionMoneyCard icon="paid" label="Paid cash this period" value={periodTotals.paid} comparison={directComparisonHasData?directComparison?.paid:null} note="Cash recorded against ROBAWS invoices in this period" onClick={()=>setDrilldown({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
+      <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-periodTotals.spend} comparison={directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus tracked media spend — not company profit" accent onClick={()=>setDrilldown({title:"Cash records behind this period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
     </div>}
 
     <div className="decision-grid">
@@ -197,7 +211,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <Card className="p-5">
         <SectionHeader title="Where the money comes from" description="Acquisition cohort for leads created in the selected period. Client cash is lifetime cash from that cohort; spend is tracked acquisition-period spend."/>
         <div className="source-decision-list">
-          {sourceOutcomes.map(row=><SourceDecisionRow key={row.source} {...row}/>)}
+          {sourceOutcomes.map(row=><SourceDecisionRow key={row.source} {...row} onClick={()=>{const key=decisionSourceName(row.source);const sourceClients=selectedSourceEvidence.filter(item=>decisionSourceName(item.source)===key).map(item=>item.client);const leadIds=new Set(sourceClients.flatMap(client=>client.matchedLeadId?[client.matchedLeadId]:[]));const sourceRows=rows.filter(item=>decisionSourceName(item.lead.source)===key||item.leadIds.some(id=>leadIds.has(id)));setDrilldown({title:key+" details",subtitle:data.periodLabel,leads:sourceRows.map(item=>item.lead),clients:sourceClients,offers:offers.filter(item=>decisionSourceName(item.source)===key),projects:periodProjects.filter(item=>decisionSourceName(item.source)===key),invoices:periodInvoices.filter(item=>decisionSourceName(item.source)===key)})}}/>)}
           {!sourceOutcomes.length&&<p className="decision-empty">No safely attributed source outcome is available for this period yet.</p>}
         </div>
         {unknownSelectedClients.length>0&&<div className="unknown-attribution-note"><AlertTriangle size={16}/><div><strong>{unknownSelectedClients.length} client(s) still have no safe source</strong><p>{formatCurrency(unknownSelectedPaid)} paid cash from those clients cannot yet be assigned to a marketing source.</p></div></div>}
@@ -218,7 +232,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         <SectionHeader title="Acquisition funnel — all CRM sources" description="Leads are grouped by creation date in the selected period. Later stages show their current outcome, not the date each stage happened."/>
       </div>
       <div className="story-chain">
-        {stages.map((stage,index)=><div className="story-stage" key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong>{stage.value}</strong><small>{stage.note}</small></div>)}
+        {stages.map((stage,index)=><button type="button" className="story-stage drillable text-left" key={stage.label} onClick={()=>setDrilldown(stageDrilldowns[stage.label]())}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong className="drillable-value">{stage.value}</strong><small>{stage.note}</small></button>)}
       </div>
     </Card>
 
@@ -381,15 +395,17 @@ function DecisionHero({momentum,periodLabel}:{momentum:{tone:"good"|"warn"|"bad"
   return <section className={`decision-hero tone-${momentum.tone}`}><div className="decision-hero-icon">{icon}</div><div className="min-w-0 flex-1"><p className="decision-kicker">Management read · {periodLabel}</p><h2>{momentum.title}</h2><p>{momentum.summary}</p><small>{momentum.context}</small></div></section>;
 }
 
-function DecisionMoneyCard({icon,label,value,comparison,note,accent=false}:{icon:"spend"|"invoice"|"paid"|"return";label:string;value:number;comparison:number|null|undefined;note:string;accent?:boolean}){
+function DecisionMoneyCard({icon,label,value,comparison,note,accent=false,onClick}:{icon:"spend"|"invoice"|"paid"|"return";label:string;value:number;comparison:number|null|undefined;note:string;accent?:boolean;onClick?:()=>void}){
   const Icon=icon==="spend"?CircleDollarSign:icon==="invoice"?ReceiptText:icon==="paid"?WalletCards:TrendingUp;
   const change=comparison===null||comparison===undefined?null:relativeChange(value,comparison);
-  return <div className={`decision-money-card ${accent?"is-accent":""}`}><div className="decision-money-head"><span><Icon size={16}/>{label}</span>{change!==null&&<span className={`decision-delta ${change>=0?"is-up":"is-down"}`}>{change>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {formatPercent(Math.abs(change))}</span>}</div><strong>{formatCurrency(value,true)}</strong><p>{note}</p></div>;
+  const className=`decision-money-card ${accent?"is-accent":""} ${onClick?"drillable":""}`;
+  const content=<><div className="decision-money-head"><span><Icon size={16}/>{label}</span>{change!==null&&<span className={`decision-delta ${change>=0?"is-up":"is-down"}`}>{change>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {formatPercent(Math.abs(change))}</span>}</div><strong className={onClick?"drillable-value":""}>{formatCurrency(value,true)}</strong><p>{note}</p></>;
+  return onClick?<button type="button" className={className+" text-left"} onClick={onClick}>{content}</button>:<div className={className}>{content}</div>;
 }
 
-function SourceDecisionRow({source,clients,paid,projectValue,spend,openValue,verdict}:{source:string;clients:number;paid:number;projectValue:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string}}){
+function SourceDecisionRow({source,clients,paid,projectValue,spend,openValue,verdict,onClick}:{source:string;clients:number;paid:number;projectValue:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string};onClick?:()=>void}){
   const cashReturn=spend===null?null:paid-spend;
-  return <div className="source-decision-row"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Project value</span><strong>{formatCurrency(projectValue,true)}</strong></div><div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></div>;
+  return <button type="button" onClick={onClick} className="source-decision-row drillable w-full text-left"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Project value</span><strong>{formatCurrency(projectValue,true)}</strong></div><div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></button>;
 }
 
 function LossSignal({icon,label,value,detail}:{icon:"funnel"|"pipeline"|"spend";label:string;value:string;detail:string}){
