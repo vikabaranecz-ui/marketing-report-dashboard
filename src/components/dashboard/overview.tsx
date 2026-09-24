@@ -197,7 +197,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <Card className="p-5">
         <SectionHeader title="Where the money comes from" description="Acquisition cohort for leads created in the selected period. Client cash is lifetime cash from that cohort; spend is tracked acquisition-period spend."/>
         <div className="source-decision-list">
-          {sourceOutcomes.slice(0,6).map(row=><SourceDecisionRow key={row.source} {...row}/>)}
+          {sourceOutcomes.map(row=><SourceDecisionRow key={row.source} {...row}/>)}
           {!sourceOutcomes.length&&<p className="decision-empty">No safely attributed source outcome is available for this period yet.</p>}
         </div>
         {unknownSelectedClients.length>0&&<div className="unknown-attribution-note"><AlertTriangle size={16}/><div><strong>{unknownSelectedClients.length} client(s) still have no safe source</strong><p>{formatCurrency(unknownSelectedPaid)} paid cash from those clients cannot yet be assigned to a marketing source.</p></div></div>}
