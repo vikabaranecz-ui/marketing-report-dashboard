@@ -47,3 +47,7 @@ Cohort payback keeps a customer attached to the lead acquisition period. Because
 ## Data trust
 
 Overview explicitly reports marketing, CRM, commercial/ROBAWS and attribution coverage. Reconciliation differences are surfaced rather than silently hidden.
+
+## Reconciliation
+
+Overview aggregates remain drillable to the underlying projects, invoices, leads, offers, appointments, and commercial customers. If detailed ROBAWS invoice rows do not reconcile with client-level ROBAWS totals, the discrepancy is shown as a data-trust warning instead of being hidden.
