@@ -23,7 +23,8 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const periodProjects=data.periodCommercialProjects??[];
   const periodInvoices=data.periodCommercialInvoices??[];
   const sources=sourceBusinessRows(data,rows);
-  const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou"].includes(row.source));
+  const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"].includes(row.source));
+  const trackedMarketingSpend=paidSources.reduce((sum,row)=>sum+Number(row.spend??0),0);
   const googleAdsIntegration=data.integrations.find(item=>item.provider==="google_ads");
   const googleBusinessIntegration=data.integrations.find(item=>item.provider==="google_business");
   const metaIntegration=data.integrations.find(item=>item.provider==="meta");
@@ -194,18 +195,19 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
     </div>
 
     {periodTotals&&<div className="decision-money-grid">
-      <DecisionMoneyCard icon="spend" label="Tracked marketing spend" value={periodTotals.spend} comparison={directComparisonHasData?directComparison?.spend:null} note="Media/platform spend currently available in the dashboard"/>
+      <DecisionMoneyCard icon="spend" label="Tracked marketing spend" value={trackedMarketingSpend} comparison={trackedMarketingSpend===periodTotals.spend&&directComparisonHasData?directComparison?.spend:null} note="All known acquisition spend: synced media + manual source costs + recurring offline advertising"/>
       <DecisionMoneyCard icon="invoice" label="Won project value" value={periodTotals.wonProjectValue} comparison={directComparisonHasData?directComparison?.wonProjectValue:null} note={periodTotals.wonProjects+" ROBAWS project(s) won inside the selected period"} onClick={()=>setDrilldown({title:"Won projects",subtitle:data.periodLabel,projects:periodProjects})}/>
       <DecisionMoneyCard icon="invoice" label="Invoiced this period" value={periodTotals.invoiced} comparison={directComparisonHasData?directComparison?.invoiced:null} note="ROBAWS invoices dated inside the selected period" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
       <DecisionMoneyCard icon="paid" label="Paid cash this period" value={periodTotals.paid} comparison={directComparisonHasData?directComparison?.paid:null} note="Cash recorded against ROBAWS invoices in this period" onClick={()=>setDrilldown({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
-      <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-periodTotals.spend} comparison={directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus tracked media spend — not company profit" accent onClick={()=>setDrilldown({title:"Cash records behind this period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
+      <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-trackedMarketingSpend} comparison={trackedMarketingSpend===periodTotals.spend&&directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus all known acquisition spend — not company profit" accent onClick={()=>setDrilldown({title:"Cash records behind this period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
     </div>}
 
     <div className="decision-grid">
       <Card className="p-5">
         <SectionHeader title="Are we moving in the right direction?" description={momentum.context}/>
         <MoneyTrendChart data={(decision?.monthly??[]).map(item=>({label:item.label,paid:item.paid,spend:item.spend,complete:item.complete}))}/>
-        <div className="decision-chart-legend"><span><i className="legend-paid"/> Paid cash</span><span><i className="legend-spend"/> Tracked marketing spend</span></div>
+        <div className="decision-chart-legend"><span><i className="legend-paid"/> Paid cash</span><span><i className="legend-spend"/> Synced platform spend</span></div>
+        {trackedMarketingSpend!==periodTotals?.spend&&<p className="mt-2 text-xs leading-5 text-[var(--muted)]">The total spend cards and CAC/ROAS include manual source costs and recurring offline advertising. The monthly trend keeps only spend that has an exact month/date, so YTD manual totals are not spread across months by guesswork.</p>}
       </Card>
 
       <Card className="p-5">
@@ -421,7 +423,8 @@ function isPaidMarketingSource(source:string){
     || value.includes("instagram")
     || value==="google ads"
     || value==="leadangel"
-    || value==="agenciyou";
+    || value==="agenciyou"
+    || value==="solary";
 }
 
 function buildActionItems(data:CompanyDataset,rows:JourneyRow[],openOffers:NonNullable<CompanyDataset["commercialOffers"]>,sources:SourceBusinessRow[]) {
