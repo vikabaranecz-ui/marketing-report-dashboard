@@ -217,6 +217,13 @@ export async function syncRobawsProvider(
     candidatesByClient.set(candidate.clientId, current);
   }
 
+  const uniqueLeadByClient = new Map<string, LeadRow>();
+  for (const [clientId, matches] of candidatesByClient) {
+    if (matches.length === 1 && (leadsByClient.get(clientId)?.length ?? 0) === 1) {
+      uniqueLeadByClient.set(clientId, matches[0].lead);
+    }
+  }
+
   const clientRows: Record<string, unknown>[] = clients.map(client => {
     const clientOffers = offersByClient.get(client.id) ?? [];
     const clientProjects = projectsByClient.get(client.id) ?? [];
@@ -342,7 +349,54 @@ export async function syncRobawsProvider(
 
   const quoteRows: Record<string, unknown>[] = [];
   const projectRows: Record<string, unknown>[] = [];
-  const invoiceRows: Record<string, unknown>[] = [];
+  const invoiceRows: Record<string, unknown>[] = invoices.map(invoice => {
+    const clientId = invoice.clientId ? String(invoice.clientId) : null;
+    const matchedLead = clientId ? uniqueLeadByClient.get(clientId) ?? null : null;
+    return {
+      company_id: companyId,
+      lead_id: matchedLead?.id ?? null,
+      external_source: "robaws",
+      external_id: invoice.id,
+      external_client_id: clientId ?? "UNKNOWN",
+      invoice_number:
+        invoice.logicId ||
+        `ROB-${invoice.id}`,
+      invoice_date:
+        invoice.date || null,
+      status:
+        invoice.status || null,
+      invoice_type:
+        invoice.type || null,
+      origin_type:
+        invoice.originType || null,
+      document_id:
+        invoice.documentId || null,
+      total_excl_vat:
+        Number(
+          invoice.totalExclVat ?? 0,
+        ),
+      total_incl_vat:
+        Number(
+          invoice.totalInclVat ?? 0,
+        ),
+      paid_total:
+        Number(
+          invoice.paidTotal ?? 0,
+        ),
+      credited_total:
+        Number(
+          invoice.creditedTotal ?? 0,
+        ),
+      attribution_status: matchedLead
+        ? documentAttribution(
+            invoice.date,
+            matchedLead.created_at,
+          )
+        : "ROBAWS_ONLY",
+      updated_at:
+        new Date().toISOString(),
+    };
+  });
   const updates: Array<{
     id: string;
     values: Record<string, unknown>;
@@ -558,51 +612,6 @@ export async function syncRobawsProvider(
       });
     }
 
-    for (const invoice of clientInvoices) {
-      invoiceRows.push({
-        company_id: companyId,
-        lead_id: lead.id,
-        external_source: "robaws",
-        external_id: invoice.id,
-        external_client_id: clientId,
-        invoice_number:
-          invoice.logicId ||
-          `ROB-${invoice.id}`,
-        invoice_date:
-          invoice.date || null,
-        status:
-          invoice.status || null,
-        invoice_type:
-          invoice.type || null,
-        origin_type:
-          invoice.originType || null,
-        document_id:
-          invoice.documentId || null,
-        total_excl_vat:
-          Number(
-            invoice.totalExclVat ?? 0,
-          ),
-        total_incl_vat:
-          Number(
-            invoice.totalInclVat ?? 0,
-          ),
-        paid_total:
-          Number(
-            invoice.paidTotal ?? 0,
-          ),
-        credited_total:
-          Number(
-            invoice.creditedTotal ?? 0,
-          ),
-        attribution_status:
-          documentAttribution(
-            invoice.date,
-            lead.created_at,
-          ),
-        updated_at:
-          new Date().toISOString(),
-      });
-    }
   }
 
   for (
