@@ -23,5 +23,12 @@ export async function GET(request:Request){
     keys:Object.keys(sample).sort(),
     dateLike:Object.fromEntries(Object.entries(sample).filter(([key,value])=>/date|start|end|plan|status|paid|payment/i.test(key)&&["string","number","boolean"].includes(typeof value))),
   });
-  return NextResponse.json({project:summarize(projects[0]??{}),invoice:summarize(invoices[0]??{})});
+  const scalarObject=(value:unknown)=>{
+    const one=(item:unknown)=>item&&typeof item==="object"&&!Array.isArray(item)
+      ?Object.fromEntries(Object.entries(item as Record<string,unknown>).filter(([,v])=>["string","number","boolean"].includes(typeof v)))
+      :item;
+    return Array.isArray(value)?value.slice(0,6).map(one):one(value);
+  };
+  const project=projects[0]??{};
+  return NextResponse.json({project:{...summarize(project),statusHistory:scalarObject(project.statusHistory),statusDetails:scalarObject(project.statusDetails)},invoice:summarize(invoices[0]??{})});
 }
