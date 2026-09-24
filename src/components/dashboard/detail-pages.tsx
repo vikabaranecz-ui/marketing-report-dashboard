@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Check, ChevronDown, ShieldCheck } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, Search, ShieldCheck } from "lucide-react";
 import type { CampaignMetric, CompanyDataset } from "@/lib/data/types";
 import { calculateKpis, formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
-import { campaignPipelineRows, locationPipelineRows, servicePipelineRows, sourcePipelineRows } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, campaignPipelineRows, locationPipelineRows, servicePipelineRows, sourcePipelineRows } from "@/lib/metrics/client-funnel";
 import { ComparisonBars, TrendChart } from "./charts";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
+import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
 export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   const paid = data.channels.filter(c => c.spend > 0);
@@ -125,9 +126,33 @@ export function WebsiteSeoPage({ data }: { data: CompanyDataset }) {
 
 export function LocationsPage({ data }: { data: CompanyDataset }) {
   const pipeline=locationPipelineRows(data);
+  const rows=buildJourneyRows(data);
+  const [search,setSearch]=useState("");
+  const [showAll,setShowAll]=useState(false);
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
+  const filtered=pipeline.filter(row=>!search||row.key.toLowerCase().includes(search.toLowerCase()));
+  const visibleLocations=(search||showAll)?filtered:filtered.slice(0,20);
+  const chartLocations=filtered.slice(0,12);
+  const openLocation=(location:string)=>{
+    const group=rows.filter(row=>(row.lead.municipality||"Unknown")===location);
+    const ids=new Set(group.flatMap(row=>row.leadIds));
+    setDrilldown({
+      title:location+" clients",
+      subtitle:data.periodLabel,
+      leads:group.map(row=>row.lead),
+      offers:(data.commercialOffers??[]).filter(item=>ids.has(item.leadId)),
+      projects:(data.commercialProjects??[]).filter(item=>ids.has(item.leadId)),
+      invoices:(data.commercialInvoices??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId))),
+    });
+  };
   return <div className="space-y-6">
-    <div className="grid gap-6 xl:grid-cols-[1fr_1fr]"><Card className="p-5"><SectionHeader title="Qualified people by municipality" description="Deduplicated CRM geography"/><ComparisonBars data={pipeline.map(row=>({name:row.key,value:row.qualified}))} accent={data.company.accent}/></Card><Card className="p-5"><SectionHeader title="Revenue by municipality" description="Verified project value"/><ComparisonBars data={pipeline.map(row=>({name:row.key,value:row.revenue}))} accent="#191c1f"/></Card></div>
-    <Card className="p-5"><SectionHeader title="Location client funnel" description="No geographic ad cost is inferred. CPL/CAC stay omitted until real location spend exists."/><div className="table-scroll"><table><thead><tr><th>Municipality</th><th>Unique people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>Verified</th><th>Revenue</th></tr></thead><tbody>{pipeline.map(row=><tr key={row.key}><td className="font-semibold">{row.key}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offersSent}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody></table></div></Card>
+    <div className="grid gap-6 xl:grid-cols-[1fr_1fr]"><Card className="p-5"><SectionHeader title="Qualified people by municipality" description="Deduplicated people. Location uses CRM municipality first, then the matched ROBAWS client city when CRM is empty."/><ComparisonBars data={chartLocations.map(row=>({name:row.key,value:row.qualified}))} accent={data.company.accent}/></Card><Card className="p-5"><SectionHeader title="Revenue by municipality" description="Verified project value using the same CRM → ROBAWS location fallback."/><ComparisonBars data={chartLocations.map(row=>({name:row.key,value:row.revenue}))} accent="#191c1f"/></Card></div>
+    <Card className="p-5">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><SectionHeader title="Unique leads by location" description="Click a municipality to see the exact people and commercial records behind it."/><label className="flex min-w-[260px] items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3"><Search size={15}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search municipality…" className="h-10 w-full outline-none"/></label></div>
+      <div className="table-scroll"><table><thead><tr><th>Municipality</th><th>Unique people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>People with offer</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>Verified</th><th>Revenue</th></tr></thead><tbody>{visibleLocations.map(row=><tr key={row.key}><td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>openLocation(row.key)}>{row.key}</button></td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offersSent}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody></table></div>
+      {!search&&filtered.length>20&&<div className="mt-4 flex items-center justify-between gap-3 text-xs text-[var(--muted)]"><span>{showAll?`Showing all ${filtered.length} municipalities`:`Showing top 20 of ${filtered.length}`}</span><button type="button" className="button-secondary" onClick={()=>setShowAll(value=>!value)}>{showAll?"Show less":"Show all"}</button></div>}
+    </Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 

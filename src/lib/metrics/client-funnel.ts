@@ -45,6 +45,10 @@ export type FunnelSummary = {
   qualified: number;
   visits: number;
   offersCreated: number;
+  offerDocuments: number;
+  qualifiedNoOffer: number;
+  rejectedOfferDocuments: number;
+  cancelledOfferDocuments: number;
   offersSent: number;
   quotedValue: number;
   sentQuotedValue: number;
@@ -234,6 +238,11 @@ function applyClientOverrides(data: CompanyDataset, lead: Lead): Lead {
   };
 }
 
+function missingLocation(value: string | null | undefined) {
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  return !normalizedValue || ["unknown","onbekend","—","n/a"].includes(normalizedValue);
+}
+
 export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   const appointments = data.commercialAppointments ?? [];
   const offers = (data.commercialOffers ?? []).filter(item => !hasDateConflict(item.attributionStatus));
@@ -241,8 +250,15 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   const invoices = (data.commercialInvoices ?? []).filter(item => !hasDateConflict(item.attributionStatus));
 
   return groupLeadsByIdentity(data.leads).map(group => {
-    const lead = applyClientOverrides(data, masterLead(group));
     const leadIds = new Set(group.map(item => item.id));
+    const baseLead = applyClientOverrides(data, masterLead(group));
+    const matchedCommercialClient = (data.commercialClients ?? []).find(client =>
+      Boolean(client.matchedLeadId && leadIds.has(client.matchedLeadId))
+      || group.some(item => item.robawsClientId !== "—" && item.robawsClientId === client.externalId)
+    );
+    const lead = missingLocation(baseLead.municipality) && matchedCommercialClient && !missingLocation(matchedCommercialClient.municipality)
+      ? { ...baseLead, municipality: matchedCommercialClient.municipality }
+      : baseLead;
     const leadAppointments = appointments.filter(item => leadIds.has(item.leadId));
     const leadOffers = offers.filter(item => leadIds.has(item.leadId));
     const leadProjects = projects.filter(item => leadIds.has(item.leadId));
@@ -261,7 +277,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
     const hasOffer = leadOffers.length > 0;
     const qualified = group.some(isQualified) || visit || hasOffer || accepted || signed || commercialClient;
     const explicitNotRelevant = group.some(isExplicitlyNotRelevant);
-    const currentRejected = Boolean(currentOffer?.isRejected) || lead.commercialStatus === "OFFER_LOST";
+    const currentRejected = Boolean(currentOffer?.isRejected || currentOffer?.isCancelled) || lead.commercialStatus === "OFFER_LOST";
     const lost = !commercialClient && !signed && !accepted && !currentOffer?.isOpen
       && (currentRejected || (!visit && !hasOffer && explicitNotRelevant));
 
@@ -312,6 +328,10 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     qualified: rows.filter(row => row.isQualified).length,
     visits: rows.filter(row => row.hasVisit).length,
     offersCreated: rows.filter(row => row.offers.length > 0).length,
+    offerDocuments: rows.reduce((sum,row)=>sum+row.offers.length,0),
+    qualifiedNoOffer: rows.filter(row=>row.isQualified&&row.offers.length===0).length,
+    rejectedOfferDocuments: rows.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isRejected).length,0),
+    cancelledOfferDocuments: rows.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isCancelled).length,0),
     offersSent: rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
     quotedValue: rows.reduce((sum, row) => sum + row.offerValue, 0),
     sentQuotedValue: rows.reduce((sum, row) => sum + row.sentOfferValue, 0),

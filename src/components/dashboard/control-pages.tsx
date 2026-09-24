@@ -35,6 +35,8 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const cancelled = rows.filter(row => normalized(row.lead.crmStatus).includes("afspraak geannuleerd")).length;
   const noShow = rows.filter(row => row.appointments.some(item => item.noShow)).length;
   const rejected = rows.filter(row => row.latestOffer?.isRejected).length;
+  const cancelledOffers = rows.filter(row => row.latestOffer?.isCancelled).length;
+  const qualifiedNoOfferRows=rows.filter(row=>row.isQualified&&row.offers.length===0);
 
   return <div className="space-y-6">
     <Card className="overflow-hidden">
@@ -68,6 +70,9 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
           </button>;
         })}
       </div>
+      <button type="button" className="m-4 mt-0 flex w-[calc(100%-2rem)] items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-amber-950" onClick={()=>setDrilldown({title:"Qualified people without a ROBAWS offer",subtitle:data.periodLabel,leads:qualifiedNoOfferRows.map(row=>row.lead)})}>
+        <div><strong>{qualifiedNoOfferRows.length} qualified people have no linked ROBAWS offer</strong><p className="mt-1 text-xs opacity-80">Click to see exactly who they are. This is why Qualified can be higher than People with offer.</p></div><span className="text-lg font-bold">{qualifiedNoOfferRows.length}</span>
+      </button>
     </Card>
 
     <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
@@ -93,7 +98,8 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
           <Leak label="Never contacted" value={neverContacted}/>
           <Leak label="Appointment cancelled" value={cancelled}/>
           <Leak label="No-show" value={noShow}/>
-          <Leak label="Offer rejected" value={rejected}/>
+          <Leak label="Offer afgekeurd" value={rejected}/>
+          <Leak label="Offer cancelled" value={cancelledOffers}/>
           <Leak label="Signed, not ROBAWS client" value={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length}/>
         </div>
       </Card>

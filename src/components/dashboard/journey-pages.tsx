@@ -15,31 +15,49 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const [search, setSearch] = useState("");
   const [source, setSource] = useState("all");
   const [service, setService] = useState("all");
+  const [stageFilter,setStageFilter]=useState<JourneyStage|"all">("all");
+  const [limit,setLimit]=useState(20);
   const [selected, setSelected] = useState<JourneyRow | null>(null);
   const filtered = rows.filter(row => {
-    const text = [row.lead.name,row.lead.phone,row.lead.email,row.lead.source,row.lead.service,row.lead.municipality].join(" ").toLowerCase();
-    return (!search || text.includes(search.toLowerCase())) && (source === "all" || row.lead.source === source) && (service === "all" || row.lead.service === service);
+    const text = [row.lead.name,row.lead.phone,row.lead.email,row.lead.source,row.lead.service,row.lead.municipality,row.lead.crmStatus,row.stage].join(" ").toLowerCase();
+    return (!search || text.includes(search.toLowerCase()))
+      && (source === "all" || row.lead.source === source)
+      && (service === "all" || row.lead.service === service)
+      && (stageFilter==="all"||row.stage===stageFilter);
   });
   const sources = [...new Set(rows.map(row => row.lead.source))].sort();
   const services = [...new Set(rows.map(row => row.lead.service))].sort();
+  const visibleStages=stageFilter==="all"?journeyStageMeta:journeyStageMeta.filter(item=>item.key===stageFilter);
+  const hasFilters=Boolean(search||source!=="all"||service!=="all"||stageFilter!=="all");
+  const qualifiedNoOffer=rows.filter(row=>row.isQualified&&row.offers.length===0);
 
   return <div className="space-y-6">
     <Funnel data={data}/>
-    <Card className="p-4"><div className="grid gap-3 lg:grid-cols-[1fr_200px_200px]">
-      <label className="flex items-center gap-2 border border-[var(--line)] px-3"><Search size={15}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search client…" className="min-h-10 w-full outline-none"/></label>
-      <select value={source} onChange={e=>setSource(e.target.value)} className="border border-[var(--line)] px-3"><option value="all">All sources</option>{sources.map(v=><option key={v}>{v}</option>)}</select>
-      <select value={service} onChange={e=>setService(e.target.value)} className="border border-[var(--line)] px-3"><option value="all">All services</option>{services.map(v=><option key={v}>{v}</option>)}</select>
-    </div></Card>
-    <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Client journey map" description="One client sits in one current stage. Cards use CRM, appointment, ROBAWS offer and commercial project evidence."/></div>
-      <div className="overflow-x-auto bg-[var(--surface)]"><div className="grid min-w-[1760px] grid-cols-8 gap-px bg-[var(--line)]">
-        {journeyStageMeta.map(stage => {
-          const group=filtered.filter(r=>r.stage===stage.key);
-          return <section key={stage.key} className="min-h-[500px] bg-[var(--surface)]"><header className="border-b border-[var(--line)] bg-white p-3"><div className="flex justify-between"><strong className="text-sm">{stage.label}</strong><b>{group.length}</b></div><p className="mt-1 text-[11px] text-[var(--muted)]">{stage.description}</p></header><div className="space-y-2 p-2">{group.map(row=><JourneyCard key={row.lead.id} row={row} onOpen={()=>setSelected(row)}/>)}</div></section>;
-        })}
-      </div></div>
+    <Card className="p-4">
+      <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_180px_190px_190px_auto]">
+        <label className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3"><Search size={15}/><input value={search} onChange={e=>{setSearch(e.target.value);setLimit(20)}} placeholder="Search name, phone, email, location, status…" className="min-h-10 w-full outline-none"/></label>
+        <select value={stageFilter} onChange={e=>{setStageFilter(e.target.value as JourneyStage|"all");setLimit(20)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All journey stages</option>{journeyStageMeta.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}</select>
+        <select value={source} onChange={e=>{setSource(e.target.value);setLimit(20)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All sources</option>{sources.map(v=><option key={v}>{v}</option>)}</select>
+        <select value={service} onChange={e=>{setService(e.target.value);setLimit(20)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All services</option>{services.map(v=><option key={v}>{v}</option>)}</select>
+        {hasFilters?<button type="button" className="button-secondary" onClick={()=>{setSearch("");setSource("all");setService("all");setStageFilter("all");setLimit(20)}}>Clear filters</button>:<div className="flex items-center justify-end text-xs font-semibold text-[var(--muted)]">{filtered.length} clients</div>}
+      </div>
+      {hasFilters&&<p className="mt-3 text-xs text-[var(--muted)]">{filtered.length} matching client{filtered.length===1?"":"s"}</p>}
     </Card>
-    <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-7"><Mini label="Unique people" value={formatNumber(summary.uniquePeople)}/><Mini label="Offers created" value={formatNumber(summary.offersCreated)}/><Mini label="Offers sent" value={formatNumber(summary.offersSent)}/><Mini label="Sent quote value" value={formatCurrency(summary.sentQuotedValue)}/><Mini label="Open pipeline" value={formatCurrency(summary.openPipelineValue)}/><Mini label="Commercial clients" value={formatNumber(summary.commercialClients)}/><Mini label="Project value" value={formatCurrency(summary.verifiedRevenue)}/></div>
+    <Card className="overflow-hidden">
+      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Live client journey" description="Live CRM + ROBAWS view. Search or filter first; the all-stage board intentionally shows only a short preview so it never becomes an endless list."/></div>
+      {stageFilter==="all"
+        ?<div className="overflow-x-auto bg-[var(--surface)]"><div className="grid min-w-[1760px] grid-cols-8 gap-px bg-[var(--line)]">
+          {visibleStages.map(stage => {
+            const group=filtered.filter(r=>r.stage===stage.key);
+            const preview=group.slice(0,5);
+            return <section key={stage.key} className="min-h-[360px] bg-[var(--surface)]"><header className="border-b border-[var(--line)] bg-white p-3"><div className="flex justify-between"><strong className="text-sm">{stage.label}</strong><b>{group.length}</b></div><p className="mt-1 text-[11px] text-[var(--muted)]">{stage.description}</p></header><div className="space-y-2 p-2">{preview.map(row=><JourneyCard key={row.lead.id} row={row} onOpen={()=>setSelected(row)}/>)}
+              {group.length>5&&<button type="button" className="w-full rounded-lg border border-dashed border-[var(--line-strong)] bg-white p-2 text-xs font-semibold" onClick={()=>{setStageFilter(stage.key);setLimit(20)}}>View all {group.length}</button>}
+            </div></section>;
+          })}
+        </div></div>
+        :<div className="bg-[var(--surface)] p-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.slice(0,limit).map(row=><JourneyCard key={row.lead.id} row={row} onOpen={()=>setSelected(row)}/>)}</div>{filtered.length>limit&&<div className="mt-4 flex justify-center"><button type="button" className="button-secondary" onClick={()=>setLimit(value=>value+20)}>Show 20 more</button></div>}{!filtered.length&&<EmptyState title="No clients match these filters" body="Change the search, source, service or journey stage."/>}</div>}
+    </Card>
+    <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-8"><Mini label="Unique people" value={formatNumber(summary.uniquePeople)}/><Mini label="Qualified" value={formatNumber(summary.qualified)}/><Mini label="Qualified · no ROBAWS offer" value={formatNumber(qualifiedNoOffer.length)}/><Mini label="People with ROBAWS offer" value={formatNumber(summary.offersCreated)}/><Mini label="Offer documents" value={formatNumber(summary.offerDocuments)}/><Mini label="Afgekeurd" value={formatNumber(summary.rejectedOfferDocuments)}/><Mini label="Cancelled" value={formatNumber(summary.cancelledOfferDocuments)}/><Mini label="Commercial clients" value={formatNumber(summary.commercialClients)}/></div>
     {selected&&<ClientDrawer data={data} row={selected} onClose={()=>setSelected(null)}/>}
   </div>;
 }
@@ -68,7 +86,7 @@ export function VisitsPage({ data }: { data: CompanyDataset }) {
 export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
   const offers=(data.commercialOffers??[]).filter(o=>!o.attributionStatus.includes("DATE_CONFLICT"));
   const sent=offers.filter(o=>Boolean(o.sentAt));
-  const open=sent.filter(o=>o.isOpen),accepted=offers.filter(o=>o.isAccepted),rejected=offers.filter(o=>o.isRejected);
+  const open=sent.filter(o=>o.isOpen),accepted=offers.filter(o=>o.isAccepted),rejected=offers.filter(o=>o.isRejected),cancelled=offers.filter(o=>o.isCancelled);
   const unsentOpen=offers.filter(o=>o.isOpen&&!o.sentAt);
   const projects=(data.commercialProjects??[]).filter(p=>!p.attributionStatus.includes("DATE_CONFLICT"));
   const invoices=(data.commercialInvoices??[]).filter(i=>!i.attributionStatus.includes("DATE_CONFLICT"));
@@ -87,9 +105,10 @@ export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
       <KpiCard label="Send not verified" value={formatCurrency(sum(unsentOpen),true)} meta={String(unsentOpen.length)+" open offers"} onClick={()=>setDrilldown({title:"Open offers with send not verified",subtitle:data.periodLabel,offers:unsentOpen})}/>
       <KpiCard label="Accepted" value={formatCurrency(sum(accepted),true)} meta={String(accepted.length)+" accepted"} onClick={()=>setDrilldown({title:"Accepted offers",subtitle:data.periodLabel,offers:accepted})}/>
       <KpiCard label="Follow-ups due" value={formatNumber(followUpsDue.length)} meta={formatCurrency(sum(followUpsDue))+" open value"} onClick={()=>setDrilldown({title:"Follow-ups due",subtitle:data.periodLabel,offers:followUpsDue})}/>
-      <KpiCard label="Rejected" value={formatCurrency(sum(rejected),true)} meta={String(rejected.length)+" rejected"} onClick={()=>setDrilldown({title:"Rejected offers",subtitle:data.periodLabel,offers:rejected})}/>
+      <KpiCard label="Afgekeurd" value={formatCurrency(sum(rejected),true)} meta={String(rejected.length)+" rejected"} onClick={()=>setDrilldown({title:"Afgekeurde offers",subtitle:data.periodLabel,offers:rejected})}/>
+      <KpiCard label="Cancelled" value={formatCurrency(sum(cancelled),true)} meta={String(cancelled.length)+" cancelled"} onClick={()=>setDrilldown({title:"Cancelled offers",subtitle:data.periodLabel,offers:cancelled})}/>
     </div>
-    <Card className="p-5"><SectionHeader title="Offer register" description="Offer date and sent-to-client date stay separate. Sent is shown only when ROBAWS supplies its send date."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Offer</th><th>Offer date</th><th>Sent to client</th><th>Follow-up</th><th>Excl. VAT</th><th>Incl. VAT</th><th>Status</th><th>Days open</th></tr></thead><tbody>{[...offers].sort((a,b)=>(b.sentAt??b.date).localeCompare(a.sentAt??a.date)).map(o=><tr key={o.id}><td className="font-semibold">{o.leadName}</td><td>{o.source}</td><td>{o.number}</td><td>{date(o.date)}</td><td>{o.sentAt?<StatusPill tone="good">{dateTime(o.sentAt)}</StatusPill>:<StatusPill tone="neutral">Not verified</StatusPill>}</td><td>{o.followUpAt?dateTime(o.followUpAt):"—"}</td><td>{formatCurrency(o.priceExclVat)}</td><td className="font-semibold">{formatCurrency(o.priceInclVat)}</td><td><StatusPill tone={o.isAccepted?"good":o.isRejected?"bad":"warn"}>{o.status}</StatusPill></td><td>{o.daysWaiting===null?"—":String(o.daysWaiting)+" d"}</td></tr>)}</tbody></table></div></Card>
+    <Card className="p-5"><SectionHeader title="Offer register" description="Offer date and sent-to-client date stay separate. Sent is shown only when ROBAWS supplies its send date."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Offer</th><th>Offer date</th><th>Sent to client</th><th>Follow-up</th><th>Excl. VAT</th><th>Incl. VAT</th><th>Status</th><th>Days open</th></tr></thead><tbody>{[...offers].sort((a,b)=>(b.sentAt??b.date).localeCompare(a.sentAt??a.date)).map(o=><tr key={o.id}><td className="font-semibold">{o.leadName}</td><td>{o.source}</td><td>{o.number}</td><td>{date(o.date)}</td><td>{o.sentAt?<StatusPill tone="good">{dateTime(o.sentAt)}</StatusPill>:<StatusPill tone="neutral">Not verified</StatusPill>}</td><td>{o.followUpAt?dateTime(o.followUpAt):"—"}</td><td>{formatCurrency(o.priceExclVat)}</td><td className="font-semibold">{formatCurrency(o.priceInclVat)}</td><td><StatusPill tone={o.isAccepted?"good":o.isRejected||o.isCancelled?"bad":"warn"}>{o.status}</StatusPill></td><td>{o.daysWaiting===null?"—":String(o.daysWaiting)+" d"}</td></tr>)}</tbody></table></div></Card>
     <Card className="p-5"><SectionHeader title="Pipeline aging" description="Open value that needs sales follow-up."/><div className="grid gap-px bg-[var(--line)] md:grid-cols-4"><Age label="0–7 days" rows={open.filter(o=>(o.daysWaiting??0)<=7)}/><Age label="8–14 days" rows={open.filter(o=>(o.daysWaiting??0)>=8&&(o.daysWaiting??0)<=14)}/><Age label="15–30 days" rows={open.filter(o=>(o.daysWaiting??0)>=15&&(o.daysWaiting??0)<=30)}/><Age label="30+ days" rows={open.filter(o=>(o.daysWaiting??0)>30)}/></div></Card>
     <Card className="p-5"><SectionHeader title="Commercial result" description="Pipeline and cash stay together on the same operational page."/><div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4"><Mini label="Project value" value={formatCurrency(projectValue)}/><Mini label="Invoiced" value={formatCurrency(invoiced)}/><Mini label="Paid" value={formatCurrency(paid)}/><Mini label="Unpaid invoiced" value={formatCurrency(Math.max(0,invoiced-paid))}/></div></Card>
     {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
@@ -128,11 +147,11 @@ export function SalesTeamPage({ data }: { data: CompanyDataset }) {
 
 function Funnel({ data }: { data: CompanyDataset }) {
   const s=buildFunnelSummary(data);
-  const stages=[["Leads",s.leads],["Unique",s.uniquePeople],["Qualified",s.qualified],["Visits",s.visits],["Offers created",s.offersCreated],["Sent",s.offersSent],["Open",s.openOffers],["Accepted",s.acceptedOffers],["Signed",s.crmSigned],["Commercial clients",s.commercialClients]] as const;
-  return <Card className="overflow-hidden"><div className="overflow-x-auto"><div className="flex min-w-[1320px] divide-x divide-[var(--line)]"><div className="min-w-[150px] bg-[var(--ink)] p-4 text-white"><span className="text-xs uppercase text-white/60">Tracked marketing spend</span><strong className="mt-2 block text-xl">{formatCurrency(data.metrics.spend,true)}</strong><small className="mt-1 block text-[10px] text-white/45">Synced platform spend only</small></div>{stages.map(([label,value])=><div key={label} className="min-w-[130px] flex-1 bg-white p-4"><span className="text-xs uppercase text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{value}</strong></div>)}</div></div></Card>;
+  const stages=[["Leads",s.leads],["Unique people",s.uniquePeople],["Qualified",s.qualified],["Visits",s.visits],["People with offer",s.offersCreated],["Sent",s.offersSent],["Open",s.openOffers],["Accepted",s.acceptedOffers],["Signed",s.crmSigned],["Commercial clients",s.commercialClients]] as const;
+  return <Card className="overflow-hidden"><div className="overflow-x-auto"><div className="flex min-w-[1320px] divide-x divide-[var(--line)]"><div className="min-w-[150px] bg-[var(--ink)] p-4 text-white"><span className="text-xs uppercase text-white/60">Funnel scope</span><strong className="mt-2 block text-xl">{formatNumber(s.uniquePeople)}</strong><small className="mt-1 block text-[10px] text-white/45">Deduplicated people in selected period</small></div>{stages.map(([label,value])=><div key={label} className="min-w-[130px] flex-1 bg-white p-4"><span className="text-xs uppercase text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{value}</strong></div>)}</div></div><div className="border-t border-[var(--line)] bg-amber-50 px-4 py-3 text-xs text-amber-900"><strong>{s.qualifiedNoOffer} qualified people currently have no linked ROBAWS offer.</strong> Qualified means sales-relevant or progressed; it does not mean an offer already exists.</div></Card>;
 }
 
-function JourneyCard({ row,onOpen }: { row: JourneyRow; onOpen:()=>void }) { const a=[...row.appointments].sort((x,y)=>y.scheduledAt.localeCompare(x.scheduledAt))[0],o=row.latestOffer; return <button onClick={onOpen} className="w-full border border-[var(--line)] bg-white p-3 text-left transition hover:border-[var(--ink)]"><div className="flex justify-between gap-2"><strong className="text-sm">{row.lead.name}</strong><StatusPill tone={tone(row.stage)}>{journeyStageMeta.find(s=>s.key===row.stage)?.label}</StatusPill></div><p className="mt-1 text-[11px] text-[var(--muted)]">{row.lead.source+" · "+row.lead.service}</p>{row.crmRecordCount>1&&<p className="mt-1 text-[11px] font-semibold text-amber-700">{row.crmRecordCount+" CRM records merged"}</p>}<div className="mt-3 space-y-1 text-xs"><p>Lead: {date(row.lead.date)}</p>{a&&<p>Visit: {dateTime(a.completedAt??a.scheduledAt)}</p>}{o&&<p>Offer: <b>{formatCurrency(o.priceInclVat)}</b> · {o.sentAt?"sent "+dateTime(o.sentAt):"send not verified"}</p>}{row.projectValue>0&&<p>Project: <b>{formatCurrency(row.projectValue)}</b></p>}</div></button>; }
+function JourneyCard({ row,onOpen }: { row: JourneyRow; onOpen:()=>void }) { const a=[...row.appointments].sort((x,y)=>y.scheduledAt.localeCompare(x.scheduledAt))[0],o=row.latestOffer; return <button onClick={onOpen} className="w-full rounded-lg border border-[var(--line)] bg-white p-3 text-left transition hover:border-[var(--ink)]"><div className="flex justify-between gap-2"><strong className="text-sm">{row.lead.name}</strong><StatusPill tone={tone(row.stage)}>{journeyStageMeta.find(s=>s.key===row.stage)?.label}</StatusPill></div><p className="mt-1 text-[11px] text-[var(--muted)]">{row.lead.source+" · "+row.lead.service}</p><p className="mt-1 text-[11px] text-[var(--muted)]">{row.lead.municipality||"Location unknown"}</p>{row.crmRecordCount>1&&<p className="mt-1 text-[11px] font-semibold text-amber-700">{row.crmRecordCount+" CRM records merged"}</p>}<div className="mt-3 space-y-1 text-xs"><p>Lead: {date(row.lead.date)}</p>{a&&<p>Visit: {dateTime(a.completedAt??a.scheduledAt)}</p>}{o&&<p>Offer: <b>{formatCurrency(o.priceInclVat)}</b> · {o.sentAt?"sent "+dateTime(o.sentAt):"send not verified"}</p>}{row.projectValue>0&&<p>Project: <b>{formatCurrency(row.projectValue)}</b></p>}</div></button>; }
 function ClientDrawer({data,row,onClose}:{data:CompanyDataset;row:JourneyRow;onClose:()=>void}) {
   const router=useRouter();
   const overrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.scopeKey===row.lead.id);

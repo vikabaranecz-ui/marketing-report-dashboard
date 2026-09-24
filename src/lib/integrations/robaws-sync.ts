@@ -27,6 +27,10 @@ type RobawsClient = {
   gsm?: string | null;
   contacts?: unknown;
   clientSince?: string | null;
+  city?: string | null;
+  municipality?: string | null;
+  address?: { city?: string | null; municipality?: string | null; postalCode?: string | null } | null;
+  invoiceAddress?: { city?: string | null; municipality?: string | null; postalCode?: string | null } | null;
 };
 
 type RobawsOffer = {
@@ -254,6 +258,7 @@ export async function syncRobawsProvider(
         `ROBAWS client ${client.id}`,
       email: client.email || client.invoiceEmail || null,
       phone: client.gsm || client.tel || null,
+      municipality: robawsMunicipality(client),
       client_since: toTimestamp(client.clientSince),
       matched_lead_id: matched?.lead.id ?? null,
       match_method: matched?.method ?? (matches.length > 1 ? "MULTIPLE_LEADS_SAME_CLIENT" : "NONE"),
@@ -793,6 +798,44 @@ function matchClient(
     clientId: null,
     method: "NONE",
   };
+}
+
+function robawsMunicipality(client: RobawsClient) {
+  const direct = [
+    client.city,
+    client.municipality,
+    client.address?.city,
+    client.address?.municipality,
+    client.invoiceAddress?.city,
+    client.invoiceAddress?.municipality,
+  ].find(value => typeof value === "string" && value.trim());
+  if (typeof direct === "string") return direct.trim();
+
+  const nested = findNestedLocation(client.contacts);
+  return nested || null;
+}
+
+function findNestedLocation(value: unknown, depth = 0): string | null {
+  if (!value || depth > 5) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNestedLocation(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["city","municipality","locality"]) {
+    const item = record[key];
+    if (typeof item === "string" && item.trim()) return item.trim();
+  }
+  for (const item of Object.values(record)) {
+    const found = findNestedLocation(item, depth + 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 function collectContactIdentifiers(

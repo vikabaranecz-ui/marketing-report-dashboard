@@ -41,6 +41,7 @@ export type CommercialClient = {
   name: string;
   email: string;
   phone: string;
+  municipality: string;
   clientSince: string | null;
   matchedLeadId: string | null;
   matchMethod: string;
@@ -85,6 +86,7 @@ export type CommercialOffer = {
   isOpen: boolean;
   isAccepted: boolean;
   isRejected: boolean;
+  isCancelled: boolean;
   daysWaiting: number | null;
 };
 
