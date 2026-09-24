@@ -408,7 +408,18 @@ function DecisionMoneyCard({icon,label,value,comparison,note,accent=false,onClic
 
 function SourceDecisionRow({source,clients,paid,projectValue,spend,openValue,verdict,onClick}:{source:string;clients:number;paid:number;projectValue:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string};onClick?:()=>void}){
   const cashReturn=spend===null?null:paid-spend;
-  return <button type="button" onClick={onClick} className="source-decision-row drillable w-full text-left"><div className="source-decision-name"><strong>{source}</strong><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div><div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div><div><span>Project value</span><strong>{formatCurrency(projectValue,true)}</strong></div><div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div><div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div><div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div></button>;
+  return <button type="button" onClick={onClick} className="source-decision-row drillable w-full text-left">
+    <div className="source-decision-head">
+      <div className="source-decision-name"><strong>{source}</strong><div><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div></div>
+    </div>
+    <div className="source-decision-metrics">
+      <div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div>
+      <div><span>Project value</span><strong>{formatCurrency(projectValue,true)}</strong></div>
+      <div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div>
+      <div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div>
+      <div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div>
+    </div>
+  </button>;
 }
 
 function LossSignal({icon,label,value,detail}:{icon:"funnel"|"pipeline"|"spend";label:string;value:string;detail:string}){
