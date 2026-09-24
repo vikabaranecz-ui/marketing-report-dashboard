@@ -141,7 +141,7 @@ export function LocationsPage({ data }: { data: CompanyDataset }) {
       subtitle:data.periodLabel,
       leads:group.map(row=>row.lead),
       offers:(data.commercialOffers??[]).filter(item=>ids.has(item.leadId)),
-      projects:(data.commercialProjects??[]).filter(item=>ids.has(item.leadId)),
+      projects:(data.commercialProjects??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId))),
       invoices:(data.commercialInvoices??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId))),
     });
   };

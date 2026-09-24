@@ -1,562 +1,490 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, CircleDollarSign, Clock3, Database, Minus, ReceiptText, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
-import type { CompanyDataset } from "@/lib/data/types";
-import { buildFunnelSummary, buildJourneyRows, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
-import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
-import { sourceBusinessRows, type SourceBusinessRow } from "./control-pages";
+import {
+  AlertTriangle, ArrowRight, BarChart3, CheckCircle2, CircleDollarSign, Database,
+  Filter, ShieldCheck, UsersRound,
+} from "lucide-react";
+import type { CommercialClient, CommercialInvoice, CompanyDataset } from "@/lib/data/types";
+import {
+  buildOverviewAnalytics, hasCompletedVisitEvidence, manualClientSource, normalizeAcquisitionSource,
+  PAID_ACQUISITION_SOURCES, type SourcePerformanceRow,
+} from "@/lib/metrics/business-overview";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics/kpis";
+import { hasOfferSentEvidence } from "@/lib/metrics/client-funnel";
 import { Card, SectionHeader, StatusPill } from "./ui";
-import { SystemPulse } from "./system-pulse";
-import { MoneyTrendChart } from "./charts";
+import {
+  BusinessActivityChart, CohortPaybackChart, CostOutcomeChart, SourcePerformanceChart,
+} from "./charts";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
-export function OverviewPage({data}:{data:CompanyDataset}) {
+type ExecutiveMode="period"|"cohort";
+type SourceSort="spend"|"customers"|"cac"|"paid"|"roas";
+
+export function OverviewPage({data}:{data:CompanyDataset}){
   const searchParams=useSearchParams();
   const month=searchParams.get("month");
-  const scopedHref=(href:string)=>month?`${href}?month=${encodeURIComponent(month)}`:href;
-  const rows=buildJourneyRows(data);
-  const summary=buildFunnelSummary(data);
+  const scopedHref=(href:string)=>month?href+"?month="+encodeURIComponent(month):href;
+
+  const [mode,setMode]=useState<ExecutiveMode>("period");
+  const [sourceFilter,setSourceFilter]=useState("all");
+  const [campaignFilter,setCampaignFilter]=useState("all");
+  const [sourceSort,setSourceSort]=useState<SourceSort>("paid");
+  const [showSourceTable,setShowSourceTable]=useState(false);
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
-  const periodProjects=data.periodCommercialProjects??[];
-  const periodInvoices=data.periodCommercialInvoices??[];
-  const sources=sourceBusinessRows(data,rows);
-  const paidSources=sources.filter(row=>["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"].includes(row.source));
-  const trackedMarketingSpend=paidSources.reduce((sum,row)=>sum+Number(row.spend??0),0);
-  const googleAdsIntegration=data.integrations.find(item=>item.provider==="google_ads");
-  const googleBusinessIntegration=data.integrations.find(item=>item.provider==="google_business");
-  const metaIntegration=data.integrations.find(item=>item.provider==="meta");
-  const websiteFormsIntegration=data.integrations.find(item=>item.provider==="website_forms");
-  const metaLeadAccessReady=!metaIntegration?.metaMissingPermissions?.includes("leads_retrieval");
-  const leadDateCounts=new Map<string,number>();
-  for(const lead of data.leads){const date=lead.date.slice(0,10);leadDateCounts.set(date,(leadDateCounts.get(date)??0)+1);}
-  const peakLeadDate=([...leadDateCounts.entries()].sort((a,b)=>b[1]-a[1])[0]??["",0]) as [string,number];
-  const suspiciousLeadDateBatch=data.leads.length>=20&&peakLeadDate[1]>=20&&peakLeadDate[1]/data.leads.length>=0.25;
-  const offers=(data.commercialOffers??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  const projects=(data.commercialProjects??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  const sentOffers=offers.filter(hasOfferSentEvidence);
-  const openOffers=sentOffers.filter(item=>item.isOpen);
-  const acceptedOffers=offers.filter(item=>item.isAccepted);
-  const paid=invoices.reduce((sum,item)=>sum+item.paidTotal,0);
-  const invoiced=invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0);
-  const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
-  const openValue=openOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
-  const acceptedValue=acceptedOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
-  const knownSpendRows=paidSources.filter(row=>row.spend!==null);
-  const coveredSpend=knownSpendRows.reduce((sum,row)=>sum+Number(row.spend??0),0);
-  const coveredLeads=knownSpendRows.reduce((sum,row)=>sum+row.leads,0);
-  const coveredQualified=knownSpendRows.reduce((sum,row)=>sum+row.qualified,0);
-  const coveredVisits=knownSpendRows.reduce((sum,row)=>sum+row.visits,0);
-  const coveredOffers=knownSpendRows.reduce((sum,row)=>sum+row.offers,0);
-  const coveredClients=knownSpendRows.reduce((sum,row)=>sum+row.attributedClients,0);
-  const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
 
-  const robawsClientRecords=data.commercialClients??[];
-  const detailedRobawsInvoices=data.commercialInvoices??[];
-  const loadedInvoicesByClient=new Map<string,{count:number;invoiced:number;paid:number}>();
-  for(const invoice of detailedRobawsInvoices){
-    const key=invoice.externalClientId??"UNKNOWN";
-    const current=loadedInvoicesByClient.get(key)??{count:0,invoiced:0,paid:0};
-    current.count+=1;
-    current.invoiced+=Math.max(0,invoice.totalInclVat-invoice.creditedTotal);
-    current.paid+=invoice.paidTotal;
-    loadedInvoicesByClient.set(key,current);
-  }
-  const robawsFinancialCoverage={
-    expectedInvoices:robawsClientRecords.reduce((sum,client)=>sum+client.invoiceCount,0),
-    loadedInvoices:detailedRobawsInvoices.length,
-    expectedInvoiced:robawsClientRecords.reduce((sum,client)=>sum+client.invoicedTotal,0),
-    loadedInvoiced:detailedRobawsInvoices.reduce((sum,invoice)=>sum+Math.max(0,invoice.totalInclVat-invoice.creditedTotal),0),
-    expectedPaid:robawsClientRecords.reduce((sum,client)=>sum+client.paidTotal,0),
-    loadedPaid:detailedRobawsInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0),
-  };
-  const missingRobawsInvoices=Math.max(0,robawsFinancialCoverage.expectedInvoices-robawsFinancialCoverage.loadedInvoices);
-  const missingRobawsInvoiced=Math.max(0,robawsFinancialCoverage.expectedInvoiced-robawsFinancialCoverage.loadedInvoiced);
-  const missingRobawsPaid=Math.max(0,robawsFinancialCoverage.expectedPaid-robawsFinancialCoverage.loadedPaid);
-  const missingRobawsClients=robawsClientRecords.filter(client=>{
-    const loaded=loadedInvoicesByClient.get(client.externalId)??{count:0,invoiced:0,paid:0};
-    return client.invoiceCount>loaded.count
-      || client.invoicedTotal-loaded.invoiced>.01
-      || client.paidTotal-loaded.paid>.01;
-  }).sort((a,b)=>{
-    const aLoaded=loadedInvoicesByClient.get(a.externalId)??{count:0,invoiced:0,paid:0};
-    const bLoaded=loadedInvoicesByClient.get(b.externalId)??{count:0,invoiced:0,paid:0};
-    return (b.paidTotal-bLoaded.paid)-(a.paidTotal-aLoaded.paid)
-      || (b.invoicedTotal-bLoaded.invoiced)-(a.invoicedTotal-aLoaded.invoiced)
-      || a.name.localeCompare(b.name);
-  });
-  const robawsDetailCoverage=percentage(robawsFinancialCoverage.loadedInvoices,robawsFinancialCoverage.expectedInvoices)??0;
-  const robawsWonRecords=robawsClientRecords.filter(client=>client.commercialStatus==="CLIENT_WON");
-  const robawsMatchedWonRecords=robawsWonRecords.filter(client=>Boolean(client.matchedLeadId));
-  const rowByLeadId=new Map<string,JourneyRow>();
-  rows.forEach(row=>row.leadIds.forEach(id=>rowByLeadId.set(id,row)));
-  const cohortCommercialClients=(data.commercialClients??[]).filter(client=>
-    client.commercialStatus==="CLIENT_WON"
-    && Boolean(client.matchedLeadId&&rowByLeadId.has(client.matchedLeadId))
+  const analytics=useMemo(
+    ()=>buildOverviewAnalytics(data,{source:sourceFilter,campaign:campaignFilter}),
+    [data,sourceFilter,campaignFilter],
   );
-  const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
-  const overrideSource=(client:NonNullable<CompanyDataset["commercialClients"]>[number])=>{
-    const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
-    const matches=sourceOverrides.filter(item=>keys.includes(item.scopeKey));
-    const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
-    return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
+  const sourceRows=analytics.sourceRows;
+  const sourceOptions=sourceRows.map(item=>item.source);
+  const campaignOptions=[...new Set(analytics.allRows
+    .filter(row=>sourceFilter==="all"||normalizeAcquisitionSource(row.lead.source)===sourceFilter)
+    .map(row=>row.lead.campaign).filter(value=>value&&value!=="—"))].sort();
+  const scopeLabel=[
+    sourceFilter==="all"?"All sources":sourceFilter,
+    campaignFilter==="all"?null:campaignFilter,
+  ].filter(Boolean).join(" · ");
+
+  const spendRows=buildSpendEvidence(data,sourceRows,sourceFilter,campaignFilter);
+  const selectedLeadIds=new Set(analytics.rows.flatMap(row=>row.leadIds));
+  const selectedOffers=(data.commercialOffers??[]).filter(item=>selectedLeadIds.has(item.leadId));
+  const selectedSentOffers=selectedOffers.filter(hasOfferSentEvidence);
+  const selectedClients=clientsForRows(data,analytics.rows);
+  const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=Date.now());
+  const outstandingInvoices=analytics.business.invoices.filter(item=>netInvoice(item)>item.paidTotal);
+  const unattributedWon=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&!resolvedClientSource(data,client));
+  const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);
+  const affectedCoverageClients=coverageGapClients(data);
+  const integrationIssues=data.integrations.filter(item=>item.status!=="Connected"||!item.lastSuccess);
+
+  const insight=managementInsight(analytics);
+  const monthly=(data.businessDecision?.monthly??[]).map(item=>({
+    month:item.month,label:item.label,won:item.wonProjectValue,invoiced:item.invoiced,
+    paid:item.paid,spend:item.spend,complete:item.complete,
+  }));
+  const displayedSourceRows=sourceFilter==="all"
+    ? sourceRows
+    : sourceRows.filter(row=>row.source===sourceFilter);
+  const scopedPerformanceRows:SourcePerformanceRow[]=campaignFilter==="all"
+    ? displayedSourceRows
+    : [{
+        source:campaignFilter,
+        spend:analytics.economics.costState==="missing"?null:analytics.economics.coveredSpend,
+        costState:analytics.economics.costState==="missing"?"missing":"known",
+        spendNote:"Campaign-level acquisition scope",
+        isManualSpend:false,recurringSpend:0,
+        leads:analytics.cohort.unique,qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
+        offers:analytics.cohort.offers,customers:analytics.cohort.customers,
+        attributableClients:analytics.economics.attributableCustomers,
+        projectValueExclVat:analytics.economics.cohortValueExclVat,
+        projectValueInclVat:analytics.cohort.projectValueInclVat,
+        paidValue:analytics.economics.cohortPaidValue,
+        cpl:analytics.economics.cpl,costQualified:analytics.economics.costQualified,
+        costVisit:analytics.economics.costVisit,costOffer:analytics.economics.costOffer,
+        cac:analytics.economics.cac,cohortCashRoas:analytics.economics.cohortCashRoas,
+      }];
+  const sortedSources=[...scopedPerformanceRows].sort((a,b)=>sourceComparator(a,b,sourceSort));
+  const sourceChartRows=sortedSources.map(row=>({
+    source:row.source,spend:row.spend,paid:row.paidValue,customers:row.attributableClients,
+  }));
+
+  const openSource=(source:string)=>{
+    const normalized=normalizeAcquisitionSource(source);
+    const leadRows=analytics.allRows.filter(row=>normalizeAcquisitionSource(row.lead.source)===normalized);
+    const leadIds=new Set(leadRows.flatMap(row=>row.leadIds));
+    const clients=(data.commercialClients??[]).filter(client=>{
+      const manual=manualClientSource(data,client);
+      return Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))
+        || normalizeAcquisitionSource(manual??"")===normalized;
+    }).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+    const clientIds=new Set(clients.map(client=>client.externalId));
+    setDrilldown({
+      title:normalized+" records",subtitle:data.periodLabel,initialKind:"clients",
+      leads:leadRows.map(row=>row.lead),clients,
+      offers:(data.commercialOffers??[]).filter(item=>normalizeAcquisitionSource(item.source)===normalized),
+      projects:(data.allCommercialProjects??data.periodCommercialProjects??[]).filter(item=>normalizeAcquisitionSource(item.source)===normalized||Boolean(item.externalClientId&&clientIds.has(item.externalClientId))),
+      invoices:(data.allCommercialInvoices??data.periodCommercialInvoices??[]).filter(item=>normalizeAcquisitionSource(item.source)===normalized||Boolean(item.externalClientId&&clientIds.has(item.externalClientId))),
+      spendRows:buildSpendEvidence(data,sourceRows,normalized,"all"),
+    });
   };
-  const manualSourceWonRecords=robawsWonRecords.filter(client=>Boolean(overrideSource(client)));
-  const manualSourceUnmatchedWonRecords=manualSourceWonRecords.filter(client=>!client.matchedLeadId);
-  const sourceResolvedWonRecords=robawsWonRecords.filter(client=>Boolean(client.matchedLeadId)||Boolean(overrideSource(client)));
-  const sourceEvidence=cohortCommercialClients.map(client=>{
-    const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
-    const manual=overrideSource(client);
-    const source=manual??row?.lead.source?.trim()??"";
-    const safe=Boolean(manual)||Boolean(row?.isAttributableClient);
-    return {client,source,safe,manual:Boolean(manual)};
-  });
-  const knownSourceClients=sourceEvidence.filter(item=>item.safe&&item.source);
-  const paidMarketingClients=knownSourceClients.filter(item=>isPaidMarketingSource(item.source));
-  const unknownSourceClients=cohortCommercialClients.length-knownSourceClients.length;
-  const cohortPaid=cohortCommercialClients.reduce((sum,client)=>sum+client.paidTotal,0);
-  const knownSourcePaid=knownSourceClients.reduce((sum,item)=>sum+item.client.paidTotal,0);
-  const paidMarketingPaid=paidMarketingClients.reduce((sum,item)=>sum+item.client.paidTotal,0);
-  const sourceCoverage=percentage(knownSourceClients.length,cohortCommercialClients.length)??0;
-  const paidCashSourceCoverage=percentage(knownSourcePaid,cohortPaid)??0;
 
-  const decision=data.businessDecision;
-  const periodTotals=decision?.current??null;
-  const directComparison=decision?.comparison??null;
-  const directComparisonHasData=Boolean(directComparison && (directComparison.spend>0||directComparison.invoiced>0||directComparison.paid>0||directComparison.leads>0));
-  const completeActiveMonths=(decision?.monthly??[]).filter(item=>item.complete&&(item.spend>0||item.invoiced>0||item.paid>0||item.leads>0));
-  const latestComplete=completeActiveMonths.at(-1)??null;
-  const previousComplete=completeActiveMonths.at(-2)??null;
-  const momentumCurrent=directComparisonHasData&&periodTotals ? periodTotals : latestComplete;
-  const momentumPrevious=directComparisonHasData ? directComparison : previousComplete;
-  const momentumLabel=directComparisonHasData
-    ? `${periodTotals?.label??"Selected period"} vs ${directComparison?.label??"previous period"}`
-    : latestComplete&&previousComplete
-      ? `${latestComplete.label} vs ${previousComplete.label}`
-      : "No reliable comparison period";
-  const momentum=buildMomentum(momentumCurrent,momentumPrevious,momentumLabel);
-
-  const selectedFrom=periodTotals?.fromDate??data.periodLabel.split(" — ")[0]??"";
-  const selectedTo=periodTotals?.toDate??data.periodLabel.split(" — ")[1]??"";
-  const periodCommercialRecords=(data.commercialClients??[]).filter(client=>{
-    const date=client.clientSince?.slice(0,10);
-    return Boolean(date&&date>=selectedFrom&&date<=selectedTo);
-  });
-  const periodClientWonRecords=periodCommercialRecords.filter(client=>client.commercialStatus==="CLIENT_WON");
-  const selectedSourceEvidence=periodClientWonRecords.map(client=>{
-    const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
-    const manual=overrideSource(client);
-    const source=manual??row?.lead.source?.trim()??"";
-    const safe=Boolean(manual)||Boolean(row?.isAttributableClient);
-    return {client,source,safe,manual:Boolean(manual)};
-  }).filter(item=>item.safe&&item.source);
-  const sourceOutcomeMap=new Map<string,{source:string;clients:number;paid:number;invoiced:number;projectValue:number;spend:number|null;openValue:number}>();
-  for(const item of selectedSourceEvidence){
-    const source=decisionSourceName(item.source);
-    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,projectValue:0,spend:null,openValue:0};
-    current.clients+=1;
-    current.paid+=item.client.paidTotal;
-    current.invoiced+=item.client.invoicedTotal;
-    current.projectValue+=item.client.projectValueTotal||item.client.acceptedOfferTotal;
-    sourceOutcomeMap.set(source,current);
-  }
-  for(const row of sources){
-    const source=decisionSourceName(row.source);
-    const current=sourceOutcomeMap.get(source)??{source,clients:0,paid:0,invoiced:0,projectValue:0,spend:null,openValue:0};
-    if(row.spend!==null) current.spend=(current.spend??0)+row.spend;
-    current.openValue+=row.openValue;
-    sourceOutcomeMap.set(source,current);
-  }
-  const sourceOutcomes=[...sourceOutcomeMap.values()]
-    .filter(row=>row.clients>0||(row.spend??0)>0||row.openValue>0||row.projectValue>0)
-    .map(row=>({...row,verdict:sourceVerdict(row)}))
-    .sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.clients-a.clients||(b.spend??0)-(a.spend??0));
-  const unknownSelectedClients=periodClientWonRecords.filter(client=>{
-    const row=client.matchedLeadId?rowByLeadId.get(client.matchedLeadId):undefined;
-    return !overrideSource(client)&&!row?.isAttributableClient;
-  });
-  const unknownSelectedPaid=unknownSelectedClients.reduce((sum,client)=>sum+client.paidTotal,0);
-
-  const funnelNumbers=[
-    {label:"Unique leads",value:summary.uniquePeople},
-    {label:"Qualified",value:summary.qualified},
-    {label:"Visits",value:rows.filter(hasCompletedVisitEvidence).length},
-    {label:"Offers sent",value:summary.offersSent},
-    {label:"Signed now",value:summary.crmSigned},
-    {label:"ROBAWS confirmed",value:summary.commercialClients},
-  ];
-  const funnelLeaks=funnelNumbers.slice(0,-1).map((item,index)=>{
-    const next=funnelNumbers[index+1];
-    const loss=Math.max(0,item.value-next.value);
-    return {from:item.label,to:next.label,loss,rate:item.value?loss/item.value*100:0};
-  }).sort((a,b)=>b.rate-a.rate);
-  const biggestLeak=funnelLeaks[0]??null;
-  const staleOffers=openOffers.filter(item=>(item.daysWaiting??0)>7);
-  const staleValue=staleOffers.reduce((sum,item)=>sum+item.priceInclVat,0);
-  const noReturnSpend=sourceOutcomes.filter(item=>(item.spend??0)>0&&item.paid===0).reduce((sum,item)=>sum+Number(item.spend??0),0);
-
-  const stageDrilldowns:Record<string,()=>RecordDrilldown>={
-    "Unique leads":()=>({title:"Unique leads",subtitle:data.periodLabel,leads:rows.map(row=>row.lead)}),
-    "Qualified":()=>({title:"Qualified leads",subtitle:data.periodLabel,leads:rows.filter(row=>row.isQualified).map(row=>row.lead)}),
-    "Visits":()=>{const visitRows=rows.filter(hasCompletedVisitEvidence);const ids=new Set(visitRows.flatMap(row=>row.leadIds));return{title:"Visited leads",subtitle:data.periodLabel,leads:visitRows.map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>ids.has(item.leadId))}},
-    "Offers sent":()=>({title:"Offers sent",subtitle:data.periodLabel,leads:rows.filter(row=>row.offers.some(hasOfferSentEvidence)).map(row=>row.lead),offers:sentOffers}),
-    "Signed now":()=>({title:"Signed CRM leads",subtitle:data.periodLabel,leads:rows.filter(row=>row.isSigned).map(row=>row.lead)}),
-    "ROBAWS-confirmed":()=>({title:"ROBAWS-confirmed clients",subtitle:data.periodLabel,clients:cohortCommercialClients}),
-    "Cohort paid cash":()=>({title:"Clients behind cohort paid cash",subtitle:"Lifetime cash for clients acquired in "+data.periodLabel,clients:cohortCommercialClients}),
+  const openMonth=(selectedMonth:string)=>{
+    const projects=(data.allCommercialProjects??data.periodCommercialProjects??[]).filter(item=>item.date.slice(0,7)===selectedMonth);
+    const invoices=(data.allCommercialInvoices??data.periodCommercialInvoices??[]).filter(item=>item.date.slice(0,7)===selectedMonth);
+    setDrilldown({title:"Business records · "+monthLabel(selectedMonth),subtitle:"Calendar-period ROBAWS records",projects,invoices});
   };
-  const stages=[
-    {label:"Unique leads",value:formatNumber(summary.uniquePeople),note:formatNumber(data.metrics.leads)+" CRM rows · all sources"},
-    {label:"Qualified",value:formatNumber(summary.qualified),note:formatPercent(percentage(summary.qualified,summary.uniquePeople))+" of unique people"},
-    {label:"Visits",value:formatNumber(rows.filter(hasCompletedVisitEvidence).length),note:"Completed / post-visit evidence"},
-    {label:"Offers sent",value:formatNumber(summary.offersSent),note:formatCurrency(summary.sentQuotedValue,true)+" sent value"},
-    {label:"Signed now",value:formatNumber(summary.crmSigned),note:"Current Monday status of leads created in this period"},
-    {label:"ROBAWS-confirmed",value:formatNumber(summary.commercialClients),note:formatNumber(knownSourceClients.length)+" have a safe acquisition source"},
-    {label:"Cohort paid cash",value:formatCurrency(cohortPaid,true),note:"Lifetime paid cash on ROBAWS-confirmed leads from this cohort"},
-  ];
 
-  const actionItems=buildActionItems(data,rows,openOffers,paidSources);
-  const budgetCards=paidSources.map(source=>budgetConclusion(source));
+  const openMilestone=(key:string)=>{
+    if(key==="leads") return setDrilldown({title:"Unique acquired leads",subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead)});
+    if(key==="qualified") return setDrilldown({title:"Qualified acquired leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isQualified).map(row=>row.lead)});
+    if(key==="visits") return setDrilldown({title:"Completed visit evidence",subtitle:scopeLabel,leads:analytics.rows.filter(hasCompletedVisitEvidence).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>selectedLeadIds.has(item.leadId)&&Boolean(item.completedAt))});
+    if(key==="offers") return setDrilldown({title:"Offers sent for acquired leads",subtitle:scopeLabel,offers:selectedSentOffers});
+    if(key==="signed") return setDrilldown({title:"Signed CRM leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isSigned).map(row=>row.lead)});
+    return setDrilldown({title:"Confirmed commercial customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients});
+  };
 
-  return <div className="space-y-6">
-    <DecisionHero momentum={momentum} periodLabel={periodTotals?.label??data.periodLabel}/>
-
-    <div className="cohort-scope-note">
-      <Clock3 size={17}/>
-      <div><strong>How to read this period</strong><p>Leads are selected by their creation date ({selectedFrom} — {selectedTo}). “Signed now” and “ROBAWS-confirmed” show the current outcome of that cohort. Calendar-month sales below use ROBAWS project won dates instead of assuming a Monday status change is the contract date.</p></div>
-    </div>
-
-    {periodTotals&&<div className="decision-money-grid">
-      <DecisionMoneyCard icon="spend" label="Tracked marketing spend" value={trackedMarketingSpend} comparison={trackedMarketingSpend===periodTotals.spend&&directComparisonHasData?directComparison?.spend:null} note="All known acquisition spend: synced media + manual source costs + recurring offline advertising"/>
-      <DecisionMoneyCard icon="invoice" label="Won project value" value={periodTotals.wonProjectValue} comparison={directComparisonHasData?directComparison?.wonProjectValue:null} note={periodTotals.wonProjects+" ROBAWS project(s) won inside the selected period"} onClick={()=>setDrilldown({title:"Won projects",subtitle:data.periodLabel,projects:periodProjects})}/>
-      <DecisionMoneyCard icon="invoice" label="Invoiced this period" value={periodTotals.invoiced} comparison={directComparisonHasData?directComparison?.invoiced:null} note="ROBAWS invoices dated inside the selected period" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
-      <DecisionMoneyCard icon="paid" label="Paid cash this period" value={periodTotals.paid} comparison={directComparisonHasData?directComparison?.paid:null} note="Cash recorded against ROBAWS invoices in this period" onClick={()=>setDrilldown({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
-      <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-trackedMarketingSpend} comparison={trackedMarketingSpend===periodTotals.spend&&directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus all known acquisition spend — not company profit" accent onClick={()=>setDrilldown({title:"Cash records behind this period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
-    </div>}
-
-    <button type="button"
-      className={`robaws-coverage-card ${missingRobawsInvoices>0?"is-incomplete":"is-complete"}`}
-      onClick={()=>missingRobawsClients.length&&setDrilldown({title:"ROBAWS records missing from detailed invoice table",subtitle:`${missingRobawsInvoices} invoice row(s) still missing from detailed reporting`,initialKind:"clients",clients:missingRobawsClients})}>
-      <div className="robaws-coverage-head">
+  return <div className="overview-v2 space-y-6">
+    <section className="overview-executive">
+      <div className="overview-executive-head">
         <div>
-          <p className="eyebrow">ROBAWS FINANCIAL COVERAGE</p>
-          <h3>{missingRobawsInvoices>0?"Missing ROBAWS data is affecting the boards":"ROBAWS detailed invoice coverage is complete"}</h3>
-          <p>{missingRobawsInvoices>0
-            ?"These totals exist in ROBAWS client aggregates but are not yet represented by detailed invoice rows. Calendar-period invoice and paid figures can therefore be understated."
-            :"Every ROBAWS invoice counted at client level is also present in the detailed invoice table."}</p>
+          <p className="eyebrow">Management overview</p>
+          <h1>Business performance and acquisition economics</h1>
+          <p>Calendar-period company activity and acquisition-cohort performance are intentionally separated.</p>
         </div>
-        <StatusPill tone={missingRobawsInvoices>0?"bad":"good"}>{formatPercent(robawsDetailCoverage)} loaded</StatusPill>
-      </div>
-      <div className="robaws-coverage-metrics">
-        <div><span>Invoices loaded</span><strong>{formatNumber(robawsFinancialCoverage.loadedInvoices)} / {formatNumber(robawsFinancialCoverage.expectedInvoices)}</strong></div>
-        <div><span>Missing invoice rows</span><strong>{formatNumber(missingRobawsInvoices)}</strong></div>
-        <div><span>Missing invoiced value</span><strong>{formatCurrency(missingRobawsInvoiced)}</strong></div>
-        <div><span>Missing paid value</span><strong>{formatCurrency(missingRobawsPaid)}</strong></div>
-        <div><span>Clients affected</span><strong>{formatNumber(missingRobawsClients.length)}</strong></div>
-      </div>
-      {missingRobawsInvoices>0&&<div className="robaws-coverage-action"><AlertTriangle size={15}/><span>Click to see the affected ROBAWS clients.</span></div>}
-    </button>
-
-    <div className="decision-grid">
-      <Card className="p-5">
-        <SectionHeader title="Are we moving in the right direction?" description={momentum.context}/>
-        <MoneyTrendChart data={(decision?.monthly??[]).map(item=>({label:item.label,paid:item.paid,spend:item.spend,complete:item.complete}))}/>
-        <div className="decision-chart-legend"><span><i className="legend-paid"/> Paid cash</span><span><i className="legend-spend"/> Synced platform spend</span></div>
-        {trackedMarketingSpend!==periodTotals?.spend&&<p className="mt-2 text-xs leading-5 text-[var(--muted)]">The total spend cards and CAC/ROAS include manual source costs and recurring offline advertising. The monthly trend keeps only spend that has an exact month/date, so YTD manual totals are not spread across months by guesswork.</p>}
-      </Card>
-
-      <Card className="p-5">
-        <SectionHeader title="Where the money comes from" description="Acquisition cohort for leads created in the selected period. Client cash is lifetime cash from that cohort; spend is tracked acquisition-period spend."/>
-        <div className="source-decision-list">
-          {sourceOutcomes.map(row=><SourceDecisionRow key={row.source} {...row} onClick={()=>{const key=decisionSourceName(row.source);const sourceClients=selectedSourceEvidence.filter(item=>decisionSourceName(item.source)===key).map(item=>item.client);const leadIds=new Set(sourceClients.flatMap(client=>client.matchedLeadId?[client.matchedLeadId]:[]));const sourceRows=rows.filter(item=>decisionSourceName(item.lead.source)===key||item.leadIds.some(id=>leadIds.has(id)));setDrilldown({title:key+" details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:[...sourceClients].sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:offers.filter(item=>decisionSourceName(item.source)===key),projects:periodProjects.filter(item=>decisionSourceName(item.source)===key),invoices:periodInvoices.filter(item=>decisionSourceName(item.source)===key)})}}/>)}
-          {!sourceOutcomes.length&&<p className="decision-empty">No safely attributed source outcome is available for this period yet.</p>}
+        <div className="overview-mode-toggle" role="tablist" aria-label="Overview focus">
+          <button type="button" role="tab" aria-selected={mode==="period"} onClick={()=>setMode("period")}>Period</button>
+          <button type="button" role="tab" aria-selected={mode==="cohort"} onClick={()=>setMode("cohort")}>Cohort</button>
         </div>
-        {unknownSelectedClients.length>0&&<div className="unknown-attribution-note"><AlertTriangle size={16}/><div><strong>{unknownSelectedClients.length} client(s) still have no safe source</strong><p>{formatCurrency(unknownSelectedPaid)} paid cash from those clients cannot yet be assigned to a marketing source.</p></div></div>}
-      </Card>
+      </div>
+
+      {mode==="period"
+        ?<div className="executive-summary-grid">
+          <ExecutiveMetric label="Won project value" value={formatCurrency(analytics.business.wonValueInclVat)} note="ROBAWS projects won in selected calendar period · incl. VAT" onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>
+          <ExecutiveMetric label="Invoiced" value={formatCurrency(analytics.business.invoicedInclVat)} note="Invoices dated in selected calendar period · net of credits · incl. VAT" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
+          <ExecutiveMetric label="Paid value on period invoices" value={formatCurrency(analytics.business.paidValueOnPeriodInvoices)} note="Current paid_total on invoices dated in this period; not a payment-date metric" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:analytics.business.invoices.filter(item=>item.paidTotal>0)})}/>
+        </div>
+        :<div className="executive-summary-grid executive-summary-cohort">
+          <ExecutiveMetric label="Covered acquisition spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Cost missing: "+analytics.economics.missingCostSources.join(", "):String(analytics.economics.coveredSources.length)+" paid source(s) with cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
+          <ExecutiveMetric label="Unique leads" value={formatNumber(analytics.cohort.unique)} note={scopeLabel} onClick={()=>openMilestone("leads")}/>
+          <ExecutiveMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} note="Used for cohort CAC" onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients})}/>
+          <ExecutiveMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note={analytics.economics.cac===null?"Cost or customer evidence missing":"Covered spend / attributable customers"}/>
+          <ExecutiveMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value currently attributable / covered acquisition spend"/>
+        </div>}
+    </section>
+
+    <div className="overview-insight">
+      <BarChart3 size={17}/>
+      <div><strong>Current management insight</strong><p>{insight}</p></div>
     </div>
 
-    <Card className="p-5">
-      <SectionHeader title="Where are we losing momentum?" description="This separates funnel leakage, stale commercial value and paid spend with no collected return yet."/>
-      <div className="loss-signal-grid">
-        <LossSignal icon="funnel" label="Biggest funnel drop" value={biggestLeak?formatPercent(biggestLeak.rate):"—"} detail={biggestLeak?`${biggestLeak.loss} people drop between ${biggestLeak.from} and ${biggestLeak.to}`:"Not enough funnel evidence"}/>
-        <LossSignal icon="pipeline" label="Open value older than 7 days" value={formatCurrency(staleValue,true)} detail={staleOffers.length+` offer(s) need follow-up`}/>
-        <LossSignal icon="spend" label="Spend with no paid return yet" value={formatCurrency(noReturnSpend,true)} detail="Not automatically a loss — pipeline may still convert"/>
+    <Card className="overview-scope-card">
+      <div className="overview-scope-head">
+        <div><Filter size={16}/><div><strong>Acquisition scope</strong><p>These filters change cohort, economics, source and payback views. Company-wide calendar-period business activity stays unfiltered.</p></div></div>
+        <span>{scopeLabel}</span>
+      </div>
+      <div className="overview-scope-controls">
+        <select value={sourceFilter} onChange={e=>{setSourceFilter(e.target.value);setCampaignFilter("all")}}>
+          <option value="all">All sources</option>{sourceOptions.map(value=><option key={value} value={value}>{value}</option>)}
+        </select>
+        <select value={campaignFilter} onChange={e=>setCampaignFilter(e.target.value)}>
+          <option value="all">All campaigns</option>{campaignOptions.map(value=><option key={value} value={value}>{value}</option>)}
+        </select>
+        {(sourceFilter!=="all"||campaignFilter!=="all")&&<button type="button" className="button-secondary" onClick={()=>{setSourceFilter("all");setCampaignFilter("all")}}>Clear filters</button>}
       </div>
     </Card>
 
-    <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5">
-        <SectionHeader title="Acquisition funnel — all CRM sources" description="Leads are grouped by creation date in the selected period. Later stages show their current outcome, not the date each stage happened."/>
-      </div>
-      <div className="story-chain">
-        {stages.map((stage,index)=><button type="button" className="story-stage drillable text-left" key={stage.label} onClick={()=>setDrilldown(stageDrilldowns[stage.label]())}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index<stages.length-1&&<ArrowRight size={14}/>}</div><strong className="drillable-value">{stage.value}</strong><small>{stage.note}</small></button>)}
-      </div>
-    </Card>
+    <section>
+      <SectionHeader title="Business performance — calendar period" description="What happened in the company during the selected dates. This uses ROBAWS commercial dates and is not filtered by marketing attribution."/>
+      <Card className="business-flow-card">
+        <BusinessMoneyFlow analytics={analytics} onProjects={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})} onInvoices={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
+      </Card>
+    </section>
 
-    <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5">
-        <SectionHeader title="Can I trust these numbers?" description="Calendar-period business activity and selected lead-cohort attribution are shown separately. Source attribution does not imply an exact campaign."/>
-      </div>
-      <div className="trust-panel-grid">
-        <div className="trust-panel">
-          <div className="trust-panel-head"><div><p className="eyebrow">CALENDAR PERIOD · ROBAWS</p><h3>What happened during this period</h3></div><StatusPill tone="good">Source of truth</StatusPill></div>
-          <div className="truth-metric-grid">
-            <TruthMetric label="Projects won" value={formatNumber(periodTotals?.wonProjects??0)}/>
-            <TruthMetric label="Invoiced in period" value={formatCurrency(periodTotals?.invoiced??0)}/>
-            <TruthMetric label="Paid in period" value={formatCurrency(periodTotals?.paid??0)}/>
-          </div>
-          <p className="trust-panel-copy">{formatCurrency(periodTotals?.wonProjectValue??0)} of ROBAWS project value was won in this period. {formatNumber(periodCommercialRecords.length)} client record(s) have client_since in the period; {formatNumber(periodClientWonRecords.length)} of those are currently CLIENT_WON.</p>
-        </div>
-        <div className="trust-panel">
-          <div className="trust-panel-head"><div><p className="eyebrow">ACQUISITION COHORT</p><h3>Current clients from leads created in this period</h3></div><StatusPill tone={unknownSourceClients===0?"good":"warn"}>{formatPercent(sourceCoverage)} source covered</StatusPill></div>
-          <div className="truth-metric-grid">
-            <TruthMetric label="Known source" value={formatNumber(knownSourceClients.length)}/>
-            <TruthMetric label="Known-source paid" value={formatCurrency(knownSourcePaid)}/>
-            <TruthMetric label="Unknown source" value={formatNumber(unknownSourceClients)}/>
-          </div>
-          <p className="trust-panel-copy">{formatNumber(cohortCommercialClients.length)} leads from this acquisition cohort are currently ROBAWS-confirmed. Paid amounts are lifetime client cash, not cash collected only in the selected month.</p>
-        </div>
-        <div className="trust-panel">
-          <div className="trust-panel-head"><div><p className="eyebrow">PAID MARKETING EVIDENCE</p><h3>Only paid acquisition sources</h3></div><StatusPill tone="warn">Partial attribution</StatusPill></div>
-          <div className="truth-metric-grid">
-            <TruthMetric label="Paid-source clients" value={formatNumber(paidMarketingClients.length)}/>
-            <TruthMetric label="Paid-source paid" value={formatCurrency(paidMarketingPaid)}/>
-            <TruthMetric label="Known spend" value={formatCurrency(coveredSpend)}/>
-          </div>
-          <p className="trust-panel-copy">Meta/Facebook, Google Ads, LeadAngel, AgenciYou and Solary are treated as paid acquisition. Missing source cost remains missing; it is never converted to €0.</p>
-        </div>
-      </div>
-    </Card>
-
-    <Card className="p-5">
-      <SectionHeader title="Economics with complete cost coverage" description="Cost KPIs include only sources whose spend is actually available; missing spend never becomes €0."/>
-      <div className="economics-grid">
-        <Economy label="Covered spend" value={formatCurrency(coveredSpend)} note={knownSpendRows.map(row=>row.source).join(", ")||"No paid source fully covered"}/>
-        <Economy label="CPL" value={formatCurrency(safeDivide(coveredSpend,coveredLeads))} note={coveredLeads+" covered leads"}/>
-        <Economy label="Cost / qualified" value={formatCurrency(safeDivide(coveredSpend,coveredQualified))} note={coveredQualified+" qualified"}/>
-        <Economy label="Cost / visit" value={formatCurrency(safeDivide(coveredSpend,coveredVisits))} note={coveredVisits+" visits"}/>
-        <Economy label="Cost / offer" value={formatCurrency(safeDivide(coveredSpend,coveredOffers))} note={coveredOffers+" sent offers"}/>
-        <Economy label="CAC" value={formatCurrency(safeDivide(coveredSpend,coveredClients))} note={coveredClients+" attributable clients"}/>
-        <Economy label="Paid ROAS" value={coveredSpend?formatNumber(coveredPaid/coveredSpend)+"×":"—"} note={formatCurrency(coveredPaid)+" paid cash"}/>
-      </div>
-    </Card>
-
-    <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
+    <section className="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
       <Card className="p-5">
-        <SectionHeader title="What requires action?" description="The dashboard states the issue; management should not have to calculate it manually."/>
-        <div className="space-y-3">
-          {actionItems.length?actionItems.map(item=><ActionItem key={item.title} {...item} href={scopedHref(item.href)}/>):<div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 size={18}/><strong>No critical action rule is triggered by the current evidence.</strong></div>}
+        <SectionHeader title="Acquisition cohort — conversion milestones" description="What eventually happened to leads acquired in the selected period. Bars are independently evidenced and scaled against unique leads."/>
+        <div className="milestone-list">
+          {analytics.cohort.milestones.map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
         </div>
+        {!analytics.cohort.sequentialSupported&&<div className="nonsequential-note"><AlertTriangle size={15}/><div><strong>Non-sequential CRM evidence</strong><p>Some later stages exist without every earlier stage being recorded. Stage-to-stage funnel loss is therefore not shown as if the CRM were perfectly sequential.</p></div></div>}
       </Card>
 
       <Card className="p-5">
-        <SectionHeader title="CRM-linked revenue stages" description="These stages use CRM-linked commercial evidence only. They are not the total business revenue and not automatically paid-marketing attribution."/>
-        <div className="space-y-1">
-          <MoneyRow label="Total offered" value={sentOffers.reduce((sum,item)=>sum+item.priceInclVat,0)}/>
-          <MoneyRow label="Open pipeline" value={openValue}/>
-          <MoneyRow label="Accepted / contracted" value={acceptedValue}/>
-          <MoneyRow label="Project value" value={projectValue}/>
-          <MoneyRow label="Linked invoice rows" value={invoiced}/>
-          <MoneyRow label="CRM-linked paid" value={paid} accent/>
+        <SectionHeader title="Acquisition value flow" description="Marketing spend → acquired people → customers → customer value. This is cohort performance, not calendar-period company revenue."/>
+        <div className="acquisition-flow">
+          <FlowStep label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} tone="yellow"/>
+          <ArrowRight size={16}/>
+          <FlowStep label="Leads" value={formatNumber(analytics.cohort.unique)}/>
+          <ArrowRight size={16}/>
+          <FlowStep label="Customers" value={formatNumber(analytics.economics.attributableCustomers)}/>
+          <ArrowRight size={16}/>
+          <FlowStep label="Project value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note="excl. VAT"/>
+          <ArrowRight size={16}/>
+          <FlowStep label="Lifetime paid value" value={formatCurrency(analytics.economics.cohortPaidValue)} note="invoice paid_total"/>
         </div>
-        <Link href={scopedHref("/revenue")} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open revenue evidence <ArrowRight size={14}/></Link>
+        {analytics.economics.missingCostSources.length>0&&<div className="cost-missing-note"><AlertTriangle size={15}/><span>Cost missing for {analytics.economics.missingCostSources.join(", ")}. Cost-based metrics exclude those sources rather than treating them as €0.</span></div>}
       </Card>
-    </div>
+    </section>
 
-    <Card className="p-5">
-      <SectionHeader title="Budget conclusions" description="These rules use client and cash evidence, not lead volume or CTR alone."/>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {budgetCards.map(card=><BudgetCard key={card.source} {...card}/>)}
+    <section>
+      <SectionHeader title="Acquisition economics" description="Cost metrics use only paid sources with actual cost coverage. Missing cost stays missing."/>
+      <div className="economics-summary-grid">
+        <EconomicsMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={String(analytics.economics.coveredSources.length)+" covered source(s)"}/>
+        <EconomicsMetric label="CPL" value={nullableCurrency(analytics.economics.cpl)} note={String(analytics.economics.coveredLeads)+" covered leads"}/>
+        <EconomicsMetric label="Cost / qualified" value={nullableCurrency(analytics.economics.costQualified)} note={String(analytics.economics.coveredQualified)+" covered qualified"}/>
+        <EconomicsMetric label="Cost / visit" value={nullableCurrency(analytics.economics.costVisit)} note={String(analytics.economics.coveredVisits)+" covered visits"}/>
+        <EconomicsMetric label="Cost / offer" value={nullableCurrency(analytics.economics.costOffer)} note={String(analytics.economics.coveredOffers)+" covered offers"}/>
+        <EconomicsMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note={String(analytics.economics.attributableCustomers)+" attributable customers"}/>
+        <EconomicsMetric label="Cohort value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note="Project value · excl. VAT where available"/>
+        <EconomicsMetric label="Cohort paid value" value={formatCurrency(analytics.economics.cohortPaidValue)} note="Lifetime invoice paid_total · incl. VAT"/>
+        <EconomicsMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Paid value / covered acquisition spend"/>
       </div>
-      <Link href={scopedHref("/campaigns")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open full source & campaign economics <ArrowRight size={14}/></Link>
-    </Card>
+      <Card className="mt-4 p-5">
+        <SectionHeader title="Cost to reach each outcome" description="Bar length shows acquisition cost per increasingly valuable outcome. This is not a funnel."/>
+        <CostOutcomeChart data={[
+          {name:"Lead",value:analytics.economics.cpl},
+          {name:"Qualified lead",value:analytics.economics.costQualified},
+          {name:"Visit",value:analytics.economics.costVisit},
+          {name:"Offer",value:analytics.economics.costOffer},
+          {name:"Customer",value:analytics.economics.cac},
+        ]}/>
+      </Card>
+    </section>
 
-    <SystemPulse data={data}/>
+    <section>
+      <SectionHeader title="Business activity over time" description="Grouped bars show calendar-month won, invoiced and paid value on invoices. The separate line below shows only marketing spend with an exact date."/>
+      <Card className="p-5">
+        <BusinessActivityChart data={monthly} onMonthClick={openMonth}/>
+        <p className="chart-footnote">Click a month to open its ROBAWS project and invoice records. Manual YTD source costs are not spread across months without evidence.</p>
+      </Card>
+    </section>
 
-    <Card className="p-5">
-      <SectionHeader title="Data trust" description="Performance conclusions are separated from data-quality blockers."/>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <Trust label="Google Ads sync" ok={Boolean(googleAdsIntegration?.lastSuccess)} detail={googleAdsIntegration?.lastSuccess?"Live data has synced":"OAuth is connected, but no Google Ads customer has completed a sync"}/>
-        <Trust label="Google Business sync" ok={Boolean(googleBusinessIntegration?.lastSuccess)} detail={googleBusinessIntegration?.lastSuccess?"Live data has synced":"Connected account, but no Business Profile location has completed a sync"}/>
-        <Trust label="Meta Lead Ads attribution" ok={metaLeadAccessReady} detail={metaLeadAccessReady?"Lead retrieval permission available":"Missing leads_retrieval permission — direct Meta lead matching is incomplete"}/>
-        <Trust label="Website lead capture" ok={websiteFormsIntegration?.status==="Connected"&&Boolean(websiteFormsIntegration.lastSuccess)} detail={websiteFormsIntegration?.lastSuccess?"Website form source is syncing":"Website forms are not connected; GA4 currently shows visits but no tracked form submissions"}/>
-        <Trust label="ROBAWS client coverage" ok={sourceResolvedWonRecords.length===robawsWonRecords.length} detail={robawsMatchedWonRecords.length+" / "+robawsWonRecords.length+" won clients are CRM-matched; "+manualSourceUnmatchedWonRecords.length+" unmatched client(s) have a manual source; "+(robawsWonRecords.length-sourceResolvedWonRecords.length)+" remain neither matched nor manually sourced"}/>
-        <Trust label="ROBAWS invoice-detail coverage" ok={missingRobawsInvoices===0} detail={robawsFinancialCoverage.loadedInvoices+" / "+robawsFinancialCoverage.expectedInvoices+" invoice rows loaded; "+missingRobawsInvoices+" missing · "+formatCurrency(missingRobawsPaid)+" paid value not represented in detailed invoice rows"}/>
-        <Trust label="Lead-date quality" ok={!suspiciousLeadDateBatch} detail={suspiciousLeadDateBatch?peakLeadDate[1]+" / "+data.leads.length+" selected leads share "+peakLeadDate[0]+" — verify bulk-import dates before treating this as a true acquisition cohort":"No extreme single-day concentration in the selected lead dates"}/>
-        <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
-        <Trust label="Source coverage" ok={unknownSourceClients===0} detail={knownSourceClients.length+" / "+cohortCommercialClients.length+" commercial clients have a safe acquisition source"}/>
-        <Trust label="Paid-cash source coverage" ok={paidCashSourceCoverage>=90} detail={formatPercent(paidCashSourceCoverage)+" of ROBAWS paid cash has a known acquisition source"}/>
-        <Trust label="Potential duplicates" ok={data.dataHealth.duplicates===0} detail={data.dataHealth.duplicates+" flagged"}/>
-        <Trust label="Signed reconciliation" ok={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length===0} detail={rows.filter(row=>row.isSigned&&!row.isCommercialClient).length+" signed not ROBAWS-confirmed"}/>
+    <section>
+      <div className="section-row">
+        <SectionHeader title="Source performance" description="Visual comparison first. Customer value is acquisition-cohort value; cost metrics remain blank when spend is missing."/>
+        <div className="source-sort-controls">
+          <label>Sort by
+            <select value={sourceSort} onChange={e=>setSourceSort(e.target.value as SourceSort)}>
+              <option value="spend">Spend</option><option value="customers">Customers</option><option value="cac">CAC</option><option value="paid">Paid value</option><option value="roas">ROAS</option>
+            </select>
+          </label>
+        </div>
       </div>
-      <Link href={scopedHref("/data-health")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
-    </Card>
+      <Card className="p-5">
+        <SourcePerformanceChart data={sourceChartRows} onSourceClick={campaignFilter==="all"?openSource:()=>setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}/>
+        <div className="mt-4 flex justify-between gap-3">
+          <p className="chart-footnote">Yellow = covered spend. Black = lifetime paid value attributable to the acquisition source.</p>
+          <button type="button" className="button-secondary" onClick={()=>setShowSourceTable(value=>!value)}>{showSourceTable?"Hide detailed table":"Show detailed table"}</button>
+        </div>
+        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Customers</th><th>Project value excl. VAT</th><th>Paid value</th><th>CAC</th><th>Cohort cash ROAS</th></tr></thead><tbody>
+          {sortedSources.map(row=><tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributableClients}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>)}
+        </tbody></table></div>}
+      </Card>
+    </section>
+
+    <section>
+      <SectionHeader title="Cohort payback" description="Customers are grouped by acquisition month so later project, invoice and paid value stays attached to the month they were acquired."/>
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_.92fr]">
+        <Card className="p-5">
+          <CohortPaybackChart data={analytics.payback.series} spendReference={analytics.payback.acquisitionSpendReference}/>
+          <div className="payment-timing-note"><AlertTriangle size={15}/><p>ROBAWS currently supplies invoice_date and paid_total, but no payment_date/payment_amount records. The line therefore shows cumulative paid value attached to invoices by months since acquisition, using invoice dates as the timing anchor. It is not labelled as actual cash collection timing.</p></div>
+        </Card>
+        <Card className="p-5">
+          <div className="table-scroll"><table><thead><tr><th>Acquisition month</th><th>Acquisition spend</th><th>Customers</th><th>Project value</th><th>Invoiced to date</th><th>Paid value to date</th></tr></thead><tbody>
+            {analytics.payback.cohorts.map(item=><tr key={item.month}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>{
+              const rows=analytics.rows.filter(row=>row.lead.date.startsWith(item.month));
+              setDrilldown({title:"Acquisition cohort · "+monthLabel(item.month),subtitle:scopeLabel,leads:rows.map(row=>row.lead),clients:clientsForRows(data,rows)});
+            }}>{monthLabel(item.month)}</button></td><td>{item.acquisitionSpend===null?"Not allocated":formatCurrency(item.acquisitionSpend)}{item.spendState==="synced-only"&&<small className="block text-[var(--muted)]">synced dated spend only</small>}</td><td>{item.customers}</td><td>{formatCurrency(item.projectValue)}</td><td>{formatCurrency(item.invoiced)}</td><td>{formatCurrency(item.paid)}</td></tr>)}
+          </tbody></table></div>
+        </Card>
+      </div>
+    </section>
+
+    <section>
+      <SectionHeader title="Action required" description="Only issues supported by current records are shown. Each item opens the evidence or the relevant control page."/>
+      <div className="action-grid">
+        {dueOffers.length>0&&<ActionButton title="Offers need follow-up" value={formatNumber(dueOffers.length)} detail={formatCurrency(dueOffers.reduce((sum,item)=>sum+item.priceInclVat,0))+" open value has a follow-up date that is due."} onClick={()=>setDrilldown({title:"Offers with follow-up due",subtitle:scopeLabel,offers:dueOffers})}/>}
+        {analytics.business.notYetInvoicedPeriodGap>0&&<ActionButton title="Won value exceeds period invoicing" value={formatCurrency(analytics.business.notYetInvoicedPeriodGap)} detail="Aggregate calendar-period gap. It is not labelled lost because invoice timing can lag project wins." onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>}
+        {analytics.business.outstanding>0&&<ActionButton title="Outstanding on period invoices" value={formatCurrency(analytics.business.outstanding)} detail="Current unpaid balance on invoices dated in the selected period." onClick={()=>setDrilldown({title:"Outstanding period invoices",subtitle:data.periodLabel,invoices:outstandingInvoices})}/>}
+        {analytics.economics.missingCostSources.length>0&&<ActionButton title="Source cost missing" value={formatNumber(analytics.economics.missingCostSources.length)} detail="CAC and cohort cash ROAS cannot be calculated for these paid sources." onClick={()=>setDrilldown({title:"Sources with missing cost",subtitle:scopeLabel,initialKind:"spend",spendRows:spendRows.filter(item=>item.state==="missing")})}/>}
+        {unattributedWon.length>0&&<ActionButton title="Commercial customers without safe source" value={formatNumber(unattributedWon.length)} detail={formatCurrency(unattributedPaid)+" paid value cannot be safely assigned to acquisition."} onClick={()=>setDrilldown({title:"Customers without acquisition source",subtitle:"ROBAWS commercial customers",initialKind:"clients",clients:unattributedWon})}/>}
+        {(analytics.coverage.missingInvoices>0||analytics.coverage.missingProjects>0)&&<ActionButton title="ROBAWS detail coverage incomplete" value={String(analytics.coverage.loadedInvoices)+"/"+String(analytics.coverage.expectedInvoices)+" invoices"} detail={String(analytics.coverage.missingInvoices)+" invoice row(s) and "+String(analytics.coverage.missingProjects)+" project row(s) are not represented in the detailed snapshot."} onClick={()=>setDrilldown({title:"Clients affected by ROBAWS detail gaps",subtitle:"Reconciliation coverage",initialKind:"clients",clients:affectedCoverageClients})}/>}
+        {data.dataHealth.duplicates>0&&<ActionLink title="Potential duplicate leads" value={formatNumber(data.dataHealth.duplicates)} detail="Review duplicate candidates before trusting unique-lead conversion." href={scopedHref("/data-health")}/>}
+        {integrationIssues.length>0&&<ActionLink title="Integration sync needs review" value={formatNumber(integrationIssues.length)} detail={integrationIssues.map(item=>item.name).join(", ")} href={scopedHref("/data-health")}/>}
+        {dueOffers.length===0&&analytics.business.notYetInvoicedPeriodGap===0&&analytics.business.outstanding===0&&analytics.economics.missingCostSources.length===0&&unattributedWon.length===0&&analytics.coverage.missingInvoices===0&&analytics.coverage.missingProjects===0&&data.dataHealth.duplicates===0&&integrationIssues.length===0&&
+          <div className="action-clear"><CheckCircle2 size={17}/><strong>No supported action alert is currently triggered.</strong></div>}
+      </div>
+    </section>
+
+    <section>
+      <SectionHeader title="Can I trust these numbers?" description="Marketing, CRM, ROBAWS and attribution are evaluated separately. Every warning states which metric it affects."/>
+      <div className="trust-v2-grid">
+        <TrustPanel title="Marketing data" icon={<CircleDollarSign size={16}/>} items={[
+          trustFromCoverage("Spend coverage",analytics.attribution.spendCoverage,String(analytics.attribution.paidSourcesWithCost)+" / "+String(analytics.attribution.paidSources)+" paid source(s) have cost. Missing cost blocks source CAC and cohort cash ROAS."),
+          trustIntegration("Google Ads",data.integrations.find(item=>item.provider==="google_ads")),
+          trustIntegration("Meta",data.integrations.find(item=>item.provider==="meta")),
+        ]}/>
+        <TrustPanel title="CRM data" icon={<UsersRound size={16}/>} items={[
+          trustCount("Missing lead source",data.dataHealth.missingSource,"Affects source attribution and source conversion."),
+          trustCount("Missing campaign",data.dataHealth.missingCampaign,"Affects campaign-level economics."),
+          trustCount("Potential duplicates",data.dataHealth.duplicates,"Affects unique leads and conversion rates."),
+          analytics.cohort.sequentialSupported
+            ?{label:"Stage evidence",state:"Complete" as const,detail:"Current scoped records support sequential stage relationships."}
+            :{label:"Stage evidence",state:"Needs review" as const,detail:"Non-sequential CRM evidence: later stages exist without every earlier stage recorded."},
+        ]}/>
+        <TrustPanel title="Commercial / ROBAWS" icon={<Database size={16}/>} items={[
+          trustFromCoverage("Invoice detail coverage",analytics.coverage.invoiceCoverage,String(analytics.coverage.loadedInvoices)+" / "+String(analytics.coverage.expectedInvoices)+" invoice rows loaded. Missing detail affects invoice drilldowns and reconciliation."),
+          trustFromCoverage("Project detail coverage",analytics.coverage.projectCoverage,String(analytics.coverage.loadedProjects)+" / "+String(analytics.coverage.expectedProjects)+" project rows loaded. Missing detail affects won-project drilldowns and monthly won value."),
+          {label:"Payment timing",state:"Partial" as const,detail:"paid_total exists, but payment_date/payment_amount do not. Paid values cannot be labelled cash collected by date."},
+        ]}/>
+        <TrustPanel title="Attribution" icon={<ShieldCheck size={16}/>} items={[
+          trustFromCoverage("Customer source coverage",analytics.attribution.sourceCoverage,String(analytics.attribution.sourceResolved)+" / "+String(analytics.attribution.commercialCustomers)+" commercial customer(s) have a safe source."),
+          trustFromCoverage("Paid-value attribution",analytics.attribution.paidValueCoverage,formatCurrency(analytics.attribution.attributedPaid)+" / "+formatCurrency(analytics.attribution.paidTotal)+" paid value is source-attributed."),
+          reconciliationTrust(analytics.reconciliation),
+        ]}/>
+      </div>
+      <div className="vat-note"><strong>VAT basis:</strong> calendar invoice/cash reporting uses incl. VAT; acquisition project value uses excl. VAT where ROBAWS provides it; marketing spend remains source-reported because the current spend records do not consistently carry VAT metadata.</div>
+    </section>
+
     {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 
-type MomentumMetric = { label?:string; spend:number; invoiced:number; paid:number; leads:number } | null | undefined;
-
-function buildMomentum(current:MomentumMetric,previous:MomentumMetric,context:string){
-  if(!current||!previous)return{tone:"neutral" as const,title:"Not enough history yet",summary:"The dashboard can show the current period, but there is not enough comparable history to call a trend.",context};
-  const paidChange=relativeChange(current.paid,previous.paid);
-  const leadChange=relativeChange(current.leads,previous.leads);
-  const spendChange=relativeChange(current.spend,previous.spend);
-  if(previous.paid===0&&current.paid>0){
-    return{tone:"good" as const,title:"Business momentum is improving",summary:`Paid cash moved from €0 to ${formatCurrency(current.paid,true)}. Tracked spend is ${formatCurrency(current.spend,true)} for the comparison period.`,context};
-  }
-  if(paidChange!==null&&paidChange>=10&&leadChange!==null&&leadChange>=-10){
-    return{tone:"good" as const,title:"Growth signal is positive",summary:`Paid cash is up ${formatPercent(paidChange)} while leads are ${changeWords(leadChange)}. Tracked spend is ${changeWords(spendChange)}.`,context};
-  }
-  if(paidChange!==null&&paidChange>=10){
-    return{tone:"warn" as const,title:"Cash is up, but demand needs watching",summary:`Paid cash is up ${formatPercent(paidChange)}, but leads are ${changeWords(leadChange)}. Check whether growth is coming from older pipeline rather than new demand.`,context};
-  }
-  if(paidChange!==null&&paidChange<=-10&&leadChange!==null&&leadChange>10){
-    return{tone:"warn" as const,title:"Demand is up, cash is down",summary:`Leads are up ${formatPercent(leadChange)}, but paid cash is down ${formatPercent(Math.abs(paidChange))}. The issue is likely later in the funnel or invoice timing.`,context};
-  }
-  if(paidChange!==null&&paidChange<=-10){
-    return{tone:"bad" as const,title:"Business momentum is down",summary:`Paid cash is down ${formatPercent(Math.abs(paidChange))}. Leads are ${changeWords(leadChange)} and tracked spend is ${changeWords(spendChange)}.`,context};
-  }
-  return{tone:"neutral" as const,title:"Business momentum is broadly stable",summary:`Paid cash is ${changeWords(paidChange)}. Leads are ${changeWords(leadChange)} and tracked spend is ${changeWords(spendChange)}.`,context};
-}
-
-function relativeChange(current:number,previous:number){
-  if(previous===0)return current===0?0:null;
-  return (current-previous)/previous*100;
-}
-function changeWords(value:number|null){
-  if(value===null)return"not comparable";
-  if(Math.abs(value)<2)return"roughly flat";
-  return value>0?`up ${formatPercent(value)}`:`down ${formatPercent(Math.abs(value))}`;
-}
-
-function decisionSourceName(source:string){
-  const value=source.trim().toLowerCase();
-  if(value.includes("facebook")||value.includes("meta")||value.includes("instagram"))return"Meta Ads / Facebook";
-  if(value==="google ads"||value.includes("google ad"))return"Google Ads";
-  if(value==="leadangel")return"LeadAngel";
-  if(value==="agenciyou")return"AgenciYou";
-  if(value==="web"||value.includes("website"))return"Web";
-  return source.trim()||"Unknown";
-}
-
-function sourceVerdict(row:{clients:number;paid:number;spend:number|null;openValue:number}){
-  if(row.spend===null)return{tone:"neutral" as const,label:"Cost missing"};
-  if(row.paid>0&&row.spend>0&&row.paid/row.spend>=3)return{tone:"good" as const,label:"Working"};
-  if(row.paid>0)return{tone:"good" as const,label:"Producing cash"};
-  if(row.openValue>0)return{tone:"warn" as const,label:"Pipeline only"};
-  if(row.spend>0)return{tone:"bad" as const,label:"No paid return yet"};
-  return{tone:"neutral" as const,label:"Organic / no spend"};
-}
-
-function DecisionHero({momentum,periodLabel}:{momentum:{tone:"good"|"warn"|"bad"|"neutral";title:string;summary:string;context:string};periodLabel:string}){
-  const icon=momentum.tone==="good"?<TrendingUp size={22}/>:momentum.tone==="bad"?<TrendingDown size={22}/>:momentum.tone==="warn"?<AlertTriangle size={22}/>:<Minus size={22}/>;
-  return <section className={`decision-hero tone-${momentum.tone}`}><div className="decision-hero-icon">{icon}</div><div className="min-w-0 flex-1"><p className="decision-kicker">Management read · {periodLabel}</p><h2>{momentum.title}</h2><p>{momentum.summary}</p><small>{momentum.context}</small></div></section>;
-}
-
-function DecisionMoneyCard({icon,label,value,comparison,note,accent=false,onClick}:{icon:"spend"|"invoice"|"paid"|"return";label:string;value:number;comparison:number|null|undefined;note:string;accent?:boolean;onClick?:()=>void}){
-  const Icon=icon==="spend"?CircleDollarSign:icon==="invoice"?ReceiptText:icon==="paid"?WalletCards:TrendingUp;
-  const change=comparison===null||comparison===undefined?null:relativeChange(value,comparison);
-  const className=`decision-money-card ${accent?"is-accent":""} ${onClick?"drillable":""}`;
-  const content=<><div className="decision-money-head"><span><Icon size={16}/>{label}</span>{change!==null&&<span className={`decision-delta ${change>=0?"is-up":"is-down"}`}>{change>=0?<ArrowUpRight size={13}/>:<ArrowDownRight size={13}/>} {formatPercent(Math.abs(change))}</span>}</div><strong className={onClick?"drillable-value":""}>{formatCurrency(value,true)}</strong><p>{note}</p></>;
-  return onClick?<button type="button" className={className+" text-left"} onClick={onClick}>{content}</button>:<div className={className}>{content}</div>;
-}
-
-function SourceDecisionRow({source,clients,paid,projectValue,spend,openValue,verdict,onClick}:{source:string;clients:number;paid:number;projectValue:number;spend:number|null;openValue:number;verdict:{tone:"good"|"warn"|"bad"|"neutral";label:string};onClick?:()=>void}){
-  const cashReturn=spend===null?null:paid-spend;
-  return <button type="button" onClick={onClick} className="source-decision-row drillable w-full text-left">
-    <div className="source-decision-head">
-      <div className="source-decision-name"><strong>{source}</strong><div><StatusPill tone={verdict.tone}>{verdict.label}</StatusPill><small>{clients} client(s)</small></div></div>
+function BusinessMoneyFlow({analytics,onProjects,onInvoices}:{analytics:ReturnType<typeof buildOverviewAnalytics>;onProjects:()=>void;onInvoices:()=>void}){
+  const {business}=analytics;
+  const max=Math.max(business.wonValueInclVat,business.invoicedInclVat,business.paidValueOnPeriodInvoices,1);
+  const steps=[
+    {label:"Won project value",value:business.wonValueInclVat,ratio:null,onClick:onProjects},
+    {label:"Invoiced",value:business.invoicedInclVat,ratio:business.invoicedToWon,onClick:onInvoices},
+    {label:"Paid value on period invoices",value:business.paidValueOnPeriodInvoices,ratio:business.paidToInvoiced,onClick:onInvoices},
+  ];
+  return <div>
+    <div className="business-flow">
+      {steps.map((item,index)=><div className="business-flow-step" key={item.label}>
+        <button type="button" onClick={item.onClick} className="business-flow-value">
+          <span>{item.label}</span><strong>{formatCurrency(item.value)}</strong>
+          <i style={{width:String(item.value/max*100)+"%"}}/>
+        </button>
+        {index<steps.length-1&&<div className="business-flow-arrow"><ArrowRight size={18}/><span>{item.ratio===null?"":formatPercent(item.ratio)}</span></div>}
+      </div>)}
     </div>
-    <div className="source-decision-metrics">
-      <div><span>Spend</span><strong>{spend===null?"—":formatCurrency(spend,true)}</strong></div>
-      <div><span>Project value</span><strong>{formatCurrency(projectValue,true)}</strong></div>
-      <div><span>Paid</span><strong>{formatCurrency(paid,true)}</strong></div>
-      <div><span>Cash after spend</span><strong className={cashReturn!==null&&cashReturn<0?"text-rose-700":""}>{cashReturn===null?"—":formatCurrency(cashReturn,true)}</strong></div>
-      <div><span>Open pipeline</span><strong>{formatCurrency(openValue,true)}</strong></div>
+    <div className="business-flow-secondary">
+      <div><span>Outstanding invoiced value</span><strong>{formatCurrency(business.outstanding)}</strong><small>Current unpaid balance on period invoices</small></div>
+      <div title="This is an aggregate selected-period comparison. Period invoices can relate to projects won earlier, so it is not a project-level reconciliation."><span>Won value not yet invoiced · period gap</span><strong>{formatCurrency(business.notYetInvoicedPeriodGap)}</strong><small>Never labelled lost</small></div>
+      <div><span>Paid / won value</span><strong>{business.paidToWon===null?"—":formatPercent(business.paidToWon)}</strong><small>Selected-period aggregate ratio</small></div>
     </div>
-  </button>;
+  </div>;
 }
 
-function LossSignal({icon,label,value,detail}:{icon:"funnel"|"pipeline"|"spend";label:string;value:string;detail:string}){
-  const Icon=icon==="funnel"?TrendingDown:icon==="pipeline"?Clock3:CircleDollarSign;
-  return <div className="loss-signal"><div className="loss-icon"><Icon size={17}/></div><div><span>{label}</span><strong>{value}</strong><p>{detail}</p></div></div>;
+function ExecutiveMetric({label,value,note,onClick}:{label:string;value:string;note:string;onClick?:()=>void}){
+  const body=<><span>{label}</span><strong className={onClick?"drillable-value":""}>{value}</strong><small>{note}</small></>;
+  return onClick?<button type="button" className="executive-metric drillable text-left" onClick={onClick}>{body}</button>:<div className="executive-metric">{body}</div>;
 }
 
-function isPaidMarketingSource(source:string){
-  const value=source.trim().toLowerCase();
-  return value.includes("facebook")
-    || value.includes("meta")
-    || value.includes("instagram")
-    || value==="google ads"
-    || value==="leadangel"
-    || value==="agenciyou"
-    || value==="solary";
+function MilestoneBar({label,value,rate,onClick}:{label:string;value:number;rate:number;onClick:()=>void}){
+  return <button type="button" className="milestone-row drillable text-left" onClick={onClick}><div className="milestone-row-head"><strong>{label}</strong><span>{formatNumber(value)} · {formatPercent(rate)}</span></div><div className="milestone-track"><i style={{width:String(Math.min(100,Math.max(0,rate)))+"%"}}/></div></button>;
 }
 
-function buildActionItems(data:CompanyDataset,rows:JourneyRow[],openOffers:NonNullable<CompanyDataset["commercialOffers"]>,sources:SourceBusinessRow[]) {
-  const items:Array<{title:string;body:string;tone:"bad"|"warn"|"good";href:string;icon:"clock"|"data"|"money"|"trend"}>=[];
-  const stale=openOffers.filter(item=>(item.daysWaiting??0)>7);
-  const staleValue=stale.reduce((sum,item)=>sum+item.priceInclVat,0);
-  if(stale.length)items.push({title:stale.length+" open offers are older than 7 days",body:formatCurrency(staleValue)+" of open commercial value needs review or follow-up.",tone:"bad",href:"/offers-pipeline",icon:"clock"});
-  const signedUnconfirmed=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
-  if(signedUnconfirmed.length)items.push({title:signedUnconfirmed.length+" signed leads are not confirmed as ROBAWS clients",body:"Reconcile the CRM and ROBAWS records before judging source CAC or revenue.",tone:"warn",href:"/data-health",icon:"data"});
-  const missingCost=sources.filter(row=>row.costState==="missing");
-  if(missingCost.length)items.push({title:"Paid-source spend is incomplete",body:missingCost.map(row=>row.source).join(", ")+" cannot be compared on CAC or ROAS yet.",tone:"warn",href:"/data-health",icon:"money"});
-  const visitsNoOffer=rows.filter(row=>hasCompletedVisitEvidence(row)&&!row.offers.length&&!row.isCommercialClient);
-  if(visitsNoOffer.length)items.push({title:visitsNoOffer.length+" visited leads have no ROBAWS offer linked",body:"Check quote creation / linking before assuming these opportunities were lost.",tone:"warn",href:"/funnel",icon:"trend"});
-  if(data.dataHealth.missingCampaign>0)items.push({title:data.dataHealth.missingCampaign+" leads are missing campaign attribution",body:"Campaign conclusions exclude or weaken these records.",tone:"warn",href:"/data-health",icon:"data"});
-  return items.slice(0,5);
+function FlowStep({label,value,note,tone}:{label:string;value:string;note?:string;tone?:"yellow"}){
+  return <div className={"acquisition-flow-step "+(tone==="yellow"?"is-yellow":"")}><span>{label}</span><strong>{value}</strong>{note&&<small>{note}</small>}</div>;
 }
 
-function budgetConclusion(row:SourceBusinessRow){
-  const paidRoas=row.spend&&row.spend>0?row.paid/row.spend:null;
-  let action="Monitor";
-  let body="There is not enough commercial evidence for a budget change.";
-  let tone:"good"|"warn"|"bad"="warn";
-  if(row.costState==="missing"){
-    action="Fix spend tracking";
-    body=`${row.leads} leads, ${row.commercialClients} ROBAWS clients and ${formatCurrency(row.paid)} paid cash are visible, but acquisition cost is missing.`;
-  }else if(row.spend!==null&&row.attributedClients===0&&row.openValue>0){
-    action="Hold";
-    body=`${formatCurrency(row.spend)} spent. No attributable client yet, but ${formatCurrency(row.openValue)} remains in open pipeline.`;
-  }else if(row.spend!==null&&row.attributedClients===0){
-    action="Do not increase";
-    tone="bad";
-    body=`${formatCurrency(row.spend)} spent with no attributable commercial client in the selected cohort.`;
-  }else if(row.spend!==null&&row.attributedClients===1&&paidRoas!==null&&paidRoas>=3){
-    action="Scale cautiously";
-    tone="good";
-    body=`${formatCurrency(row.spend)} spend → ${formatCurrency(row.paid)} paid cash (${formatNumber(paidRoas)}×), but the result is concentrated in one attributable client.`;
-  }else if(row.spend!==null&&row.attributedClients>1&&paidRoas!==null&&paidRoas>=3){
-    action="Evidence supports increase";
-    tone="good";
-    body=`${row.attributedClients} attributable clients and ${formatNumber(paidRoas)}× paid ROAS provide broader evidence than CPL alone.`;
-  }else if(row.spend!==null){
-    action="Hold / improve";
-    body=`${row.attributedClients} attributable clients, ${formatCurrency(row.openValue)} open pipeline and ${formatCurrency(row.paid)} paid cash from ${formatCurrency(row.spend)} spend.`;
+function EconomicsMetric({label,value,note}:{label:string;value:string;note:string}){
+  return <div className="economics-metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;
+}
+
+function ActionButton({title,value,detail,onClick}:{title:string;value:string;detail:string;onClick:()=>void}){
+  return <button type="button" className="action-card drillable text-left" onClick={onClick}><div><strong>{title}</strong><p>{detail}</p></div><span>{value}</span></button>;
+}
+
+function ActionLink({title,value,detail,href}:{title:string;value:string;detail:string;href:string}){
+  return <Link href={href} className="action-card drillable"><div><strong>{title}</strong><p>{detail}</p></div><span>{value}</span></Link>;
+}
+
+type TrustState="Complete"|"Partial"|"Missing"|"Needs review";
+function TrustPanel({title,icon,items}:{title:string;icon:ReactNode;items:Array<{label:string;state:TrustState;detail:string}>}){
+  return <Card className="trust-v2-panel"><div className="trust-v2-title">{icon}<strong>{title}</strong></div><div className="trust-v2-list">{items.map(item=><div key={item.label}><div><strong>{item.label}</strong><StatusPill tone={item.state==="Complete"?"good":item.state==="Missing"?"bad":item.state==="Needs review"?"warn":"neutral"}>{item.state}</StatusPill></div><p>{item.detail}</p></div>)}</div></Card>;
+}
+
+function trustFromCoverage(label:string,value:number,detail:string){
+  const state:TrustState=value>=100?"Complete":value>0?"Partial":"Missing";
+  return{label,state,detail};
+}
+function trustCount(label:string,value:number,detail:string){
+  return{label,state:(value===0?"Complete":"Needs review") as TrustState,detail:value===0?"No issue detected.":String(value)+" record(s). "+detail};
+}
+function trustIntegration(label:string,integration:CompanyDataset["integrations"][number]|undefined){
+  if(!integration)return{label,state:"Missing" as TrustState,detail:"Integration is not configured."};
+  if(integration.status!=="Connected")return{label,state:"Missing" as TrustState,detail:integration.errorMessage||"Integration is not connected."};
+  if(!integration.lastSuccess)return{label,state:"Partial" as TrustState,detail:"Connected, but no successful sync is recorded yet."};
+  return{label,state:"Complete" as TrustState,detail:"Last successful sync: "+formatTimestamp(integration.lastSuccess)};
+}
+function reconciliationTrust(value:ReturnType<typeof buildOverviewAnalytics>["reconciliation"]){
+  const ok=(!value.spendComparable||value.coveredSpendDifference===0)&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
+  return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?(value.spendComparable?"Source spend and period project/invoice aggregates reconcile to their underlying records.":"Period project/invoice aggregates reconcile; campaign-level spend is checked against campaign evidence separately."):"One or more dashboard aggregates do not reconcile to their underlying records."};
+}
+
+function managementInsight(analytics:ReturnType<typeof buildOverviewAnalytics>){
+  if(analytics.coverage.missingInvoices>0||analytics.coverage.missingProjects>0){
+    return "ROBAWS detail coverage is incomplete: "+String(analytics.coverage.loadedInvoices)+" of "+String(analytics.coverage.expectedInvoices)+" invoice rows and "+String(analytics.coverage.loadedProjects)+" of "+String(analytics.coverage.expectedProjects)+" project rows are loaded, so detailed commercial views can be understated.";
   }
-  return {source:row.source,action,body,tone};
+  if(analytics.economics.missingCostSources.length){
+    return "Acquisition cost is missing for "+analytics.economics.missingCostSources.join(", ")+"; CAC and cohort cash ROAS are intentionally unavailable for that uncovered spend.";
+  }
+  if(analytics.business.outstanding>0){
+    return formatCurrency(analytics.business.outstanding)+" remains outstanding on invoices dated in the selected calendar period.";
+  }
+  if(analytics.business.notYetInvoicedPeriodGap>0){
+    return "Selected-period won project value exceeds selected-period invoiced value by "+formatCurrency(analytics.business.notYetInvoicedPeriodGap)+". This is an aggregate timing gap, not lost revenue.";
+  }
+  return "The currently loaded business, acquisition and attribution records reconcile without a supported exception requiring management attention.";
 }
 
-function hasCompletedVisitEvidence(row:JourneyRow){
-  const status=row.lead.crmStatus.trim().toLowerCase().replace(/\s+/g," ");
-  const stage=row.lead.stage.trim().toLowerCase();
-  return row.appointments.some(item=>Boolean(item.completedAt))||stage.includes("visit completed")||stage.includes("quote")||stage.includes("won")||["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
+function buildSpendEvidence(data:CompanyDataset,sources:SourcePerformanceRow[],sourceFilter:string,campaignFilter:string){
+  if(campaignFilter!=="all"){
+    const campaign=data.campaigns.find(item=>item.name===campaignFilter);
+    const source=sourceFilter==="all"?normalizeAcquisitionSource(campaign?.channel??"Unattributed"):sourceFilter;
+    const paid=PAID_ACQUISITION_SOURCES.has(source);
+    const spend=campaign&&campaign.spend>0?campaign.spend:null;
+    return[{id:"campaign:"+campaignFilter,label:campaignFilter,source,campaign:campaignFilter,spend,state:(paid?(spend===null?"missing":"known"):"not-applicable") as "known"|"missing"|"not-applicable",note:"Campaign spend from the selected reporting period."}];
+  }
+  return sources.filter(item=>sourceFilter==="all"||item.source===sourceFilter).map(item=>({
+    id:"source:"+item.source,label:item.source,source:item.source,spend:item.spend,state:item.costState,note:item.spendNote,
+  }));
 }
-function ActionItem({title,body,tone,href,icon}:{title:string;body:string;tone:"bad"|"warn"|"good";href:string;icon:"clock"|"data"|"money"|"trend"}){
-  const Icon=icon==="clock"?Clock3:icon==="data"?Database:icon==="money"?CircleDollarSign:TrendingUp;
-  const cls=tone==="bad"?"border-rose-200 bg-rose-50 text-rose-900":tone==="good"?"border-emerald-200 bg-emerald-50 text-emerald-900":"border-amber-200 bg-amber-50 text-amber-900";
-  return <Link href={href} className={`flex gap-3 border p-4 ${cls}`}><Icon size={18} className="mt-0.5 shrink-0"/><div><strong className="text-sm">{title}</strong><p className="mt-1 text-sm leading-5 opacity-80">{body}</p></div><ArrowRight size={15} className="ml-auto mt-0.5 shrink-0"/></Link>;
+
+function clientsForRows(data:CompanyDataset,rows:ReturnType<typeof buildOverviewAnalytics>["rows"]){
+  const ids=new Set(rows.flatMap(row=>row.leadIds));
+  return [...new Map((data.commercialClients??[]).filter(client=>Boolean(client.matchedLeadId&&ids.has(client.matchedLeadId))).map(client=>[client.id,client])).values()];
 }
-function BudgetCard({source,action,body,tone}:{source:string;action:string;body:string;tone:"good"|"warn"|"bad"}){
-  const cls=tone==="good"?"border-emerald-200 bg-emerald-50":tone==="bad"?"border-rose-200 bg-rose-50":"border-amber-200 bg-amber-50";
-  return <div className={`border p-4 ${cls}`}><div className="flex items-start justify-between gap-3"><strong className="text-sm">{source}</strong><StatusPill tone={tone}>{action}</StatusPill></div><p className="mt-3 text-sm leading-6">{body}</p></div>;
+
+function resolvedClientSource(data:CompanyDataset,client:CommercialClient){
+  const manual=manualClientSource(data,client);
+  if(manual)return normalizeAcquisitionSource(manual);
+  if(client.matchedLeadId){
+    const lead=data.leads.find(item=>item.id===client.matchedLeadId);
+    if(lead?.source)return normalizeAcquisitionSource(lead.source);
+  }
+  return "";
 }
-function TruthMetric({label,value}:{label:string;value:string}){return <div className="truth-metric"><span>{label}</span><strong>{value}</strong></div>}
-function Economy({label,value,note}:{label:string;value:string;note:string}){return <div className="economy-cell"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
-function MoneyRow({label,value,accent=false}:{label:string;value:number;accent?:boolean}){return <div className={`money-row ${accent?"money-row-accent":""}`}><span>{label}</span><strong>{formatCurrency(value)}</strong></div>}
-function Trust({label,ok,detail}:{label:string;ok:boolean;detail:string}){return <div className="trust-card"><div className="flex items-center gap-2">{ok?<CheckCircle2 size={16} className="text-emerald-700"/>:<AlertTriangle size={16} className="text-amber-700"/>}<strong>{label}</strong></div><p>{detail}</p></div>}
-function hasDateConflict(value:string|null|undefined){return String(value??"").toUpperCase().includes("DATE_CONFLICT")}
+
+function coverageGapClients(data:CompanyDataset){
+  const loadedInvoices=new Map<string,number>();
+  for(const invoice of data.allCommercialInvoices??[]){
+    if(!invoice.externalClientId)continue;
+    loadedInvoices.set(invoice.externalClientId,(loadedInvoices.get(invoice.externalClientId)??0)+1);
+  }
+  const loadedProjects=new Map<string,number>();
+  for(const project of data.allCommercialProjects??[]){
+    if(!project.externalClientId)continue;
+    loadedProjects.set(project.externalClientId,(loadedProjects.get(project.externalClientId)??0)+1);
+  }
+  return (data.commercialClients??[]).filter(client=>
+    (loadedInvoices.get(client.externalId)??0)<client.invoiceCount
+    ||(loadedProjects.get(client.externalId)??0)<client.projectCount
+  ).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
+}
+
+function sourceComparator(a:SourcePerformanceRow,b:SourcePerformanceRow,key:SourceSort){
+  const nullLast=(left:number|null,right:number|null)=>{
+    if(left===null&&right===null)return 0;
+    if(left===null)return 1;
+    if(right===null)return-1;
+    return right-left;
+  };
+  if(key==="spend")return nullLast(a.spend,b.spend);
+  if(key==="customers")return b.attributableClients-a.attributableClients;
+  if(key==="cac")return nullLast(a.cac,b.cac);
+  if(key==="roas")return nullLast(a.cohortCashRoas,b.cohortCashRoas);
+  return b.paidValue-a.paidValue;
+}
+
+function nullableCurrency(value:number|null){return value===null?"Cost missing":formatCurrency(value)}
+function nullableRatio(value:number|null){return value===null?"Cost missing":formatNumber(value)+"×"}
+function netInvoice(item:CommercialInvoice){return Math.max(0,item.totalInclVat-item.creditedTotal)}
+function monthLabel(value:string){const parsed=new Date(value+"-01T00:00:00Z");return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{month:"short",year:"numeric",timeZone:"UTC"}).format(parsed)}
+function formatTimestamp(value:string){const parsed=new Date(value);return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Brussels"}).format(parsed)}

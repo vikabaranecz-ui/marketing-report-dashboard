@@ -92,7 +92,7 @@ export type CommercialOffer = {
 
 export type CommercialProject = {
   id: string;
-  leadId: string;
+  leadId: string | null;
   leadName: string;
   source: string;
   externalId: string;
@@ -303,6 +303,8 @@ export type CompanyDataset = {
   commercialInvoices?: CommercialInvoice[];
   periodCommercialProjects?: CommercialProject[];
   periodCommercialInvoices?: CommercialInvoice[];
+  allCommercialProjects?: CommercialProject[];
+  allCommercialInvoices?: CommercialInvoice[];
   appointmentLeadIds?: string[];
   commercialAppointments?: CommercialAppointment[];
   leads: Lead[];

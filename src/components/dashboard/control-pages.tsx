@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildSourcePerformance, hasCompletedVisitEvidence, normalizeAcquisitionSource } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
-const paidSources = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"]);
 
 export function FunnelPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
@@ -136,7 +136,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Paid sources are compared only when their actual spend exists. Organic sources keep cost metrics blank."/>
       <div className="table-scroll"><table className="wide-decision-table">
-        <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project €</th><th>Paid €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
+        <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project € excl. VAT</th><th>Paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
           <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>commercialClientInPeriod(data,client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||decisionSource(manualRobawsSource(data,client)??"")===row.source)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
@@ -153,7 +153,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       <SectionHeader title="Campaign → commercial outcome" description="Campaigns are judged beyond CPL: lead quality, visits, offers, attributable clients and project value are kept together."/>
       {campaignRows.length ? <div className="table-scroll"><table>
         <thead><tr><th>Campaign</th><th>Channel</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Attributed clients</th><th>Project €</th><th>CAC</th><th>Project ROAS</th></tr></thead>
-        <tbody>{campaignRows.map(row=><tr key={row.campaign}><td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const campaignLeads=data.leads.filter(lead=>lead.campaign===row.campaign);const ids=new Set(campaignLeads.map(lead=>lead.id));setDrilldown({title:row.campaign+" campaign details",subtitle:data.periodLabel,leads:campaignLeads,offers:(data.commercialOffers??[]).filter(item=>ids.has(item.leadId)),projects:(data.commercialProjects??[]).filter(item=>ids.has(item.leadId)),invoices:(data.commercialInvoices??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId)))})}}>{row.campaign}</button></td><td>{row.channel}</td><td>{row.spend>0?formatCurrency(row.spend):"—"}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.clients}</td><td>{formatCurrency(row.projectValue)}</td><td>{row.spend>0?costMetric(row.spend,row.clients):"—"}</td><td>{row.spend>0?ratioMetric(row.projectValue,row.spend):"—"}</td></tr>)}</tbody>
+        <tbody>{campaignRows.map(row=><tr key={row.campaign}><td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const campaignLeads=data.leads.filter(lead=>lead.campaign===row.campaign);const ids=new Set(campaignLeads.map(lead=>lead.id));setDrilldown({title:row.campaign+" campaign details",subtitle:data.periodLabel,leads:campaignLeads,offers:(data.commercialOffers??[]).filter(item=>ids.has(item.leadId)),projects:(data.commercialProjects??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId))),invoices:(data.commercialInvoices??[]).filter(item=>Boolean(item.leadId&&ids.has(item.leadId)))})}}>{row.campaign}</button></td><td>{row.channel}</td><td>{row.spend>0?formatCurrency(row.spend):"—"}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.clients}</td><td>{formatCurrency(row.projectValue)}</td><td>{row.spend>0?costMetric(row.spend,row.clients):"—"}</td><td>{row.spend>0?ratioMetric(row.projectValue,row.spend):"—"}</td></tr>)}</tbody>
       </table></div> : <EmptyState title="No campaign attribution" body="Campaign-level rows appear when CRM leads retain a campaign relationship."/>}
     </Card>
 
@@ -190,7 +190,7 @@ export function RevenuePage({ data }: { data: CompanyDataset }) {
       <RevenueStage label="Accepted / contracted" value={acceptedValue} note={accepted.length+" accepted offers"} onClick={()=>setDrilldown({title:"Accepted offers",subtitle:data.periodLabel,offers:accepted})}/>
       <RevenueStage label="Project value" value={projectValue} note={periodProjects.length+" project records"} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:periodProjects})}/>
       <RevenueStage label="Invoiced" value={invoiced} note="Net of credits" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
-      <RevenueStage label="Paid" value={paid} note="Cash recorded on period invoices" onClick={()=>setDrilldown({title:"Paid invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
+      <RevenueStage label="Paid value on period invoices" value={paid} note="Current paid_total on invoices dated in this period; not payment-date cash collection" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
     </div>
 
     <Card className="p-5">
@@ -298,82 +298,25 @@ export type SourceBusinessRow = {
 };
 
 export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):SourceBusinessRow[] {
-  const groups=new Map<string,JourneyRow[]>();
-  for(const row of rows){
-    const key=decisionSource(row.lead.source);
-    groups.set(key,[...(groups.get(key)??[]),row]);
-  }
-  const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  const result=[...groups.entries()].map(([source,group])=>{
-    const leadIds=new Set(group.flatMap(item=>item.leadIds));
-    const sourceInvoices=invoices.filter(item=>item.leadId!==null&&leadIds.has(item.leadId));
-    const manual = sourceSpendOverride(data,source);
-    const recurring = recurringSourceSpend(data,source);
-    const baseSpend = manual ? Number(manual.value) : spendForSource(data,source,group);
-    const spend = baseSpend===null
-      ? (recurring.amount>0?recurring.amount:null)
-      : baseSpend+recurring.amount;
-    const nonPaid=!paidSources.has(source);
-    const costState: SourceBusinessRow["costState"] = nonPaid ? "not-applicable" : spend === null || !Number.isFinite(spend) ? "missing" : "known";
-    return {
-      source,
-      spend:Number.isFinite(spend as number)?spend:null,
-      costState,
-      isManualSpend:Boolean(manual),
-      manualNote:manual?.note??"",
-      recurringSpend:recurring.amount,
-      leads:group.length,
-      qualified:group.filter(item=>item.isQualified).length,
-      visits:group.filter(hasCompletedVisitEvidence).length,
-      offers:group.filter(item=>item.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(item.lead)).length,
-      sentValue:group.reduce((total,item)=>total+item.sentOfferValue,0),
-      openValue:group.reduce((total,item)=>total+item.openOfferValue,0),
-      signed:group.filter(item=>item.isSigned).length,
-      commercialClients:group.filter(item=>item.isCommercialClient).length,
-      attributedClients:group.filter(item=>item.isAttributableClient).length,
-      projectValue:group.reduce((total,item)=>total+item.projectValue,0),
-      paid:sourceInvoices.reduce((total,item)=>total+item.paidTotal,0),
-    };
-  });
-
-  const bySource=new Map(result.map(row=>[row.source,row]));
-  const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
-  const manualOnlyClients=(data.commercialClients??[]).filter(client=>
-    client.commercialStatus==="CLIENT_WON" &&
-    commercialClientInPeriod(data,client) &&
-    Boolean(manualRobawsSource(data,client)) &&
-    !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
-  );
-
-  for(const client of manualOnlyClients){
-    const source=decisionSource(manualRobawsSource(data,client)??"Unattributed");
-    let row=bySource.get(source);
-    if(!row){
-      const manualSpend=sourceSpendOverride(data,source);
-      const recurring=recurringSourceSpend(data,source);
-      const baseSpend=manualSpend?Number(manualSpend.value):spendForSource(data,source,[]);
-      const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
-      const nonPaid=!paidSources.has(source);
-      row={
-        source,
-        spend:Number.isFinite(spend as number)?spend:null,
-        costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-        isManualSpend:Boolean(manualSpend),
-        manualNote:manualSpend?.note??"",
-        recurringSpend:recurring.amount,
-        leads:0,qualified:0,visits:0,offers:0,sentValue:0,openValue:0,signed:0,
-        commercialClients:0,attributedClients:0,projectValue:0,paid:0,
-      };
-      bySource.set(source,row);
-      result.push(row);
-    }
-    row.commercialClients+=1;
-    row.attributedClients+=1;
-    row.projectValue+=client.projectValueTotal||client.acceptedOfferTotal;
-    row.paid+=client.paidTotal;
-  }
-
-  return result.sort((a,b)=>b.paid-a.paid||b.projectValue-a.projectValue||b.openValue-a.openValue||b.leads-a.leads);
+  return buildSourcePerformance(data,rows).map(row=>({
+    source:row.source,
+    spend:row.spend,
+    costState:row.costState,
+    isManualSpend:row.isManualSpend,
+    manualNote:row.spendNote,
+    recurringSpend:row.recurringSpend,
+    leads:row.leads,
+    qualified:row.qualified,
+    visits:row.visits,
+    offers:row.offers,
+    sentValue:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source).reduce((sum,item)=>sum+item.sentOfferValue,0),
+    openValue:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source).reduce((sum,item)=>sum+item.openOfferValue,0),
+    signed:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source&&item.isSigned).length,
+    commercialClients:row.customers,
+    attributedClients:row.attributableClients,
+    projectValue:row.projectValueExclVat,
+    paid:row.paidValue,
+  }));
 }
 
 function commercialClientInPeriod(data:CompanyDataset,client:NonNullable<CompanyDataset["commercialClients"]>[number]){
@@ -388,49 +331,6 @@ function manualRobawsSource(data:CompanyDataset,client:NonNullable<CompanyDatase
   const matches=overrides.filter(item=>keys.includes(item.scopeKey));
   const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
   return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
-}
-
-function sourceSpendOverride(data:CompanyDataset,source:string){
-  return (data.manualOverrides??[]).find(item=>
-    item.scopeType==="source" &&
-    item.scopeKey===source &&
-    item.fieldKey==="spend" &&
-    typeof item.value==="number"
-  )??null;
-}
-
-function recurringSourceSpend(data:CompanyDataset,source:string){
-  const [periodStart,periodEnd]=data.periodLabel.split(" — ");
-  if(!periodStart||!periodEnd)return {amount:0,note:""};
-
-  const today=new Date().toISOString().slice(0,10);
-  let amount=0;
-  const notes:string[]=[];
-
-  for(const item of data.manualOverrides??[]){
-    if(item.scopeType!=="source"||item.scopeKey!==source||item.fieldKey!=="recurring_spend")continue;
-    if(!item.value||typeof item.value!=="object"||Array.isArray(item.value))continue;
-    const value=item.value as Record<string,unknown>;
-    const monthly=Number(value.monthly??0);
-    const start=typeof value.start==="string"?value.start:"";
-    const configuredEnd=typeof value.end==="string"&&value.end?value.end:null;
-    if(!Number.isFinite(monthly)||monthly<=0||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(start))continue;
-
-    const effectiveStart=[periodStart,start].sort().at(-1)!;
-    const effectiveEnd=[periodEnd,configuredEnd??today,today].sort()[0];
-    if(effectiveStart>effectiveEnd)continue;
-
-    const [sy,sm]=effectiveStart.split("-").map(Number);
-    const [ey,em]=effectiveEnd.split("-").map(Number);
-    const months=(ey-sy)*12+(em-sm)+1;
-    if(months<=0)continue;
-
-    amount+=months*monthly;
-    const label=typeof value.label==="string"&&value.label.trim()?value.label.trim():"Recurring offline spend";
-    notes.push(`${label}: ${months} × €${monthly.toFixed(2)}`);
-  }
-
-  return {amount,note:notes.join(" · ")};
 }
 
 function SpendEditor({data,row,onClose}:{data:CompanyDataset;row:SourceBusinessRow;onClose:()=>void}){
@@ -545,7 +445,7 @@ function RevenueClientTable({data}:{data:CompanyDataset}) {
   const rows=buildJourneyRows(data).filter(row=>row.isSigned||row.isCommercialClient||row.offers.length>0||row.projects.length>0);
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   if(!rows.length) return <EmptyState title="No commercial records" body="Commercial rows appear after CRM / ROBAWS data is synced."/>;
-  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>CRM signed</th><th>ROBAWS client</th><th>Sent offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid €</th><th>Attribution</th></tr></thead><tbody>
+  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>CRM signed</th><th>ROBAWS client</th><th>Sent offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid value €</th><th>Attribution</th></tr></thead><tbody>
     {rows.sort((a,b)=>b.projectValue-a.projectValue).map(row=>{
       const ids=new Set(row.leadIds);
       const clientInvoices=invoices.filter(item=>item.leadId&&ids.has(item.leadId));
@@ -561,32 +461,7 @@ function hasAppointmentEvidence(row:JourneyRow){
   const stage=normalized(row.lead.stage);
   return row.appointments.length>0||stage.includes("visit booked")||status==="afspraak ingeboekt";
 }
-function hasCompletedVisitEvidence(row:JourneyRow){
-  const status=normalized(row.lead.crmStatus);
-  const stage=normalized(row.lead.stage);
-  return row.appointments.some(item=>Boolean(item.completedAt))||stage.includes("visit completed")||stage.includes("quote")||stage.includes("won")||["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
-}
-function decisionSource(source:string){
-  const lower=source.toLowerCase();
-  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")) return "Meta Ads / Facebook";
-  if(lower.includes("google ads")) return "Google Ads";
-  if(lower.includes("leadangel")) return "LeadAngel";
-  if(lower.includes("web calculator")) return "Web calculator";
-  if(lower==="web"||lower.includes("website")) return "Web";
-  return source||"Unattributed";
-}
-function spendForSource(data:CompanyDataset,source:string,rows:JourneyRow[]) {
-  const channelName=source==="Meta Ads / Facebook"?"Meta Ads":source==="Google Ads"?"Google Ads":null;
-  if(channelName){
-    const channel=data.channels.find(item=>item.channel===channelName);
-    return channel&&channel.spend>0?channel.spend:null;
-  }
-  if(source==="LeadAngel"){
-    const costs=rows.map(row=>row.lead.acquisitionCost);
-    return costs.length&&costs.every(value=>value!==null)?costs.reduce<number>((total,value)=>total+Number(value),0):null;
-  }
-  return null;
-}
+function decisionSource(source:string){ return normalizeAcquisitionSource(source); }
 function costMetric(spend:number|null,count:number){return spend===null||count===0?"—":formatCurrency(spend/count)}
 function ratioMetric(value:number,spend:number|null){return spend===null||spend===0?"—":formatNumber(value/spend)+"×"}
 function normalized(value:string){return value.trim().toLowerCase().replace(/\s+/g," ")}
