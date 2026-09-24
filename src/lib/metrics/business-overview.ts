@@ -201,7 +201,7 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const payback=buildPayback(data,rows,economics.coveredSpend,scope);
   const coverage=buildCoverage(data);
   const attribution=buildAttributionCoverage(data,sourceRows);
-  const reconciliation=buildReconciliation(sourceRows,economics,business,coverage);
+  const reconciliation=buildReconciliation(sourceRows,economics,business,coverage,scope);
 
   return {allRows,rows,business,cohort,economics,sourceRows,payback,coverage,attribution,reconciliation};
 }
@@ -365,11 +365,17 @@ function buildAttributionCoverage(data:CompanyDataset,sources:SourcePerformanceR
   };
 }
 
-function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType<typeof buildEconomics>,business:any,coverage:ReturnType<typeof buildCoverage>){
-  const sourceSpend=sources.filter(item=>item.costState==="known").reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const sourceCustomers=sources.reduce((sum,item)=>sum+item.attributableClients,0);
+function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType<typeof buildEconomics>,business:any,coverage:ReturnType<typeof buildCoverage>,scope:OverviewScope){
+  const comparableSources=scope.campaign!=="all"
+    ? []
+    : scope.source==="all"
+      ? sources
+      : sources.filter(item=>item.source===scope.source);
+  const sourceSpend=comparableSources.filter(item=>item.costState==="known").reduce((sum,item)=>sum+Number(item.spend??0),0);
+  const sourceCustomers=comparableSources.reduce((sum,item)=>sum+item.attributableClients,0);
   return {
-    coveredSpendDifference:Math.abs(sourceSpend-economics.coveredSpend),
+    spendComparable:scope.campaign==="all",
+    coveredSpendDifference:scope.campaign==="all"?Math.abs(sourceSpend-economics.coveredSpend):0,
     sourceCustomerTotal:sourceCustomers,
     periodProjectValue:business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0),
     periodProjectValueDifference:Math.abs(business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0)-business.wonValueInclVat),
