@@ -962,8 +962,6 @@ tbody tr:hover { background: #fffdf0; }
 .decision-money-card.is-accent span,
 .decision-money-card.is-accent small { color: rgba(255,255,255,.76); }
 
-.source-decision-row > div:not(.source-decision-name) span,
-.source-decision-name > small,
 .loss-signal span,
 .loss-signal p,
 .economy-cell span,
