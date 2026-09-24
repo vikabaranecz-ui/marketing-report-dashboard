@@ -7,7 +7,7 @@ import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
 import { EmptyState, StatusPill } from "./ui";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
-type OfferTab = "open" | "accepted" | "rejected" | "all";
+type OfferTab = "open" | "accepted" | "rejected" | "cancelled" | "all";
 type SourceRow = { source: string; leads: number; matched: number; offers: number; openValue: number; rejectedValue: number; acceptedValue: number; clients: number; invoiced: number; paid: number; cost: number | null };
 const verifiedMethods = new Set(["EMAIL+PHONE", "EMAIL", "PHONE", "NAME"]);
 const emptyOffers: CommercialOffer[] = [];
@@ -35,12 +35,13 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
   const matchedLeads = filteredLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod));
   const openOffers = filteredOffers.filter(offer => offer.isOpen).sort((a, b) => b.priceInclVat - a.priceInclVat);
   const acceptedOffers = filteredOffers.filter(offer => offer.isAccepted);
+  const cancelledOffers = filteredOffers.filter(offer => offer.isCancelled);
   const invoiced = attributedInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0);
   const paid = sum(attributedInvoices, "paidTotal");
   const selectedOffers = selected ? offers.filter(offer => offer.leadId === selected.id) : [];
   const selectedProjects = selected ? projects.filter(project => project.leadId === selected.id) : [];
   const selectedInvoices = selected ? invoices.filter(invoice => invoice.leadId === selected.id) : [];
-  const outcomeOffers = filteredOffers.filter(offer => offerTab === "all" || (offerTab === "open" && offer.isOpen) || (offerTab === "accepted" && offer.isAccepted) || (offerTab === "rejected" && offer.isRejected));
+  const outcomeOffers = filteredOffers.filter(offer => offerTab === "all" || (offerTab === "open" && offer.isOpen) || (offerTab === "accepted" && offer.isAccepted) || (offerTab === "rejected" && offer.isRejected) || (offerTab === "cancelled" && offer.isCancelled));
   const highestOpenValue = openOffers[0]?.priceInclVat ?? 0;
   const dateConflictLeadIds = new Set([
     ...filteredLeads.filter(lead => hasDateConflict(lead.attributionLevel)).map(lead => lead.id),
@@ -85,7 +86,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
       {openOffers.length ? <div className="analytics-table-wrap"><table className="analytics-table"><thead><tr><th>Lead</th><th>Source</th><th>Service</th><th>Offer date</th><th>Days waiting</th><th>ROBAWS status</th><th>Offer price incl. VAT</th><th>Offer #</th><th>Project</th></tr></thead><tbody>{openOffers.map(offer => { const lead = data.leads.find(item => item.id === offer.leadId); return <tr key={offer.id} className={offer.daysWaiting !== null && offer.daysWaiting > 14 ? "opportunity-critical" : offer.daysWaiting !== null && offer.daysWaiting > 7 ? "opportunity-warning" : ""}><td><button className="lead-link" onClick={() => lead && setSelected(lead)}>{offer.leadName}</button></td><td>{offer.source}</td><td>{lead?.service ?? "—"}</td><td>{formatDate(offer.date)}</td><td><WaitingBadge days={offer.daysWaiting} /></td><td><StatusPill tone="warn">{offer.status}</StatusPill></td><td className="font-semibold text-[var(--ink)]">{formatCurrency(offer.priceInclVat)} {highestOpenValue > 0 && offer.priceInclVat === highestOpenValue && <span className="highest-value">Highest value</span>}</td><td>{offer.number}</td><td>{offer.projectExternalId ?? "—"}</td></tr>; })}</tbody></table></div> : <EmptyState title="No open ROBAWS offers" body={robaws?.status === "Connected" ? "No non-final offers match this source selection." : "Connect and sync ROBAWS to load offers that are waiting for a client decision."} />}
     </section>
 
-    <section aria-labelledby="offer-outcomes"><SectionTitle id="offer-outcomes" eyebrow="05 · Offer outcomes" title="Every offer, separately" description="Multiple offers for the same client remain separate commercial records." /><div className="segmented-control" role="tablist" aria-label="Offer outcome">{(["open", "accepted", "rejected", "all"] as OfferTab[]).map(tab => <button key={tab} role="tab" aria-selected={offerTab === tab} onClick={() => setOfferTab(tab)}>{capitalize(tab)} <span>{tab === "all" ? filteredOffers.length : filteredOffers.filter(offer => tab === "open" ? offer.isOpen : tab === "accepted" ? offer.isAccepted : offer.isRejected).length}</span></button>)}</div>
+    <section aria-labelledby="offer-outcomes"><SectionTitle id="offer-outcomes" eyebrow="05 · Offer outcomes" title="Every offer, separately" description="Multiple offers for the same client remain separate commercial records." /><div className="segmented-control" role="tablist" aria-label="Offer outcome">{(["open", "accepted", "rejected", "cancelled", "all"] as OfferTab[]).map(tab => <button key={tab} role="tab" aria-selected={offerTab === tab} onClick={() => setOfferTab(tab)}>{tab==="rejected"?"Afgekeurd":capitalize(tab)} <span>{tab === "all" ? filteredOffers.length : tab==="open"?filteredOffers.filter(offer=>offer.isOpen).length:tab==="accepted"?acceptedOffers.length:tab==="cancelled"?cancelledOffers.length:filteredOffers.filter(offer=>offer.isRejected).length}</span></button>)}</div>
       {outcomeOffers.length ? <div className="analytics-table-wrap"><table className="analytics-table"><thead><tr><th>Lead</th><th>Source</th><th>Offer #</th><th>Date</th><th>Status</th><th>Price excl. VAT</th><th>Price incl. VAT</th><th>Project</th><th>Attribution confidence</th></tr></thead><tbody>{outcomeOffers.map(offer => { const lead = data.leads.find(item => item.id === offer.leadId); return <tr key={offer.id}><td><button className="lead-link" onClick={() => lead && setSelected(lead)}>{offer.leadName}</button></td><td>{offer.source}</td><td>{offer.number}</td><td>{formatDate(offer.date)}</td><td><OutcomePill offer={offer} /></td><td>{formatCurrency(offer.priceExclVat)}</td><td className="font-semibold text-[var(--ink)]">{formatCurrency(offer.priceInclVat)}</td><td>{offer.projectExternalId ?? "—"}</td><td><Attribution value={offer.attributionStatus} /></td></tr>; })}</tbody></table></div> : <EmptyState title={`No ${offerTab} offers`} body="No ROBAWS offer records match this view." />}
     </section>
 
@@ -117,7 +118,7 @@ function SectionTitle({ id, eyebrow, title, description, meta }: { id: string; e
 function Metric({ label, value, note, money = false, accent = false, onClick }: { label: string; value: string; note: string; money?: boolean; accent?: boolean; onClick?:()=>void }) { const cls=`sales-metric ${money ? "sales-metric-money" : ""} ${accent ? "sales-metric-accent" : ""} ${onClick?"drillable":""}`;const content=<><span>{label}</span><strong className={onClick?"drillable-value":""}>{value}</strong><small>{note}</small></>;return onClick?<button type="button" className={cls+" text-left"} onClick={onClick}>{content}</button>:<div className={cls}>{content}</div>; }
 function Diagnostic({ label, value, warn = false }: { label: string; value: number; warn?: boolean }) { return <div className={warn ? "diagnostic-warn" : ""}><span>{label}</span><strong>{formatNumber(value)}</strong></div>; }
 function WaitingBadge({ days }: { days: number | null }) { if (days === null) return <>—</>; const tone = days > 14 ? "bad" : days > 7 ? "warn" : "neutral"; return <StatusPill tone={tone}>{days} days</StatusPill>; }
-function OutcomePill({ offer }: { offer: CommercialOffer }) { return <StatusPill tone={offer.isAccepted ? "good" : offer.isRejected ? "bad" : "warn"}>{offer.status}</StatusPill>; }
+function OutcomePill({ offer }: { offer: CommercialOffer }) { return <StatusPill tone={offer.isAccepted ? "good" : offer.isRejected || offer.isCancelled ? "bad" : "warn"}>{offer.status}</StatusPill>; }
 function Attribution({ value }: { value: string }) { const conflict = hasDateConflict(value); return <StatusPill tone={conflict ? "bad" : value.includes("EXACT") || value === "VERIFIED" ? "good" : "neutral"}>{conflict ? "REVIEW_DATE_CONFLICT" : value}</StatusPill>; }
 
 function LeadDrawer({ lead, offers, projects, invoices, onClose }: { lead: Lead; offers: CommercialOffer[]; projects: CommercialProject[]; invoices: CommercialInvoice[]; onClose: () => void }) {
