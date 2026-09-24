@@ -15,8 +15,13 @@ export async function GET(request:Request){
   if(!data||data.used_at||data.expires_at<=now)return NextResponse.json({error:"invalid"},{status:403});
   const consumed=await admin.from("internal_job_tokens").update({used_at:now}).eq("token_hash",tokenHash).is("used_at",null).select("token_hash").maybeSingle();
   if(!consumed.data)return NextResponse.json({error:"used"},{status:409});
-  const projects=await fetchAllRobaws<Record<string,unknown>>("projects",{});
-  const sample=projects[0]??{};
-  const dateLike=Object.fromEntries(Object.entries(sample).filter(([key,value])=>/date|start|end|plan|status/i.test(key)&&["string","number","boolean"].includes(typeof value)));
-  return NextResponse.json({keys:Object.keys(sample).sort(),dateLike});
+  const [projects,invoices]=await Promise.all([
+    fetchAllRobaws<Record<string,unknown>>("projects",{}),
+    fetchAllRobaws<Record<string,unknown>>("sales-invoices",{}),
+  ]);
+  const summarize=(sample:Record<string,unknown>)=>({
+    keys:Object.keys(sample).sort(),
+    dateLike:Object.fromEntries(Object.entries(sample).filter(([key,value])=>/date|start|end|plan|status|paid|payment/i.test(key)&&["string","number","boolean"].includes(typeof value))),
+  });
+  return NextResponse.json({project:summarize(projects[0]??{}),invoice:summarize(invoices[0]??{})});
 }
