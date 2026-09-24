@@ -212,7 +212,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const commercialProjects = rawProjects
     .filter(project => project.crm_source === "robaws")
     .map(project => {
-      const lead = leadById.get(project.lead_id);
+      const lead = project.lead_id ? leadById.get(project.lead_id) : undefined;
 
       return {
         id: project.id,
@@ -381,7 +381,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   for (const row of rawMetrics) { const id=row.channel_id; const item=channelMap.get(id)??{id,channel:row.marketing_channels?.name??"Unknown",spend:0,impressions:0,clicks:0,platformConversions:0,leads:0,notRelevant:0,qualified:0,visits:0,quotes:0,won:0,revenue:0}; item.spend+=Number(row.spend); item.impressions+=row.impressions; item.clicks+=row.clicks; item.platformConversions+=Number(row.platform_conversions); channelMap.set(id,item); }
   for (const lead of rawLeads) { if(!lead.channel_id) continue; const item=channelMap.get(lead.channel_id); if(!item) continue; item.leads++; if(isNotRelevantLead(lead)) item.notRelevant=(item.notRelevant??0)+1; if(isQualifiedLead(lead)) item.qualified++; if(hasReachedVisit(lead)) item.visits++; if(["quote_sent","won"].includes(lead.sales_stage)||isQuoteOutcomeStatus(lead.crm_status)||quoteByLead.has(lead.id)) item.quotes++; if(projectByLead.get(lead.id)?.status==="won") item.won++; }
   for (const project of attributableProjects) {
-    const lead = rawLeadById.get(project.lead_id);
+    const lead = project.lead_id ? rawLeadById.get(project.lead_id) : undefined;
     if (!lead?.channel_id) continue;
     const item = channelMap.get(lead.channel_id);
     if (item) item.revenue += Number(project.project_value ?? 0);
@@ -456,6 +456,7 @@ function latestQuoteByLead(rows: RawQuote[]) {
   const map = new Map<string, RawQuote>();
 
   for (const row of rows) {
+    if (!row.lead_id) continue;
     const existing = map.get(row.lead_id);
     if (!existing || (row.created_at ?? "").localeCompare(existing.created_at ?? "") > 0) {
       map.set(row.lead_id, row);
