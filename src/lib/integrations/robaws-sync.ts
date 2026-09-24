@@ -546,6 +546,7 @@ export async function syncRobawsProvider(
             projectOffers[0]?.date ||
             project.date,
           ),
+        project_date: project.date || null,
         completed_at: null,
         crm_source: "robaws",
         crm_external_id: project.id,
