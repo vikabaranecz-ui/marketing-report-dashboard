@@ -401,7 +401,7 @@ function refreshCostMetrics(row:SourcePerformanceRow){
   row.costQualified=safeDivide(row.spend,row.qualified);
   row.costVisit=safeDivide(row.spend,row.visits);
   row.costOffer=safeDivide(row.spend,row.offers);
-  row.cac=safeDivide(row.spend,row.attributedClients);
+  row.cac=safeDivide(row.spend,row.attributableClients);
   row.cohortCashRoas=row.spend?row.paidValue/row.spend:null;
 }
 
