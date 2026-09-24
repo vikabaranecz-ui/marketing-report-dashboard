@@ -81,7 +81,7 @@ Spend-derived KPIs are only shown when the relevant spend exists. Geographic CPL
 
 ## Operational use
 
-The Client Journey board is the person-level view. Each card opens an evidence drawer with first-touch attribution, merged CRM-record count, contact data, appointments, offers, sent/follow-up dates, CRM signed evidence, and verified projects.
+Customer Payback is the person-level commercial timing view. The selected dashboard period remains the acquisition cohort: a customer acquired in June stays in June even if the project and invoices occur in August or September. Each customer row shows acquisition date, the original ROBAWS project record date, first/last invoice dates, project value, invoiced value, paid value, outstanding value, lead-to-first-invoice lag, and paid totals grouped by invoice month. Because the current ROBAWS invoice API does not expose actual payment timestamps, paid value is grouped by invoice date and labelled accordingly; invoice dates are never presented as construction start/finish dates.
 
 Offers & Pipeline is the commercial work queue. It separates:
 - created offers;
