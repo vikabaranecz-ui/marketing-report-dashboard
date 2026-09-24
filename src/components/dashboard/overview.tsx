@@ -55,6 +55,40 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
   const coveredPaid=knownSpendRows.reduce((sum,row)=>sum+row.paid,0);
 
   const robawsClientRecords=data.commercialClients??[];
+  const detailedRobawsInvoices=data.commercialInvoices??[];
+  const loadedInvoicesByClient=new Map<string,{count:number;invoiced:number;paid:number}>();
+  for(const invoice of detailedRobawsInvoices){
+    const key=invoice.externalClientId??"UNKNOWN";
+    const current=loadedInvoicesByClient.get(key)??{count:0,invoiced:0,paid:0};
+    current.count+=1;
+    current.invoiced+=Math.max(0,invoice.totalInclVat-invoice.creditedTotal);
+    current.paid+=invoice.paidTotal;
+    loadedInvoicesByClient.set(key,current);
+  }
+  const robawsFinancialCoverage={
+    expectedInvoices:robawsClientRecords.reduce((sum,client)=>sum+client.invoiceCount,0),
+    loadedInvoices:detailedRobawsInvoices.length,
+    expectedInvoiced:robawsClientRecords.reduce((sum,client)=>sum+client.invoicedTotal,0),
+    loadedInvoiced:detailedRobawsInvoices.reduce((sum,invoice)=>sum+Math.max(0,invoice.totalInclVat-invoice.creditedTotal),0),
+    expectedPaid:robawsClientRecords.reduce((sum,client)=>sum+client.paidTotal,0),
+    loadedPaid:detailedRobawsInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0),
+  };
+  const missingRobawsInvoices=Math.max(0,robawsFinancialCoverage.expectedInvoices-robawsFinancialCoverage.loadedInvoices);
+  const missingRobawsInvoiced=Math.max(0,robawsFinancialCoverage.expectedInvoiced-robawsFinancialCoverage.loadedInvoiced);
+  const missingRobawsPaid=Math.max(0,robawsFinancialCoverage.expectedPaid-robawsFinancialCoverage.loadedPaid);
+  const missingRobawsClients=robawsClientRecords.filter(client=>{
+    const loaded=loadedInvoicesByClient.get(client.externalId)??{count:0,invoiced:0,paid:0};
+    return client.invoiceCount>loaded.count
+      || client.invoicedTotal-loaded.invoiced>.01
+      || client.paidTotal-loaded.paid>.01;
+  }).sort((a,b)=>{
+    const aLoaded=loadedInvoicesByClient.get(a.externalId)??{count:0,invoiced:0,paid:0};
+    const bLoaded=loadedInvoicesByClient.get(b.externalId)??{count:0,invoiced:0,paid:0};
+    return (b.paidTotal-bLoaded.paid)-(a.paidTotal-aLoaded.paid)
+      || (b.invoicedTotal-bLoaded.invoiced)-(a.invoicedTotal-aLoaded.invoiced)
+      || a.name.localeCompare(b.name);
+  });
+  const robawsDetailCoverage=percentage(robawsFinancialCoverage.loadedInvoices,robawsFinancialCoverage.expectedInvoices)??0;
   const robawsWonRecords=robawsClientRecords.filter(client=>client.commercialStatus==="CLIENT_WON");
   const robawsMatchedWonRecords=robawsWonRecords.filter(client=>Boolean(client.matchedLeadId));
   const rowByLeadId=new Map<string,JourneyRow>();
@@ -202,6 +236,29 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <DecisionMoneyCard icon="return" label="Cash after tracked spend" value={periodTotals.paid-trackedMarketingSpend} comparison={trackedMarketingSpend===periodTotals.spend&&directComparisonHasData&&directComparison?directComparison.paid-directComparison.spend:null} note="Paid cash minus all known acquisition spend — not company profit" accent onClick={()=>setDrilldown({title:"Cash records behind this period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
     </div>}
 
+    <button type="button"
+      className={`robaws-coverage-card ${missingRobawsInvoices>0?"is-incomplete":"is-complete"}`}
+      onClick={()=>missingRobawsClients.length&&setDrilldown({title:"ROBAWS records missing from detailed invoice table",subtitle:`${missingRobawsInvoices} invoice row(s) still missing from detailed reporting`,initialKind:"clients",clients:missingRobawsClients})}>
+      <div className="robaws-coverage-head">
+        <div>
+          <p className="eyebrow">ROBAWS FINANCIAL COVERAGE</p>
+          <h3>{missingRobawsInvoices>0?"Missing ROBAWS data is affecting the boards":"ROBAWS detailed invoice coverage is complete"}</h3>
+          <p>{missingRobawsInvoices>0
+            ?"These totals exist in ROBAWS client aggregates but are not yet represented by detailed invoice rows. Calendar-period invoice and paid figures can therefore be understated."
+            :"Every ROBAWS invoice counted at client level is also present in the detailed invoice table."}</p>
+        </div>
+        <StatusPill tone={missingRobawsInvoices>0?"bad":"good"}>{formatPercent(robawsDetailCoverage)} loaded</StatusPill>
+      </div>
+      <div className="robaws-coverage-metrics">
+        <div><span>Invoices loaded</span><strong>{formatNumber(robawsFinancialCoverage.loadedInvoices)} / {formatNumber(robawsFinancialCoverage.expectedInvoices)}</strong></div>
+        <div><span>Missing invoice rows</span><strong>{formatNumber(missingRobawsInvoices)}</strong></div>
+        <div><span>Missing invoiced value</span><strong>{formatCurrency(missingRobawsInvoiced)}</strong></div>
+        <div><span>Missing paid value</span><strong>{formatCurrency(missingRobawsPaid)}</strong></div>
+        <div><span>Clients affected</span><strong>{formatNumber(missingRobawsClients.length)}</strong></div>
+      </div>
+      {missingRobawsInvoices>0&&<div className="robaws-coverage-action"><AlertTriangle size={15}/><span>Click to see the affected ROBAWS clients.</span></div>}
+    </button>
+
     <div className="decision-grid">
       <Card className="p-5">
         <SectionHeader title="Are we moving in the right direction?" description={momentum.context}/>
@@ -326,6 +383,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
         <Trust label="Meta Lead Ads attribution" ok={metaLeadAccessReady} detail={metaLeadAccessReady?"Lead retrieval permission available":"Missing leads_retrieval permission — direct Meta lead matching is incomplete"}/>
         <Trust label="Website lead capture" ok={websiteFormsIntegration?.status==="Connected"&&Boolean(websiteFormsIntegration.lastSuccess)} detail={websiteFormsIntegration?.lastSuccess?"Website form source is syncing":"Website forms are not connected; GA4 currently shows visits but no tracked form submissions"}/>
         <Trust label="ROBAWS client coverage" ok={sourceResolvedWonRecords.length===robawsWonRecords.length} detail={robawsMatchedWonRecords.length+" / "+robawsWonRecords.length+" won clients are CRM-matched; "+manualSourceUnmatchedWonRecords.length+" unmatched client(s) have a manual source; "+(robawsWonRecords.length-sourceResolvedWonRecords.length)+" remain neither matched nor manually sourced"}/>
+        <Trust label="ROBAWS invoice-detail coverage" ok={missingRobawsInvoices===0} detail={robawsFinancialCoverage.loadedInvoices+" / "+robawsFinancialCoverage.expectedInvoices+" invoice rows loaded; "+missingRobawsInvoices+" missing · "+formatCurrency(missingRobawsPaid)+" paid value not represented in detailed invoice rows"}/>
         <Trust label="Lead-date quality" ok={!suspiciousLeadDateBatch} detail={suspiciousLeadDateBatch?peakLeadDate[1]+" / "+data.leads.length+" selected leads share "+peakLeadDate[0]+" — verify bulk-import dates before treating this as a true acquisition cohort":"No extreme single-day concentration in the selected lead dates"}/>
         <Trust label="LeadAngel cost" ok={!paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")} detail={paidSources.some(row=>row.source==="LeadAngel"&&row.costState==="missing")?"Missing — ROI blocked":"Available or no LeadAngel cohort"}/>
         <Trust label="Source coverage" ok={unknownSourceClients===0} detail={knownSourceClients.length+" / "+cohortCommercialClients.length+" commercial clients have a safe acquisition source"}/>
