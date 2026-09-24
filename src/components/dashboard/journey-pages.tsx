@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, RotateCcw, Search, X } from "lucide-react";
+import { ArrowRight, CalendarClock, CircleDollarSign, Pencil, RotateCcw, Search, WalletCards, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, journeyStageMeta, sourcePipelineRows, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
@@ -11,55 +11,207 @@ import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown"
 
 export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const rows = useMemo(() => buildJourneyRows(data), [data]);
-  const summary = useMemo(() => buildFunnelSummary(data), [data]);
-  const [search, setSearch] = useState("");
-  const [source, setSource] = useState("all");
-  const [service, setService] = useState("all");
-  const [stageFilter,setStageFilter]=useState<JourneyStage|"all">("all");
-  const [limit,setLimit]=useState(20);
-  const [selected, setSelected] = useState<JourneyRow | null>(null);
-  const filtered = rows.filter(row => {
-    const text = [row.lead.name,row.lead.phone,row.lead.email,row.lead.source,row.lead.service,row.lead.municipality,row.lead.crmStatus,row.stage].join(" ").toLowerCase();
-    return (!search || text.includes(search.toLowerCase()))
-      && (source === "all" || row.lead.source === source)
-      && (service === "all" || row.lead.service === service)
-      && (stageFilter==="all"||row.stage===stageFilter);
+  const paybackRows = useMemo(() => rows
+    .filter(row => row.isCommercialClient || row.projects.length > 0 || row.invoices.length > 0)
+    .map(buildPaybackRecord)
+    .sort((a,b) => b.acquired.localeCompare(a.acquired)), [rows]);
+
+  const [search,setSearch]=useState("");
+  const [source,setSource]=useState("all");
+  const [status,setStatus]=useState("all");
+  const [limit,setLimit]=useState(12);
+  const [selected,setSelected]=useState<JourneyRow|null>(null);
+
+  const sources=[...new Set(paybackRows.map(item=>item.row.lead.source||"Unattributed"))].sort();
+  const filtered=paybackRows.filter(item=>{
+    const haystack=[
+      item.row.lead.name,item.row.lead.email,item.row.lead.phone,item.row.lead.source,
+      item.row.lead.service,item.row.lead.municipality,item.row.lead.crmStatus,
+      ...item.row.invoices.flatMap(invoice=>[invoice.number,invoice.status]),
+    ].join(" ").toLowerCase();
+    return (!search||haystack.includes(search.toLowerCase()))
+      && (source==="all"||item.row.lead.source===source)
+      && (status==="all"||item.paybackStatus===status);
   });
-  const sources = [...new Set(rows.map(row => row.lead.source))].sort();
-  const services = [...new Set(rows.map(row => row.lead.service))].sort();
-  const visibleStages=stageFilter==="all"?journeyStageMeta:journeyStageMeta.filter(item=>item.key===stageFilter);
-  const hasFilters=Boolean(search||source!=="all"||service!=="all"||stageFilter!=="all");
-  const qualifiedNoOffer=rows.filter(row=>row.isQualified&&row.offers.length===0);
+
+  const totals=paybackRows.reduce((acc,item)=>({
+    clients:acc.clients+1,
+    projectValue:acc.projectValue+item.projectValue,
+    invoiced:acc.invoiced+item.invoiced,
+    paid:acc.paid+item.paid,
+    open:acc.open+item.open,
+  }),{clients:0,projectValue:0,invoiced:0,paid:0,open:0});
+  const lagValues=paybackRows.map(item=>item.daysToFirstInvoice).filter((value):value is number=>value!==null&&value>=0);
+  const avgLag=lagValues.length?Math.round(lagValues.reduce((sum,value)=>sum+value,0)/lagValues.length):null;
+
+  const monthlyCash=[...paybackRows.reduce((map,item)=>{
+    for(const month of item.cashMonths){
+      const current=map.get(month.month)??{month:month.month,invoiced:0,paid:0,clients:new Set<string>()};
+      current.invoiced+=month.invoiced;
+      current.paid+=month.paid;
+      current.clients.add(item.row.lead.id);
+      map.set(month.month,current);
+    }
+    return map;
+  },new Map<string,{month:string;invoiced:number;paid:number;clients:Set<string>}>()).values()].sort((a,b)=>a.month.localeCompare(b.month));
+
+  const hasFilters=Boolean(search||source!=="all"||status!=="all");
 
   return <div className="space-y-6">
-    <Funnel data={data}/>
-    <Card className="p-4">
-      <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_180px_190px_190px_auto]">
-        <label className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3"><Search size={15}/><input value={search} onChange={e=>{setSearch(e.target.value);setLimit(20)}} placeholder="Search name, phone, email, location, status…" className="min-h-10 w-full outline-none"/></label>
-        <select value={stageFilter} onChange={e=>{setStageFilter(e.target.value as JourneyStage|"all");setLimit(20)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All journey stages</option>{journeyStageMeta.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}</select>
-        <select value={source} onChange={e=>{setSource(e.target.value);setLimit(20)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All sources</option>{sources.map(v=><option key={v}>{v}</option>)}</select>
-        <select value={service} onChange={e=>{setService(e.target.value);setLimit(20)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All services</option>{services.map(v=><option key={v}>{v}</option>)}</select>
-        {hasFilters?<button type="button" className="button-secondary" onClick={()=>{setSearch("");setSource("all");setService("all");setStageFilter("all");setLimit(20)}}>Clear filters</button>:<div className="flex items-center justify-end text-xs font-semibold text-[var(--muted)]">{filtered.length} clients</div>}
-      </div>
-      {hasFilters&&<p className="mt-3 text-xs text-[var(--muted)]">{filtered.length} matching client{filtered.length===1?"":"s"}</p>}
-    </Card>
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Live client journey" description="Live CRM + ROBAWS view. Search or filter first; the all-stage board intentionally shows only a short preview so it never becomes an endless list."/></div>
-      {stageFilter==="all"
-        ?<div className="overflow-x-auto bg-[var(--surface)]"><div className="grid min-w-[1760px] grid-cols-8 gap-px bg-[var(--line)]">
-          {visibleStages.map(stage => {
-            const group=filtered.filter(r=>r.stage===stage.key);
-            const preview=group.slice(0,5);
-            return <section key={stage.key} className="min-h-[360px] bg-[var(--surface)]"><header className="border-b border-[var(--line)] bg-white p-3"><div className="flex justify-between"><strong className="text-sm">{stage.label}</strong><b>{group.length}</b></div><p className="mt-1 text-[11px] text-[var(--muted)]">{stage.description}</p></header><div className="space-y-2 p-2">{preview.map(row=><JourneyCard key={row.lead.id} row={row} onOpen={()=>setSelected(row)}/>)}
-              {group.length>5&&<button type="button" className="w-full rounded-lg border border-dashed border-[var(--line-strong)] bg-white p-2 text-xs font-semibold" onClick={()=>{setStageFilter(stage.key);setLimit(20)}}>View all {group.length}</button>}
-            </div></section>;
-          })}
-        </div></div>
-        :<div className="bg-[var(--surface)] p-4"><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.slice(0,limit).map(row=><JourneyCard key={row.lead.id} row={row} onOpen={()=>setSelected(row)}/>)}</div>{filtered.length>limit&&<div className="mt-4 flex justify-center"><button type="button" className="button-secondary" onClick={()=>setLimit(value=>value+20)}>Show 20 more</button></div>}{!filtered.length&&<EmptyState title="No clients match these filters" body="Change the search, source, service or journey stage."/>}</div>}
+      <div className="payback-hero">
+        <div>
+          <p className="eyebrow">Acquisition cohort → later cash</p>
+          <h2>Customer payback</h2>
+          <p>A customer stays attached to the month the lead was acquired, even when the project and invoices happen months later.</p>
+        </div>
+        <div className="payback-scope"><CalendarClock size={17}/><div><span>Selected acquisition period</span><strong>{data.periodLabel}</strong></div></div>
+      </div>
+      <div className="payback-truth-note">
+        <strong>Timing rule:</strong> CRM gives the acquisition date. ROBAWS gives a project record date and invoice dates. The API does not currently expose reliable work-start/work-finish dates or payment timestamps, so the dashboard does not pretend invoice dates are construction dates. “Paid by month” below means paid value attached to invoices dated in that month.
+      </div>
     </Card>
-    <div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-8"><Mini label="Unique people" value={formatNumber(summary.uniquePeople)}/><Mini label="Qualified" value={formatNumber(summary.qualified)}/><Mini label="Qualified · no ROBAWS offer" value={formatNumber(qualifiedNoOffer.length)}/><Mini label="People with ROBAWS offer" value={formatNumber(summary.offersCreated)}/><Mini label="Offer documents" value={formatNumber(summary.offerDocuments)}/><Mini label="Afgekeurd" value={formatNumber(summary.rejectedOfferDocuments)}/><Mini label="Cancelled" value={formatNumber(summary.cancelledOfferDocuments)}/><Mini label="Commercial clients" value={formatNumber(summary.commercialClients)}/></div>
+
+    <div className="payback-kpis">
+      <PaybackKpi label="Customers" value={formatNumber(totals.clients)} note="Commercially evidenced customers"/>
+      <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
+      <PaybackKpi label="Invoiced" value={formatCurrency(totals.invoiced,true)} note="Net of credits"/>
+      <PaybackKpi label="Paid to date" value={formatCurrency(totals.paid,true)} note="Current paid total on invoices" accent/>
+      <PaybackKpi label="Outstanding" value={formatCurrency(totals.open,true)} note="Invoiced minus paid"/>
+      <PaybackKpi label="Lead → first invoice" value={avgLag===null?"—":avgLag+" days"} note="Average for customers with invoices"/>
+    </div>
+
+    <Card className="p-5">
+      <SectionHeader title="Cash realization by invoice month" description="For the selected acquisition cohort, this shows when later invoices appear and how much paid value is currently attached to those invoices."/>
+      {monthlyCash.length?<div className="payback-month-grid">
+        {monthlyCash.map(item=><button type="button" key={item.month} className="payback-month" onClick={()=>setSearch(monthName(item.month))}>
+          <span>{monthName(item.month)}</span>
+          <strong>{formatCurrency(item.paid,true)}</strong>
+          <small>{item.clients.size} client(s) · {formatCurrency(item.invoiced,true)} invoiced</small>
+        </button>)}
+      </div>:<EmptyState title="No invoices for this acquisition cohort yet" body="Customers will appear here when linked ROBAWS invoices are available."/>}
+    </Card>
+
+    <Card className="p-4">
+      <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_210px_210px_auto]">
+        <label className="flex items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3"><Search size={15}/><input value={search} onChange={e=>{setSearch(e.target.value);setLimit(12)}} placeholder="Search client, invoice, source, location…" className="min-h-10 w-full outline-none"/></label>
+        <select value={source} onChange={e=>{setSource(e.target.value);setLimit(12)}} className="rounded-lg border border-[var(--line)] bg-white px-3"><option value="all">All sources</option>{sources.map(value=><option key={value}>{value}</option>)}</select>
+        <select value={status} onChange={e=>{setStatus(e.target.value);setLimit(12)}} className="rounded-lg border border-[var(--line)] bg-white px-3">
+          <option value="all">All payback states</option>
+          <option value="paid">Fully paid</option>
+          <option value="partial">Partly paid</option>
+          <option value="unpaid">Invoiced · unpaid</option>
+          <option value="project">Project · not invoiced</option>
+        </select>
+        {hasFilters?<button type="button" className="button-secondary" onClick={()=>{setSearch("");setSource("all");setStatus("all");setLimit(12)}}>Clear filters</button>:<div className="flex items-center justify-end text-xs font-semibold text-[var(--muted)]">{filtered.length} customers</div>}
+      </div>
+    </Card>
+
+    <div className="payback-list">
+      {filtered.slice(0,limit).map(item=><button type="button" key={item.row.lead.id} className="payback-card drillable text-left" onClick={()=>setSelected(item.row)}>
+        <div className="payback-card-head">
+          <div><strong>{item.row.lead.name}</strong><p>{item.row.lead.source} · {item.row.lead.service} · {item.row.lead.municipality}</p></div>
+          <StatusPill tone={item.paybackStatus==="paid"?"good":item.paybackStatus==="partial"?"warn":item.paybackStatus==="unpaid"?"bad":"neutral"}>{paybackStatusLabel(item.paybackStatus)}</StatusPill>
+        </div>
+
+        <div className="payback-milestones">
+          <PaybackMilestone label="Lead acquired" value={date(item.acquired)}/>
+          <ArrowRight size={14}/>
+          <PaybackMilestone label="ROBAWS project date" value={item.projectDate?date(item.projectDate):"—"}/>
+          <ArrowRight size={14}/>
+          <PaybackMilestone label="First invoice" value={item.firstInvoice?date(item.firstInvoice):"—"}/>
+          <ArrowRight size={14}/>
+          <PaybackMilestone label="Last invoice" value={item.lastInvoice?date(item.lastInvoice):"—"}/>
+        </div>
+
+        <div className="payback-money-grid">
+          <div><span>Project value</span><strong>{formatCurrency(item.projectValue,true)}</strong></div>
+          <div><span>Invoiced</span><strong>{formatCurrency(item.invoiced,true)}</strong></div>
+          <div><span>Paid</span><strong>{formatCurrency(item.paid,true)}</strong></div>
+          <div><span>Outstanding</span><strong>{formatCurrency(item.open,true)}</strong></div>
+          <div><span>Lead → first invoice</span><strong>{item.daysToFirstInvoice===null?"—":item.daysToFirstInvoice+" d"}</strong></div>
+        </div>
+
+        {item.invoiced>0&&<div className="payback-progress"><div><span>Collection</span><strong>{formatPercent(percentage(item.paid,item.invoiced))}</strong></div><div className="payback-progress-track"><i style={{width:`${Math.min(100,percentage(item.paid,item.invoiced)??0)}%`}}/></div></div>}
+
+        <div className="payback-cash-strip">
+          <span>Paid value by invoice month</span>
+          <div>{item.cashMonths.length?item.cashMonths.map(month=><em key={month.month}>{monthName(month.month)} <b>{formatCurrency(month.paid,true)}</b></em>):<small>No invoice payments yet</small>}</div>
+        </div>
+      </button>)}
+      {!filtered.length&&<Card className="p-5"><EmptyState title="No customers match these filters" body="Try a different source, payback state or search term."/></Card>}
+    </div>
+
+    {filtered.length>limit&&<div className="flex justify-center"><button type="button" className="button-secondary" onClick={()=>setLimit(value=>value+12)}>Show 12 more</button></div>}
     {selected&&<ClientDrawer data={data} row={selected} onClose={()=>setSelected(null)}/>}
   </div>;
+}
+
+type PaybackRecord = {
+  row: JourneyRow;
+  acquired:string;
+  projectDate:string|null;
+  firstInvoice:string|null;
+  lastInvoice:string|null;
+  projectValue:number;
+  invoiced:number;
+  paid:number;
+  open:number;
+  daysToFirstInvoice:number|null;
+  paybackStatus:"paid"|"partial"|"unpaid"|"project";
+  cashMonths:Array<{month:string;invoiced:number;paid:number}>;
+};
+
+function buildPaybackRecord(row:JourneyRow):PaybackRecord {
+  const invoices=[...row.invoices].sort((a,b)=>a.date.localeCompare(b.date));
+  const projects=[...row.projects].sort((a,b)=>(a.projectDate??a.date).localeCompare(b.projectDate??b.date));
+  const invoiced=invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0);
+  const paid=invoices.reduce((sum,item)=>sum+item.paidTotal,0);
+  const cashMonths=[...invoices.reduce((map,item)=>{
+    if(!item.date)return map;
+    const month=item.date.slice(0,7);
+    const current=map.get(month)??{month,invoiced:0,paid:0};
+    current.invoiced+=Math.max(0,item.totalInclVat-item.creditedTotal);
+    current.paid+=item.paidTotal;
+    map.set(month,current);
+    return map;
+  },new Map<string,{month:string;invoiced:number;paid:number}>()).values()].sort((a,b)=>a.month.localeCompare(b.month));
+  const firstInvoice=invoices[0]?.date??null;
+  const daysToFirstInvoice=firstInvoice?daysBetweenDates(row.lead.date,firstInvoice):null;
+  const paybackStatus:PaybackRecord["paybackStatus"]=invoiced>0&&paid>=invoiced-.01?"paid":paid>0?"partial":invoiced>0?"unpaid":"project";
+  return {
+    row,
+    acquired:row.lead.date,
+    projectDate:projects[0]?.projectDate??null,
+    firstInvoice,
+    lastInvoice:invoices.at(-1)?.date??null,
+    projectValue:row.projectValue,
+    invoiced,
+    paid,
+    open:Math.max(0,invoiced-paid),
+    daysToFirstInvoice,
+    paybackStatus,
+    cashMonths,
+  };
+}
+
+function daysBetweenDates(from:string,to:string){
+  const start=new Date(from).getTime(),end=new Date(to).getTime();
+  if(!Number.isFinite(start)||!Number.isFinite(end))return null;
+  return Math.round((end-start)/86400000);
+}
+
+function paybackStatusLabel(value:PaybackRecord["paybackStatus"]){
+  return value==="paid"?"Fully paid":value==="partial"?"Partly paid":value==="unpaid"?"Invoiced · unpaid":"Project · not invoiced";
+}
+
+function PaybackKpi({label,value,note,accent=false}:{label:string;value:string;note:string;accent?:boolean}){
+  const Icon=accent?WalletCards:CircleDollarSign;
+  return <div className={`payback-kpi ${accent?"is-accent":""}`}><div><Icon size={15}/><span>{label}</span></div><strong>{value}</strong><small>{note}</small></div>;
+}
+
+function PaybackMilestone({label,value}:{label:string;value:string}){
+  return <div><span>{label}</span><strong>{value}</strong></div>;
 }
 
 export function VisitsPage({ data }: { data: CompanyDataset }) {
