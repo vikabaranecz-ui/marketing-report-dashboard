@@ -84,7 +84,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
 
         {totalRecords>0&&<div className="record-filter-bar">
           <label className="record-search"><Search size={15}/><input value={search} onChange={e=>{setSearch(e.target.value);setLimit(20)}} placeholder="Search name, source, offer, invoice, location…"/></label>
-          {types.length>1&&<select value={kind} onChange={e=>{setKind(e.target.value);setLimit(20)}}><option value="all">All record types</option>{types.map(([value,label,count])=><option key={value} value={value}>{label} ({count})</option>)}</select>}
+          {types.length>1&&<select value={kind} onChange={e=>{setKind(e.target.value as NonNullable<RecordDrilldown["initialKind"]>);setLimit(20)}}><option value="all">All record types</option>{types.map(([value,label,count])=><option key={value} value={value}>{label} ({count})</option>)}</select>}
           {offers.length>0&&<select value={offerOutcome} onChange={e=>{setOfferOutcome(e.target.value);setLimit(20)}}><option value="all">All offer outcomes</option><option value="open">Open</option><option value="accepted">Accepted</option><option value="rejected">Afgekeurd</option><option value="cancelled">Cancelled</option></select>}
           {(search||kind!=="all"||offerOutcome!=="all")&&<button type="button" className="button-secondary" onClick={()=>{setSearch("");setKind("all");setOfferOutcome("all");setLimit(20)}}>Clear</button>}
           <span className="record-result-count">{visibleCount} matching</span>
