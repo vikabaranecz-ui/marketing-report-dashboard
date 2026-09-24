@@ -112,7 +112,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
         <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project €</th><th>Paid €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
           <td className="font-semibold">{row.source}</td>
-          <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend?<StatusPill tone="accent">Manual</StatusPill>:<Pencil size={12}/>}</button></td>
+          <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
           <td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}</td>
           <td>{formatCurrency(row.projectValue)}</td><td className="font-semibold">{formatCurrency(row.paid)}</td>
@@ -260,7 +260,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
 
 export type SourceBusinessRow = {
   source:string; spend:number|null; costState:"known"|"missing"|"not-applicable";
-  isManualSpend:boolean; manualNote:string;
+  isManualSpend:boolean; manualNote:string; recurringSpend:number;
   leads:number; qualified:number; visits:number; offers:number; sentValue:number; openValue:number;
   signed:number; commercialClients:number; attributedClients:number; projectValue:number; paid:number;
 };
@@ -276,7 +276,11 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     const leadIds=new Set(group.flatMap(item=>item.leadIds));
     const sourceInvoices=invoices.filter(item=>item.leadId!==null&&leadIds.has(item.leadId));
     const manual = sourceSpendOverride(data,source);
-    const spend = manual ? Number(manual.value) : spendForSource(data,source,group);
+    const recurring = recurringSourceSpend(data,source);
+    const baseSpend = manual ? Number(manual.value) : spendForSource(data,source,group);
+    const spend = baseSpend===null
+      ? (recurring.amount>0?recurring.amount:null)
+      : baseSpend+recurring.amount;
     const nonPaid=!paidSources.has(source);
     const costState: SourceBusinessRow["costState"] = nonPaid ? "not-applicable" : spend === null || !Number.isFinite(spend) ? "missing" : "known";
     return {
@@ -285,6 +289,7 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
       costState,
       isManualSpend:Boolean(manual),
       manualNote:manual?.note??"",
+      recurringSpend:recurring.amount,
       leads:group.length,
       qualified:group.filter(item=>item.isQualified).length,
       visits:group.filter(hasCompletedVisitEvidence).length,
@@ -313,7 +318,9 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     let row=bySource.get(source);
     if(!row){
       const manualSpend=sourceSpendOverride(data,source);
-      const spend=manualSpend?Number(manualSpend.value):spendForSource(data,source,[]);
+      const recurring=recurringSourceSpend(data,source);
+      const baseSpend=manualSpend?Number(manualSpend.value):spendForSource(data,source,[]);
+      const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
       const nonPaid=!paidSources.has(source);
       row={
         source,
@@ -321,6 +328,7 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
         isManualSpend:Boolean(manualSpend),
         manualNote:manualSpend?.note??"",
+        recurringSpend:recurring.amount,
         leads:0,qualified:0,visits:0,offers:0,sentValue:0,openValue:0,signed:0,
         commercialClients:0,attributedClients:0,projectValue:0,paid:0,
       };
@@ -359,9 +367,43 @@ function sourceSpendOverride(data:CompanyDataset,source:string){
   )??null;
 }
 
+function recurringSourceSpend(data:CompanyDataset,source:string){
+  const [periodStart,periodEnd]=data.periodLabel.split(" — ");
+  if(!periodStart||!periodEnd)return {amount:0,note:""};
+
+  const today=new Date().toISOString().slice(0,10);
+  let amount=0;
+  const notes:string[]=[];
+
+  for(const item of data.manualOverrides??[]){
+    if(item.scopeType!=="source"||item.scopeKey!==source||item.fieldKey!=="recurring_spend")continue;
+    if(!item.value||typeof item.value!=="object"||Array.isArray(item.value))continue;
+    const value=item.value as Record<string,unknown>;
+    const monthly=Number(value.monthly??0);
+    const start=typeof value.start==="string"?value.start:"";
+    const configuredEnd=typeof value.end==="string"&&value.end?value.end:null;
+    if(!Number.isFinite(monthly)||monthly<=0||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(start))continue;
+
+    const effectiveStart=[periodStart,start].sort().at(-1)!;
+    const effectiveEnd=[periodEnd,configuredEnd??today,today].sort()[0];
+    if(effectiveStart>effectiveEnd)continue;
+
+    const [sy,sm]=effectiveStart.split("-").map(Number);
+    const [ey,em]=effectiveEnd.split("-").map(Number);
+    const months=(ey-sy)*12+(em-sm)+1;
+    if(months<=0)continue;
+
+    amount+=months*monthly;
+    const label=typeof value.label==="string"&&value.label.trim()?value.label.trim():"Recurring offline spend";
+    notes.push(`${label}: ${months} × €${monthly.toFixed(2)}`);
+  }
+
+  return {amount,note:notes.join(" · ")};
+}
+
 function SpendEditor({data,row,onClose}:{data:CompanyDataset;row:SourceBusinessRow;onClose:()=>void}){
   const router=useRouter();
-  const [value,setValue]=useState(row.spend===null?"":String(row.spend));
+  const [value,setValue]=useState(row.spend===null?"":String(Math.max(0,row.spend-row.recurringSpend)));
   const [note,setNote]=useState(row.manualNote);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");
@@ -406,7 +448,8 @@ function SpendEditor({data,row,onClose}:{data:CompanyDataset;row:SourceBusinessR
         <button type="button" onClick={onClose} className="icon-button"><X size={17}/></button>
       </header>
       <div className="space-y-5 p-5">
-        <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Spend for {data.periodKey??"selected period"}</span><div className="flex items-center border border-[var(--line)] bg-white px-3"><span className="text-[var(--muted)]">€</span><input value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" className="h-11 w-full px-2 outline-none" placeholder="0.00"/></div></label>
+        <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Base spend for {data.periodKey??"selected period"}</span><div className="flex items-center border border-[var(--line)] bg-white px-3"><span className="text-[var(--muted)]">€</span><input value={value} onChange={e=>setValue(e.target.value)} inputMode="decimal" className="h-11 w-full px-2 outline-none" placeholder="0.00"/></div></label>
+        {row.recurringSpend>0&&<div className="callout"><CircleDollarSign size={17}/><div><strong>Recurring offline spend is added automatically</strong><p>{formatCurrency(row.recurringSpend)} is added for this reporting period on top of the base spend.</p></div></div>}
         <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[var(--muted)]">Reason / note</span><textarea value={note} onChange={e=>setNote(e.target.value)} className="min-h-28 w-full border border-[var(--line)] p-3 text-sm outline-none" placeholder="Example: LeadAngel invoice for September"/></label>
         {error&&<div className="border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
         <div className="flex gap-2">
