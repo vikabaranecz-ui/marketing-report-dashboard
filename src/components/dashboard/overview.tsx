@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo,useState } from "react";
+import { useMemo,useState,type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle,ArrowRight,CheckCircle2,CircleDollarSign,Database,ReceiptText,UsersRound,WalletCards } from "lucide-react";
 
@@ -303,7 +303,7 @@ function FlowStage({label,value,share,note,onClick}:{label:string;value:number;s
 }
 function Economy({label,value}:{label:string;value:string}){return <div className="economy-cell"><span>{label}</span><strong>{value}</strong></div>}
 function ValueStep({label,value}:{label:string;value:string}){return <div><span>{label}</span><strong>{value}</strong></div>}
-function TrustDomain({title,icon,items}:{title:string;icon:React.ReactNode;items:Array<{label:string;state:"complete"|"partial"|"missing"|"review";detail:string}>}){
+function TrustDomain({title,icon,items}:{title:string;icon:ReactNode;items:Array<{label:string;state:"complete"|"partial"|"missing"|"review";detail:string}>}){
   return <Card className="trust-domain"><div className="trust-domain-head">{icon}<h3>{title}</h3></div>{items.map(item=><div className="trust-domain-row" key={item.label}><StatusPill tone={item.state==="complete"?"good":item.state==="missing"?"bad":"warn"}>{item.state==="complete"?"Complete":item.state==="partial"?"Partial":item.state==="missing"?"Missing":"Needs review"}</StatusPill><div><strong>{item.label}</strong><p>{item.detail}</p></div></div>)}</Card>;
 }
 function buildInsight(model:ReturnType<typeof buildOverviewModel>,missingCosts:number,unattributed:number){
