@@ -71,7 +71,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
         })}
       </div>
       <button type="button" className="m-4 mt-0 flex w-[calc(100%-2rem)] items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-amber-950" onClick={()=>setDrilldown({title:"Qualified people without a ROBAWS offer",subtitle:data.periodLabel,leads:qualifiedNoOfferRows.map(row=>row.lead)})}>
-        <div><strong>${qualifiedNoOfferRows.length} qualified people have no linked ROBAWS offer</strong><p className="mt-1 text-xs opacity-80">Click to see exactly who they are. This is why Qualified can be higher than People with offer.</p></div><span className="text-lg font-bold">${qualifiedNoOfferRows.length}</span>
+        <div><strong>{qualifiedNoOfferRows.length} qualified people have no linked ROBAWS offer</strong><p className="mt-1 text-xs opacity-80">Click to see exactly who they are. This is why Qualified can be higher than People with offer.</p></div><span className="text-lg font-bold">{qualifiedNoOfferRows.length}</span>
       </button>
     </Card>
 
