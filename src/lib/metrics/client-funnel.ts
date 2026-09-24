@@ -261,7 +261,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       : baseLead;
     const leadAppointments = appointments.filter(item => leadIds.has(item.leadId));
     const leadOffers = offers.filter(item => leadIds.has(item.leadId));
-    const leadProjects = projects.filter(item => leadIds.has(item.leadId));
+    const leadProjects = projects.filter(item => item.leadId !== null && leadIds.has(item.leadId));
     const leadInvoices = invoices.filter(item => item.leadId !== null && leadIds.has(item.leadId));
     const currentOffer = latestOffer(leadOffers);
     const verifiedProject = leadProjects.some(project =>
