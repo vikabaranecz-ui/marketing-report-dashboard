@@ -1,0 +1,482 @@
+import type { CompanyDataset, CommercialClient, CommercialInvoice, CommercialProject } from "@/lib/data/types";
+import { buildJourneyRows, hasLeadOfferEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { percentage, safeDivide } from "@/lib/metrics/kpis";
+
+export const PAID_ACQUISITION_SOURCES = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"]);
+
+export type SourcePerformanceRow = {
+  source:string;
+  spend:number|null;
+  costState:"known"|"missing"|"not-applicable";
+  spendNote:string;
+  isManualSpend:boolean;
+  recurringSpend:number;
+  leads:number;
+  qualified:number;
+  visits:number;
+  offers:number;
+  customers:number;
+  attributableClients:number;
+  projectValueExclVat:number;
+  projectValueInclVat:number;
+  paidValue:number;
+  cpl:number|null;
+  costQualified:number|null;
+  costVisit:number|null;
+  costOffer:number|null;
+  cac:number|null;
+  cohortCashRoas:number|null;
+};
+
+export type OverviewScope = { source:string; campaign:string };
+
+export function normalizeAcquisitionSource(source:string){
+  const lower=String(source??"").trim().toLowerCase();
+  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")||lower.includes("facade ad")) return "Meta Ads / Facebook";
+  if(lower.includes("google ads")) return "Google Ads";
+  if(lower.includes("leadangel")) return "LeadAngel";
+  if(lower.includes("agenciyou")) return "AgenciYou";
+  if(lower.includes("solary")) return "Solary";
+  if(lower.includes("web calculator")) return "Web calculator";
+  if(lower==="web"||lower.includes("website")) return "Web";
+  return String(source??"").trim()||"Unattributed";
+}
+
+export function hasCompletedVisitEvidence(row:JourneyRow){
+  const status=normalized(row.lead.crmStatus);
+  const stage=normalized(row.lead.stage);
+  return row.appointments.some(item=>Boolean(item.completedAt))
+    || stage.includes("visit completed")
+    || stage.includes("quote")
+    || stage.includes("won")
+    || ["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
+}
+
+export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=buildJourneyRows(data)):SourcePerformanceRow[]{
+  const groups=new Map<string,JourneyRow[]>();
+  for(const row of rows){
+    const key=normalizeAcquisitionSource(row.lead.source);
+    groups.set(key,[...(groups.get(key)??[]),row]);
+  }
+
+  const result=[...groups.entries()].map(([source,group])=>{
+    const manual=sourceSpendOverride(data,source);
+    const recurring=recurringSourceSpend(data,source);
+    const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,group);
+    const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+    const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
+    const costState:SourcePerformanceRow["costState"]=nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known";
+    const clients=uniqueCommercialClientsForRows(data,group);
+    const projectValueExclVat=clients.length
+      ? clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0)
+      : group.reduce((sum,row)=>sum+row.projects.reduce((projectSum,project)=>projectSum+Number(project.valueExclVat??0),0),0);
+    const projectValueInclVat=clients.length
+      ? clients.reduce((sum,client)=>sum+client.projectValueTotal,0)
+      : group.reduce((sum,row)=>sum+row.projectValue,0);
+    const paidValue=clients.length
+      ? clients.reduce((sum,client)=>sum+client.paidTotal,0)
+      : uniqueInvoices(group.flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0);
+    const qualified=group.filter(item=>item.isQualified).length;
+    const visits=group.filter(hasCompletedVisitEvidence).length;
+    const offers=group.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length;
+    const attributableClients=group.filter(item=>item.isAttributableClient).length;
+    return withCostMetrics({
+      source,spend:Number.isFinite(spend as number)?spend:null,costState,
+      spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
+      isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
+      leads:group.length,qualified,visits,offers,
+      customers:group.filter(item=>item.isCommercialClient).length,
+      attributableClients,projectValueExclVat,projectValueInclVat,paidValue,
+    });
+  });
+
+  const bySource=new Map(result.map(row=>[row.source,row]));
+  const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
+  const manualOnlyClients=(data.commercialClients??[]).filter(client=>
+    client.commercialStatus==="CLIENT_WON"
+    && clientInSelectedPeriod(data,client)
+    && Boolean(manualClientSource(data,client))
+    && !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
+  );
+
+  for(const client of manualOnlyClients){
+    const source=normalizeAcquisitionSource(manualClientSource(data,client)??"Unattributed");
+    let row=bySource.get(source);
+    if(!row){
+      const manual=sourceSpendOverride(data,source);
+      const recurring=recurringSourceSpend(data,source);
+      const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,[]);
+      const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+      const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
+      row=withCostMetrics({
+        source,spend:Number.isFinite(spend as number)?spend:null,
+        costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
+        spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
+        isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
+        leads:0,qualified:0,visits:0,offers:0,customers:0,attributableClients:0,
+        projectValueExclVat:0,projectValueInclVat:0,paidValue:0,
+      });
+      bySource.set(source,row);
+      result.push(row);
+    }
+    row.customers+=1;
+    row.attributableClients+=1;
+    row.projectValueExclVat+=client.projectValueTotalExclVat;
+    row.projectValueInclVat+=client.projectValueTotal;
+    row.paidValue+=client.paidTotal;
+    refreshCostMetrics(row);
+  }
+
+  return result.sort((a,b)=>b.paidValue-a.paidValue||b.projectValueExclVat-a.projectValueExclVat||b.customers-a.customers||b.leads-a.leads);
+}
+
+export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
+  const allRows=buildJourneyRows(data);
+  const rows=allRows.filter(row=>
+    (scope.source==="all"||normalizeAcquisitionSource(row.lead.source)===scope.source)
+    && (scope.campaign==="all"||row.lead.campaign===scope.campaign)
+  );
+
+  const periodProjects=(data.periodCommercialProjects??[]).filter(item=>Boolean(item.date));
+  const periodInvoices=(data.periodCommercialInvoices??[]).filter(item=>Boolean(item.date));
+  const wonValueInclVat=periodProjects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
+  const wonValueExclVat=periodProjects.reduce((sum,item)=>sum+Number(item.valueExclVat??0),0);
+  const invoicedInclVat=periodInvoices.reduce((sum,item)=>sum+netInvoiceIncl(item),0);
+  const invoicedExclVat=periodInvoices.reduce((sum,item)=>sum+Math.max(0,item.totalExclVat),0);
+  const paidValueOnPeriodInvoices=periodInvoices.reduce((sum,item)=>sum+item.paidTotal,0);
+  const outstanding=periodInvoices.reduce((sum,item)=>sum+Math.max(0,netInvoiceIncl(item)-item.paidTotal),0);
+  const business={
+    projects:periodProjects,
+    invoices:periodInvoices,
+    wonProjects:periodProjects.length,
+    wonValueInclVat,
+    wonValueExclVat,
+    invoicedInclVat,
+    invoicedExclVat,
+    paidValueOnPeriodInvoices,
+    outstanding,
+    notYetInvoicedPeriodGap:Math.max(0,wonValueInclVat-invoicedInclVat),
+    invoicedToWon:percentage(invoicedInclVat,wonValueInclVat),
+    paidToInvoiced:percentage(paidValueOnPeriodInvoices,invoicedInclVat),
+    paidToWon:percentage(paidValueOnPeriodInvoices,wonValueInclVat),
+  };
+
+  const unique=rows.length;
+  const qualified=rows.filter(row=>row.isQualified).length;
+  const visits=rows.filter(hasCompletedVisitEvidence).length;
+  const offers=rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).length;
+  const signed=rows.filter(row=>row.isSigned).length;
+  const customers=rows.filter(row=>row.isCommercialClient).length;
+  const strictSets={
+    qualified:new Set(rows.filter(row=>row.isQualified).map(row=>row.lead.id)),
+    visits:new Set(rows.filter(hasCompletedVisitEvidence).map(row=>row.lead.id)),
+    offers:new Set(rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).map(row=>row.lead.id)),
+    customers:new Set(rows.filter(row=>row.isCommercialClient).map(row=>row.lead.id)),
+  };
+  const sequentialSupported=
+    isSubset(strictSets.visits,strictSets.qualified)
+    && isSubset(strictSets.offers,strictSets.visits)
+    && isSubset(strictSets.customers,strictSets.offers);
+  const cohortClients=uniqueCommercialClientsForRows(data,rows);
+  const cohort={
+    rows,clients:cohortClients,
+    unique,qualified,visits,offers,signed,customers,
+    projectValueExclVat:cohortClients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
+    projectValueInclVat:cohortClients.reduce((sum,client)=>sum+client.projectValueTotal,0),
+    invoicedToDate:cohortClients.reduce((sum,client)=>sum+client.invoicedTotal,0),
+    paidToDate:cohortClients.reduce((sum,client)=>sum+client.paidTotal,0),
+    sequentialSupported,
+    milestones:[
+      {key:"leads",label:"Unique leads",value:unique,rate:unique?100:0},
+      {key:"qualified",label:"Qualified",value:qualified,rate:percentage(qualified,unique)??0},
+      {key:"visits",label:"Completed visits",value:visits,rate:percentage(visits,unique)??0},
+      {key:"offers",label:"Offers sent",value:offers,rate:percentage(offers,unique)??0},
+      {key:"signed",label:"Signed CRM",value:signed,rate:percentage(signed,unique)??0},
+      {key:"customers",label:"Commercial customers",value:customers,rate:percentage(customers,unique)??0},
+    ],
+  };
+
+  const sourceRows=buildSourcePerformance(data,allRows);
+  const economics=buildEconomics(data,rows,sourceRows,scope);
+  const payback=buildPayback(data,rows,economics.coveredSpend);
+  const coverage=buildCoverage(data);
+  const attribution=buildAttributionCoverage(data,sourceRows);
+  const reconciliation=buildReconciliation(sourceRows,economics,business,coverage);
+
+  return {allRows,rows,business,cohort,economics,sourceRows,payback,coverage,attribution,reconciliation};
+}
+
+function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerformanceRow[],scope:OverviewScope){
+  if(scope.campaign!=="all"){
+    const campaign=data.campaigns.find(item=>item.name===scope.campaign);
+    const inferredSource=campaign?normalizeAcquisitionSource(campaign.channel):scope.source;
+    const paidSource=scope.source!=="all"
+      ? PAID_ACQUISITION_SOURCES.has(scope.source)
+      : PAID_ACQUISITION_SOURCES.has(inferredSource);
+    const spend=campaign&&campaign.spend>0?campaign.spend:(paidSource?null:0);
+    const clients=uniqueCommercialClientsForRows(data,rows);
+    const counts={
+      leads:rows.length,
+      qualified:rows.filter(item=>item.isQualified).length,
+      visits:rows.filter(hasCompletedVisitEvidence).length,
+      offers:rows.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length,
+      customers:rows.filter(item=>item.isAttributableClient).length,
+    };
+    const coveredSpend=paidSource?spend:0;
+    return {
+      costState:paidSource?(spend===null?"missing":"known"):"not-applicable" as const,
+      coveredSpend:spend===null?0:Number(coveredSpend),
+      coveredLeads:spend===null?0:counts.leads,
+      coveredQualified:spend===null?0:counts.qualified,
+      coveredVisits:spend===null?0:counts.visits,
+      coveredOffers:spend===null?0:counts.offers,
+      attributableCustomers:spend===null?0:counts.customers,
+      cohortValueExclVat:clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
+      cohortPaidValue:clients.reduce((sum,client)=>sum+client.paidTotal,0),
+      cpl:spend===null?null:safeDivide(spend,counts.leads),
+      costQualified:spend===null?null:safeDivide(spend,counts.qualified),
+      costVisit:spend===null?null:safeDivide(spend,counts.visits),
+      costOffer:spend===null?null:safeDivide(spend,counts.offers),
+      cac:spend===null?null:safeDivide(spend,counts.customers),
+      cohortCashRoas:spend===null||spend===0?null:clients.reduce((sum,client)=>sum+client.paidTotal,0)/spend,
+      missingCostSources:spend===null?[scope.campaign]:[],
+      coveredSources:spend===null?[]:[scope.campaign],
+    };
+  }
+
+  const relevant=scope.source==="all"?sources:sources.filter(item=>item.source===scope.source);
+  const paidRelevant=relevant.filter(item=>PAID_ACQUISITION_SOURCES.has(item.source));
+  const known=paidRelevant.filter(item=>item.costState==="known"&&item.spend!==null);
+  const missing=paidRelevant.filter(item=>item.costState==="missing");
+  const coveredSpend=known.reduce((sum,item)=>sum+Number(item.spend??0),0);
+  const coveredLeads=known.reduce((sum,item)=>sum+item.leads,0);
+  const coveredQualified=known.reduce((sum,item)=>sum+item.qualified,0);
+  const coveredVisits=known.reduce((sum,item)=>sum+item.visits,0);
+  const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
+  const attributableCustomers=known.reduce((sum,item)=>sum+item.attributableClients,0);
+  const cohortValueExclVat=relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
+  const cohortPaidValue=relevant.reduce((sum,item)=>sum+item.paidValue,0);
+  return {
+    costState:missing.length?"partial":known.length?"known":"missing" as "partial"|"known"|"missing",
+    coveredSpend,coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,
+    cohortValueExclVat,cohortPaidValue,
+    cpl:safeDivide(coveredSpend,coveredLeads),
+    costQualified:safeDivide(coveredSpend,coveredQualified),
+    costVisit:safeDivide(coveredSpend,coveredVisits),
+    costOffer:safeDivide(coveredSpend,coveredOffers),
+    cac:safeDivide(coveredSpend,attributableCustomers),
+    cohortCashRoas:coveredSpend?cohortPaidValue/coveredSpend:null,
+    missingCostSources:missing.map(item=>item.source),
+    coveredSources:known.map(item=>item.source),
+  };
+}
+
+function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number){
+  const clientByLead=new Map((data.commercialClients??[]).filter(item=>item.matchedLeadId).map(item=>[item.matchedLeadId as string,item]));
+  const cohorts=new Map<string,{month:string;customers:Set<string>;projectValue:number;invoiced:number;paid:number}>();
+  const offsets=new Map<number,number>();
+
+  for(const row of rows){
+    const month=row.lead.date.slice(0,7);
+    if(!month) continue;
+    const clients=row.leadIds.map(id=>clientByLead.get(id)).filter(Boolean) as CommercialClient[];
+    const unique=[...new Map(clients.map(item=>[item.id,item])).values()];
+    const current=cohorts.get(month)??{month,customers:new Set<string>(),projectValue:0,invoiced:0,paid:0};
+    for(const client of unique){
+      if(current.customers.has(client.id)) continue;
+      current.customers.add(client.id);
+      current.projectValue+=client.projectValueTotalExclVat;
+      current.invoiced+=client.invoicedTotal;
+      current.paid+=client.paidTotal;
+    }
+    cohorts.set(month,current);
+
+    for(const invoice of uniqueInvoices(row.invoices)){
+      if(!invoice.date) continue;
+      const offset=monthDistance(month,invoice.date.slice(0,7));
+      if(offset<0) continue;
+      offsets.set(offset,(offsets.get(offset)??0)+invoice.paidTotal);
+    }
+  }
+
+  let cumulative=0;
+  const series=[...offsets.entries()].sort((a,b)=>a[0]-b[0]).map(([monthOffset,paid])=>{
+    cumulative+=paid;
+    return {monthOffset,label:monthOffset===0?"Month 0":`Month ${monthOffset}`,paid,cumulativePaid:cumulative};
+  });
+
+  return {
+    cohorts:[...cohorts.values()].sort((a,b)=>a.month.localeCompare(b.month)).map(item=>({...item,customers:item.customers.size})),
+    series,
+    acquisitionSpendReference:coveredSpend>0?coveredSpend:null,
+    paymentTimingAvailable:false,
+  };
+}
+
+function buildCoverage(data:CompanyDataset){
+  const clients=data.commercialClients??[];
+  const allInvoices=data.allCommercialInvoices??[];
+  const allProjects=data.allCommercialProjects??[];
+  const expectedInvoices=clients.reduce((sum,item)=>sum+item.invoiceCount,0);
+  const expectedProjects=clients.reduce((sum,item)=>sum+item.projectCount,0);
+  const expectedInvoiced=clients.reduce((sum,item)=>sum+item.invoicedTotal,0);
+  const expectedPaid=clients.reduce((sum,item)=>sum+item.paidTotal,0);
+  const loadedInvoiced=allInvoices.reduce((sum,item)=>sum+netInvoiceIncl(item),0);
+  const loadedPaid=allInvoices.reduce((sum,item)=>sum+item.paidTotal,0);
+  return {
+    expectedInvoices,loadedInvoices:allInvoices.length,missingInvoices:Math.max(0,expectedInvoices-allInvoices.length),
+    expectedProjects,loadedProjects:allProjects.length,missingProjects:Math.max(0,expectedProjects-allProjects.length),
+    expectedInvoiced,loadedInvoiced,missingInvoiced:Math.max(0,expectedInvoiced-loadedInvoiced),
+    expectedPaid,loadedPaid,missingPaid:Math.max(0,expectedPaid-loadedPaid),
+    invoiceCoverage:percentage(allInvoices.length,expectedInvoices)??0,
+    projectCoverage:percentage(allProjects.length,expectedProjects)??0,
+  };
+}
+
+function buildAttributionCoverage(data:CompanyDataset,sources:SourcePerformanceRow[]){
+  const won=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
+  const resolved=won.filter(client=>Boolean(client.matchedLeadId)||Boolean(manualClientSource(data,client)));
+  const paidTotal=won.reduce((sum,item)=>sum+item.paidTotal,0);
+  const attributedPaid=resolved.reduce((sum,item)=>sum+item.paidTotal,0);
+  const paidSources=sources.filter(item=>PAID_ACQUISITION_SOURCES.has(item.source));
+  const knownCost=paidSources.filter(item=>item.costState==="known").length;
+  return {
+    commercialCustomers:won.length,
+    sourceResolved:resolved.length,
+    sourceCoverage:percentage(resolved.length,won.length)??0,
+    paidTotal,attributedPaid,
+    paidValueCoverage:percentage(attributedPaid,paidTotal)??0,
+    paidSources:paidSources.length,
+    paidSourcesWithCost:knownCost,
+    spendCoverage:percentage(knownCost,paidSources.length)??0,
+  };
+}
+
+function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType<typeof buildEconomics>,business:any,coverage:ReturnType<typeof buildCoverage>){
+  const sourceSpend=sources.filter(item=>item.costState==="known").reduce((sum,item)=>sum+Number(item.spend??0),0);
+  const sourceCustomers=sources.reduce((sum,item)=>sum+item.attributableClients,0);
+  return {
+    coveredSpendDifference:Math.abs(sourceSpend-economics.coveredSpend),
+    sourceCustomerTotal:sourceCustomers,
+    periodProjectValue:business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0),
+    periodProjectValueDifference:Math.abs(business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0)-business.wonValueInclVat),
+    periodInvoiceValue:business.invoices.reduce((sum:number,item:CommercialInvoice)=>sum+netInvoiceIncl(item),0),
+    periodInvoiceValueDifference:Math.abs(business.invoices.reduce((sum:number,item:CommercialInvoice)=>sum+netInvoiceIncl(item),0)-business.invoicedInclVat),
+    invoiceDetailGap:coverage.missingInvoices,
+    projectDetailGap:coverage.missingProjects,
+  };
+}
+
+function withCostMetrics(row:Omit<SourcePerformanceRow,"cpl"|"costQualified"|"costVisit"|"costOffer"|"cac"|"cohortCashRoas">):SourcePerformanceRow{
+  const result={...row,cpl:null,costQualified:null,costVisit:null,costOffer:null,cac:null,cohortCashRoas:null} as SourcePerformanceRow;
+  refreshCostMetrics(result);
+  return result;
+}
+
+function refreshCostMetrics(row:SourcePerformanceRow){
+  if(row.costState!=="known"||row.spend===null){
+    row.cpl=row.costQualified=row.costVisit=row.costOffer=row.cac=row.cohortCashRoas=null;
+    return;
+  }
+  row.cpl=safeDivide(row.spend,row.leads);
+  row.costQualified=safeDivide(row.spend,row.qualified);
+  row.costVisit=safeDivide(row.spend,row.visits);
+  row.costOffer=safeDivide(row.spend,row.offers);
+  row.cac=safeDivide(row.spend,row.attributedClients);
+  row.cohortCashRoas=row.spend?row.paidValue/row.spend:null;
+}
+
+function sourceSpendOverride(data:CompanyDataset,source:string){
+  const matches=(data.manualOverrides??[]).filter(item=>
+    item.scopeType==="source"&&item.scopeKey===source&&item.fieldKey==="spend"&&typeof item.value==="number"
+  );
+  return matches.find(item=>item.periodKey===data.periodKey)
+    ??matches.find(item=>item.periodKey==="all")
+    ??matches[0]
+    ??null;
+}
+
+function recurringSourceSpend(data:CompanyDataset,source:string){
+  const [periodStart,periodEnd]=data.periodLabel.split(" — ");
+  if(!periodStart||!periodEnd)return{amount:0,note:""};
+  const today=new Date().toISOString().slice(0,10);
+  let amount=0;
+  const notes:string[]=[];
+  for(const item of data.manualOverrides??[]){
+    if(item.scopeType!=="source"||item.scopeKey!==source||item.fieldKey!=="recurring_spend")continue;
+    if(!item.value||typeof item.value!=="object"||Array.isArray(item.value))continue;
+    const value=item.value as Record<string,unknown>;
+    const monthly=Number(value.monthly??0);
+    const start=typeof value.start==="string"?value.start:"";
+    const configuredEnd=typeof value.end==="string"&&value.end?value.end:null;
+    if(!Number.isFinite(monthly)||monthly<=0||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(start))continue;
+    const effectiveStart=[periodStart,start].sort().at(-1)!;
+    const effectiveEnd=[periodEnd,configuredEnd??today,today].sort()[0];
+    if(effectiveStart>effectiveEnd)continue;
+    const [sy,sm]=effectiveStart.split("-").map(Number);
+    const [ey,em]=effectiveEnd.split("-").map(Number);
+    const months=(ey-sy)*12+(em-sm)+1;
+    if(months<=0)continue;
+    amount+=months*monthly;
+    const label=typeof value.label==="string"&&value.label.trim()?value.label.trim():"Recurring offline spend";
+    notes.push(`${label}: ${months} month(s)`);
+  }
+  return{amount,note:notes.join(" · ")};
+}
+
+function syncedSpendForSource(data:CompanyDataset,source:string,rows:JourneyRow[]){
+  const channelName=source==="Meta Ads / Facebook"?"Meta Ads":source==="Google Ads"?"Google Ads":null;
+  if(channelName){
+    const channel=data.channels.find(item=>item.channel===channelName);
+    return channel&&channel.spend>0?channel.spend:null;
+  }
+  if(source==="LeadAngel"){
+    const costs=rows.map(row=>row.lead.acquisitionCost);
+    return costs.length&&costs.every(value=>value!==null)?costs.reduce<number>((sum,value)=>sum+Number(value),0):null;
+  }
+  return null;
+}
+
+export function manualClientSource(data:CompanyDataset,client:CommercialClient){
+  const overrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
+  const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
+  const matches=overrides.filter(item=>keys.includes(item.scopeKey));
+  const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
+  return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
+}
+
+function clientInSelectedPeriod(data:CompanyDataset,client:CommercialClient){
+  const [from,to]=data.periodLabel.split(" — ");
+  const date=client.clientSince?.slice(0,10)??"";
+  return Boolean(date&&from&&to&&date>=from&&date<=to);
+}
+
+function uniqueCommercialClientsForRows(data:CompanyDataset,rows:JourneyRow[]){
+  const leadIds=new Set(rows.flatMap(row=>row.leadIds));
+  return [...new Map((data.commercialClients??[])
+    .filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
+    .map(client=>[client.id,client])).values()];
+}
+
+function uniqueInvoices(invoices:CommercialInvoice[]){
+  return [...new Map(invoices.map(item=>[item.id,item])).values()];
+}
+
+function netInvoiceIncl(invoice:CommercialInvoice){
+  return Math.max(0,invoice.totalInclVat-invoice.creditedTotal);
+}
+
+function isSubset(child:Set<string>,parent:Set<string>){
+  return [...child].every(value=>parent.has(value));
+}
+
+function monthDistance(from:string,to:string){
+  const [fy,fm]=from.split("-").map(Number);
+  const [ty,tm]=to.split("-").map(Number);
+  if(!fy||!fm||!ty||!tm)return -1;
+  return(ty-fy)*12+(tm-fm);
+}
+
+function normalized(value:string){
+  return String(value??"").trim().toLowerCase().replace(/\s+/g," ");
+}
