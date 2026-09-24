@@ -298,38 +298,41 @@ export async function syncRobawsProvider(
 
   const leadIds = leads.map((lead) => lead.id);
 
+  const cleanupTasks = [
+    admin
+      .from("projects")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("crm_source", "robaws"),
+
+    admin
+      .from("commercial_invoices")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("external_source", "robaws"),
+
+    admin
+      .from("commercial_clients")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("external_source", "robaws"),
+  ];
+
   if (leadIds.length) {
-    const cleanupResults = await Promise.all([
+    cleanupTasks.push(
       admin
         .from("quotes")
         .delete()
         .eq("external_source", "robaws")
         .in("lead_id", leadIds),
+    );
+  }
 
-      admin
-        .from("projects")
-        .delete()
-        .eq("company_id", companyId)
-        .eq("crm_source", "robaws"),
+  const cleanupResults = await Promise.all(cleanupTasks);
+  const cleanupError = cleanupResults.find(result => result.error)?.error;
 
-      admin
-        .from("commercial_invoices")
-        .delete()
-        .eq("company_id", companyId)
-        .eq("external_source", "robaws"),
-
-      admin
-        .from("commercial_clients")
-        .delete()
-        .eq("company_id", companyId)
-        .eq("external_source", "robaws"),
-    ]);
-
-    const cleanupError = cleanupResults.find(result => result.error)?.error;
-
-    if (cleanupError) {
-      throw new Error(`ROBAWS cleanup: ${cleanupError.message}`);
-    }
+  if (cleanupError) {
+    throw new Error(`ROBAWS cleanup: ${cleanupError.message}`);
   }
 
   const resetResult = await admin
@@ -638,7 +641,7 @@ export async function syncRobawsProvider(
       .from("projects")
       .upsert(projectRows, {
         onConflict:
-          "lead_id,crm_source,crm_external_id",
+          "company_id,crm_source,crm_external_id",
       });
 
     if (result.error) {
