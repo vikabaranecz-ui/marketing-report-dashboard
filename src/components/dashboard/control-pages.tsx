@@ -136,7 +136,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Paid sources are compared only when their actual spend exists. Organic sources keep cost metrics blank."/>
       <div className="table-scroll"><table className="wide-decision-table">
-        <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project €</th><th>Paid €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
+        <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project € excl. VAT</th><th>Paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
           <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>commercialClientInPeriod(data,client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||decisionSource(manualRobawsSource(data,client)??"")===row.source)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
@@ -190,7 +190,7 @@ export function RevenuePage({ data }: { data: CompanyDataset }) {
       <RevenueStage label="Accepted / contracted" value={acceptedValue} note={accepted.length+" accepted offers"} onClick={()=>setDrilldown({title:"Accepted offers",subtitle:data.periodLabel,offers:accepted})}/>
       <RevenueStage label="Project value" value={projectValue} note={periodProjects.length+" project records"} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:periodProjects})}/>
       <RevenueStage label="Invoiced" value={invoiced} note="Net of credits" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
-      <RevenueStage label="Paid" value={paid} note="Cash recorded on period invoices" onClick={()=>setDrilldown({title:"Paid invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
+      <RevenueStage label="Paid value on period invoices" value={paid} note="Current paid_total on invoices dated in this period; not payment-date cash collection" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
     </div>
 
     <Card className="p-5">
@@ -445,7 +445,7 @@ function RevenueClientTable({data}:{data:CompanyDataset}) {
   const rows=buildJourneyRows(data).filter(row=>row.isSigned||row.isCommercialClient||row.offers.length>0||row.projects.length>0);
   const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
   if(!rows.length) return <EmptyState title="No commercial records" body="Commercial rows appear after CRM / ROBAWS data is synced."/>;
-  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>CRM signed</th><th>ROBAWS client</th><th>Sent offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid €</th><th>Attribution</th></tr></thead><tbody>
+  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>CRM signed</th><th>ROBAWS client</th><th>Sent offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid value €</th><th>Attribution</th></tr></thead><tbody>
     {rows.sort((a,b)=>b.projectValue-a.projectValue).map(row=>{
       const ids=new Set(row.leadIds);
       const clientInvoices=invoices.filter(item=>item.leadId&&ids.has(item.leadId));
