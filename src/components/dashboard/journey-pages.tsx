@@ -7,6 +7,7 @@ import type { CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, journeyStageMeta, sourcePipelineRows, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
+import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
 export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const rows = useMemo(() => buildJourneyRows(data), [data]);
@@ -46,7 +47,22 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
 export function VisitsPage({ data }: { data: CompanyDataset }) {
   const rows=buildJourneyRows(data).filter(r=>r.hasVisit);
   const appointments=data.commercialAppointments??[];
-  return <div className="space-y-6"><div className="kpi-grid border-l border-t border-[var(--line)]"><KpiCard label="Visit-stage leads" value={formatNumber(rows.length)}/><KpiCard label="Appointment records" value={formatNumber(appointments.length)}/><KpiCard label="Completed" value={formatNumber(appointments.filter(a=>Boolean(a.completedAt)).length)}/><KpiCard label="No-show" value={formatNumber(appointments.filter(a=>a.noShow).length)}/></div><Card className="p-5"><SectionHeader title="Visits" description="Exact appointment dates are shown only when the CRM supplied them."/>{rows.length?<div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Service</th><th>Scheduled</th><th>Completed</th><th>Status</th><th>Next offer</th></tr></thead><tbody>{rows.map(r=>{const a=[...r.appointments].sort((x,y)=>y.scheduledAt.localeCompare(x.scheduledAt))[0];return <tr key={r.lead.id}><td className="font-semibold">{r.lead.name}</td><td>{r.lead.source}</td><td>{r.lead.service}</td><td>{a?dateTime(a.scheduledAt):"Status evidence only"}</td><td>{a?.completedAt?dateTime(a.completedAt):"—"}</td><td>{a?<StatusPill tone={a.noShow?"bad":a.completedAt?"good":"neutral"}>{a.noShow?"No-show":a.status}</StatusPill>:r.lead.crmStatus}</td><td>{r.latestOffer?formatCurrency(r.latestOffer.priceInclVat):"—"}</td></tr>})}</tbody></table></div>:<EmptyState/>}</Card></div>;
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
+  const completed=appointments.filter(a=>Boolean(a.completedAt));
+  const noShows=appointments.filter(a=>a.noShow);
+  return <div className="space-y-6">
+    <div className="kpi-grid border-l border-t border-[var(--line)]">
+      <KpiCard label="Visit-stage leads" value={formatNumber(rows.length)} onClick={()=>setDrilldown({title:"Visit-stage leads",subtitle:data.periodLabel,leads:rows.map(row=>row.lead),appointments})}/>
+      <KpiCard label="Appointment records" value={formatNumber(appointments.length)} onClick={()=>setDrilldown({title:"Appointments",subtitle:data.periodLabel,appointments})}/>
+      <KpiCard label="Completed" value={formatNumber(completed.length)} onClick={()=>setDrilldown({title:"Completed visits",subtitle:data.periodLabel,appointments:completed,leads:rows.filter(row=>row.appointments.some(a=>Boolean(a.completedAt))).map(row=>row.lead)})}/>
+      <KpiCard label="No-show" value={formatNumber(noShows.length)} onClick={()=>setDrilldown({title:"No-show appointments",subtitle:data.periodLabel,appointments:noShows,leads:rows.filter(row=>row.appointments.some(a=>a.noShow)).map(row=>row.lead)})}/>
+    </div>
+    <Card className="p-5">
+      <SectionHeader title="Visits" description="Exact appointment dates are shown only when the CRM supplied them."/>
+      {rows.length?<div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Service</th><th>Scheduled</th><th>Completed</th><th>Status</th><th>Next offer</th></tr></thead><tbody>{rows.map(r=>{const a=[...r.appointments].sort((x,y)=>y.scheduledAt.localeCompare(x.scheduledAt))[0];return <tr key={r.lead.id}><td className="font-semibold">{r.lead.name}</td><td>{r.lead.source}</td><td>{r.lead.service}</td><td>{a?dateTime(a.scheduledAt):"Status evidence only"}</td><td>{a?.completedAt?dateTime(a.completedAt):"—"}</td><td>{a?<StatusPill tone={a.noShow?"bad":a.completedAt?"good":"neutral"}>{a.noShow?"No-show":a.status}</StatusPill>:r.lead.crmStatus}</td><td>{r.latestOffer?formatCurrency(r.latestOffer.priceInclVat):"—"}</td></tr>})}</tbody></table></div>:<EmptyState/>}
+    </Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
+  </div>;
 }
 
 export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
@@ -61,22 +77,42 @@ export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
   const paid=invoices.reduce((n,i)=>n+i.paidTotal,0);
   const now=Date.now();
   const followUpsDue=open.filter(o=>o.followUpAt&&new Date(o.followUpAt).getTime()<=now);
-  const sum=(rows:typeof offers)=>rows.reduce((n,o)=>n+o.priceInclVat,0);
+  const sum=(items:typeof offers)=>items.reduce((n,o)=>n+o.priceInclVat,0);
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   return <div className="space-y-6">
-    <div className="kpi-grid border-l border-t border-[var(--line)]"><KpiCard label="Offers created" value={formatNumber(offers.length)} meta={formatCurrency(sum(offers))+" total value"}/><KpiCard label="Sent to client" value={formatNumber(sent.length)} meta={formatCurrency(sum(sent))+" sent value"}/><KpiCard label="Open sent pipeline" value={formatCurrency(sum(open),true)} meta={String(open.length)+" sent + open"}/><KpiCard label="Send not verified" value={formatCurrency(sum(unsentOpen),true)} meta={String(unsentOpen.length)+" open offers"}/><KpiCard label="Accepted" value={formatCurrency(sum(accepted),true)} meta={String(accepted.length)+" accepted"}/><KpiCard label="Follow-ups due" value={formatNumber(followUpsDue.length)} meta={formatCurrency(sum(followUpsDue))+" open value"}/><KpiCard label="Rejected" value={formatCurrency(sum(rejected),true)} meta={String(rejected.length)+" rejected"}/></div>
+    <div className="kpi-grid border-l border-t border-[var(--line)]">
+      <KpiCard label="Offers created" value={formatNumber(offers.length)} meta={formatCurrency(sum(offers))+" total value"} onClick={()=>setDrilldown({title:"Offers created",subtitle:data.periodLabel,offers})}/>
+      <KpiCard label="Sent to client" value={formatNumber(sent.length)} meta={formatCurrency(sum(sent))+" sent value"} onClick={()=>setDrilldown({title:"Offers sent to client",subtitle:data.periodLabel,offers:sent})}/>
+      <KpiCard label="Open sent pipeline" value={formatCurrency(sum(open),true)} meta={String(open.length)+" sent + open"} onClick={()=>setDrilldown({title:"Open sent offers",subtitle:data.periodLabel,offers:open})}/>
+      <KpiCard label="Send not verified" value={formatCurrency(sum(unsentOpen),true)} meta={String(unsentOpen.length)+" open offers"} onClick={()=>setDrilldown({title:"Open offers with send not verified",subtitle:data.periodLabel,offers:unsentOpen})}/>
+      <KpiCard label="Accepted" value={formatCurrency(sum(accepted),true)} meta={String(accepted.length)+" accepted"} onClick={()=>setDrilldown({title:"Accepted offers",subtitle:data.periodLabel,offers:accepted})}/>
+      <KpiCard label="Follow-ups due" value={formatNumber(followUpsDue.length)} meta={formatCurrency(sum(followUpsDue))+" open value"} onClick={()=>setDrilldown({title:"Follow-ups due",subtitle:data.periodLabel,offers:followUpsDue})}/>
+      <KpiCard label="Rejected" value={formatCurrency(sum(rejected),true)} meta={String(rejected.length)+" rejected"} onClick={()=>setDrilldown({title:"Rejected offers",subtitle:data.periodLabel,offers:rejected})}/>
+    </div>
     <Card className="p-5"><SectionHeader title="Offer register" description="Offer date and sent-to-client date stay separate. Sent is shown only when ROBAWS supplies its send date."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Offer</th><th>Offer date</th><th>Sent to client</th><th>Follow-up</th><th>Excl. VAT</th><th>Incl. VAT</th><th>Status</th><th>Days open</th></tr></thead><tbody>{[...offers].sort((a,b)=>(b.sentAt??b.date).localeCompare(a.sentAt??a.date)).map(o=><tr key={o.id}><td className="font-semibold">{o.leadName}</td><td>{o.source}</td><td>{o.number}</td><td>{date(o.date)}</td><td>{o.sentAt?<StatusPill tone="good">{dateTime(o.sentAt)}</StatusPill>:<StatusPill tone="neutral">Not verified</StatusPill>}</td><td>{o.followUpAt?dateTime(o.followUpAt):"—"}</td><td>{formatCurrency(o.priceExclVat)}</td><td className="font-semibold">{formatCurrency(o.priceInclVat)}</td><td><StatusPill tone={o.isAccepted?"good":o.isRejected?"bad":"warn"}>{o.status}</StatusPill></td><td>{o.daysWaiting===null?"—":String(o.daysWaiting)+" d"}</td></tr>)}</tbody></table></div></Card>
     <Card className="p-5"><SectionHeader title="Pipeline aging" description="Open value that needs sales follow-up."/><div className="grid gap-px bg-[var(--line)] md:grid-cols-4"><Age label="0–7 days" rows={open.filter(o=>(o.daysWaiting??0)<=7)}/><Age label="8–14 days" rows={open.filter(o=>(o.daysWaiting??0)>=8&&(o.daysWaiting??0)<=14)}/><Age label="15–30 days" rows={open.filter(o=>(o.daysWaiting??0)>=15&&(o.daysWaiting??0)<=30)}/><Age label="30+ days" rows={open.filter(o=>(o.daysWaiting??0)>30)}/></div></Card>
     <Card className="p-5"><SectionHeader title="Commercial result" description="Pipeline and cash stay together on the same operational page."/><div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4"><Mini label="Project value" value={formatCurrency(projectValue)}/><Mini label="Invoiced" value={formatCurrency(invoiced)}/><Mini label="Paid" value={formatCurrency(paid)}/><Mini label="Unpaid invoiced" value={formatCurrency(Math.max(0,invoiced-paid))}/></div></Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 
 export function SalesProjectsPage({ data }: { data: CompanyDataset }) {
-  const projects=(data.commercialProjects??[]).filter(p=>!p.attributionStatus.includes("DATE_CONFLICT"));
-  const invoices=(data.commercialInvoices??[]).filter(i=>!i.attributionStatus.includes("DATE_CONFLICT"));
+  const projects=(data.periodCommercialProjects??data.commercialProjects??[]).filter(p=>!p.attributionStatus.includes("DATE_CONFLICT"));
+  const invoices=(data.periodCommercialInvoices??data.commercialInvoices??[]).filter(i=>!i.attributionStatus.includes("DATE_CONFLICT"));
   const projectValue=projects.reduce((n,p)=>n+Number(p.valueInclVat??0),0);
   const invoiced=invoices.reduce((n,i)=>n+Math.max(0,i.totalInclVat-i.creditedTotal),0);
   const paid=invoices.reduce((n,i)=>n+i.paidTotal,0);
-  return <div className="space-y-6"><div className="kpi-grid border-l border-t border-[var(--line)]"><KpiCard label="Verified projects" value={formatNumber(new Set(projects.map(p=>p.leadId)).size)}/><KpiCard label="Project value" value={formatCurrency(projectValue,true)}/><KpiCard label="Invoiced" value={formatCurrency(invoiced,true)}/><KpiCard label="Paid" value={formatCurrency(paid,true)}/></div><Card className="p-5"><SectionHeader title="Commercially verified projects" description="CRM signed is not treated as a verified project until commercial evidence exists."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Project</th><th>Status</th><th>Value excl. VAT</th><th>Value incl. VAT</th></tr></thead><tbody>{projects.map(p=><tr key={p.id}><td className="font-semibold">{p.leadName}</td><td>{p.source}</td><td>{p.externalId}</td><td>{p.status}</td><td>{formatCurrency(p.valueExclVat)}</td><td className="font-semibold">{formatCurrency(p.valueInclVat)}</td></tr>)}</tbody></table></div></Card></div>;
+  const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
+  return <div className="space-y-6">
+    <div className="kpi-grid border-l border-t border-[var(--line)]">
+      <KpiCard label="Verified projects" value={formatNumber(projects.length)} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects})}/>
+      <KpiCard label="Project value" value={formatCurrency(projectValue,true)} onClick={()=>setDrilldown({title:"Project value records",subtitle:data.periodLabel,projects})}/>
+      <KpiCard label="Invoiced" value={formatCurrency(invoiced,true)} onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices})}/>
+      <KpiCard label="Paid" value={formatCurrency(paid,true)} onClick={()=>setDrilldown({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:invoices.filter(item=>item.paidTotal>0)})}/>
+    </div>
+    <Card className="p-5"><SectionHeader title="Commercially verified projects" description="Project rows use the selected calendar period."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Won date</th><th>Source</th><th>Project</th><th>Status</th><th>Value excl. VAT</th><th>Value incl. VAT</th></tr></thead><tbody>{projects.map(p=><tr key={p.id}><td className="font-semibold">{p.leadName}</td><td>{date(p.date)}</td><td>{p.source}</td><td>{p.externalId}</td><td>{p.status}</td><td>{formatCurrency(p.valueExclVat)}</td><td className="font-semibold">{formatCurrency(p.valueInclVat)}</td></tr>)}</tbody></table></div></Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
+  </div>;
 }
 
 export function CohortsPage({ data }: { data: CompanyDataset }) {
