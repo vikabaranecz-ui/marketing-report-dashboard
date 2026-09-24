@@ -333,6 +333,7 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       </div>
       <Link href={scopedHref("/data-health")} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4">Open data health <ArrowRight size={14}/></Link>
     </Card>
+    {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
 
