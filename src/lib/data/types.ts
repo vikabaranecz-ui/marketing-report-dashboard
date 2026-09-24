@@ -98,6 +98,7 @@ export type CommercialProject = {
   externalId: string;
   externalClientId?: string | null;
   date: string;
+  projectDate?: string | null;
   status: string;
   valueInclVat: number | null;
   valueExclVat: number | null;
