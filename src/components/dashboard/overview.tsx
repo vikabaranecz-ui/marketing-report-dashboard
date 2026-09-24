@@ -477,7 +477,7 @@ function sourceComparator(a:SourcePerformanceRow,b:SourcePerformanceRow,key:Sour
     return right-left;
   };
   if(key==="spend")return nullLast(a.spend,b.spend);
-  if(key==="customers")return b.attributedClients-a.attributedClients;
+  if(key==="customers")return b.attributableClients-a.attributableClients;
   if(key==="cac")return nullLast(a.cac,b.cac);
   if(key==="roas")return nullLast(a.cohortCashRoas,b.cohortCashRoas);
   return b.paidValue-a.paidValue;
