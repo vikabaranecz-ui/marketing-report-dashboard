@@ -14,18 +14,19 @@ export function SectionHeader({ title, description, action }: { title: string; d
   );
 }
 
-export function KpiCard({ label, value, delta, meta }: { label: string; value: string; delta?: number | null; meta?: string }) {
+export function KpiCard({ label, value, delta, meta, onClick }: { label: string; value: string; delta?: number | null; meta?: string; onClick?:()=>void }) {
   const positive = (delta ?? 0) >= 0;
-  return (
-    <div className="kpi-card min-w-0 bg-white p-4">
-      <div className="flex items-center gap-2"><span className="kpi-accent-dot"/><p className="truncate text-xs font-semibold text-[var(--muted)]">{label}</p></div>
-      <div className="mt-3 flex items-end justify-between gap-2">
-        <p className="truncate text-[1.45rem] font-semibold tracking-[-.05em] text-[var(--ink)]">{value}</p>
-        {delta !== undefined && delta !== null && <span className={`mb-1 flex items-center text-xs font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}>{positive ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{Math.abs(delta).toFixed(1)}%</span>}
-      </div>
-      {meta && <p className="mt-2 truncate text-xs text-[var(--muted)]">{meta}</p>}
+  const content = <>
+    <div className="flex items-center gap-2"><span className="kpi-accent-dot"/><p className="truncate text-xs font-semibold text-[var(--muted)]">{label}</p></div>
+    <div className="mt-3 flex items-end justify-between gap-2">
+      <p className={`truncate text-[1.45rem] font-semibold tracking-[-.05em] text-[var(--ink)] ${onClick?"drillable-value":""}`}>{value}</p>
+      {delta !== undefined && delta !== null && <span className={`mb-1 flex items-center text-xs font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}>{positive ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{Math.abs(delta).toFixed(1)}%</span>}
     </div>
-  );
+    {meta && <p className="mt-2 truncate text-xs text-[var(--muted)]">{meta}</p>}
+  </>;
+  return onClick
+    ? <button type="button" onClick={onClick} className="kpi-card drillable min-w-0 bg-white p-4 text-left">{content}</button>
+    : <div className="kpi-card min-w-0 bg-white p-4">{content}</div>;
 }
 
 export function EmptyState({ title = "No data for this selection", body = "Change the filters or connect a data source to populate this view." }: { title?: string; body?: string }) {
