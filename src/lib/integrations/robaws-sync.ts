@@ -309,8 +309,8 @@ export async function syncRobawsProvider(
       admin
         .from("projects")
         .delete()
-        .eq("crm_source", "robaws")
-        .in("lead_id", leadIds),
+        .eq("company_id", companyId)
+        .eq("crm_source", "robaws"),
 
       admin
         .from("commercial_invoices")
@@ -348,7 +348,50 @@ export async function syncRobawsProvider(
   }
 
   const quoteRows: Record<string, unknown>[] = [];
-  const projectRows: Record<string, unknown>[] = [];
+  const projectRows: Record<string, unknown>[] = projects.map(project => {
+    const clientId = project.clientId ? String(project.clientId) : null;
+    const matchedLead = clientId ? uniqueLeadByClient.get(clientId) ?? null : null;
+    const clientOffers = clientId ? offersByClient.get(clientId) ?? [] : [];
+    const clientProjects = clientId ? projectsByClient.get(clientId) ?? [] : [];
+    const linkedOffers = clientOffers.filter(offer => offer.projectId === project.id);
+    const linkedAccepted = linkedOffers.filter(isAccepted);
+    const acceptedOffers = clientOffers.filter(isAccepted);
+    const projectOffers =
+      linkedAccepted.length
+        ? linkedAccepted
+        : linkedOffers.length
+          ? linkedOffers
+          : clientProjects.length === 1
+            ? (acceptedOffers.length ? acceptedOffers : clientOffers)
+            : [];
+    const valueIncl = projectOffers.reduce((sum, offer) => sum + Number(offer.totalInclVat ?? 0), 0);
+    const valueExcl = projectOffers.reduce((sum, offer) => sum + Number(offer.totalExclVat ?? 0), 0);
+    const attributionStatus = matchedLead
+      ? projectOffers.length
+        ? projectOffers.some(offer => documentAttribution(offer.date, matchedLead.created_at) === "DATE_CONFLICT")
+          ? "DATE_CONFLICT"
+          : "EXACT_AFTER_LEAD"
+        : documentAttribution(project.date, matchedLead.created_at)
+      : "ROBAWS_ONLY";
+
+    return {
+      company_id: companyId,
+      lead_id: matchedLead?.id ?? null,
+      service_id: matchedLead?.service_id ?? null,
+      project_value: valueIncl || null,
+      project_value_excl_vat: valueExcl || null,
+      gross_margin: null,
+      status: "won",
+      won_at: toTimestamp(projectOffers[0]?.date || project.date),
+      project_date: project.date || null,
+      completed_at: null,
+      crm_source: "robaws",
+      crm_external_id: project.id,
+      external_client_id: clientId,
+      external_status: project.status || null,
+      attribution_status: attributionStatus,
+    };
+  });
   const invoiceRows: Record<string, unknown>[] = invoices.map(invoice => {
     const clientId = invoice.clientId ? String(invoice.clientId) : null;
     const matchedLead = clientId ? uniqueLeadByClient.get(clientId) ?? null : null;
@@ -534,81 +577,6 @@ export async function syncRobawsProvider(
             offer.date,
             lead.created_at,
           ),
-      });
-    }
-
-    for (const project of clientProjects) {
-      const linkedOffers =
-        clientOffers.filter(
-          offer =>
-            offer.projectId === project.id,
-        );
-      const linkedAccepted =
-        linkedOffers.filter(isAccepted);
-      const projectOffers =
-        linkedAccepted.length
-          ? linkedAccepted
-          : linkedOffers.length
-            ? linkedOffers
-            : clientProjects.length === 1
-              ? (acceptedOffers.length ? acceptedOffers : clientOffers)
-              : [];
-
-      const valueIncl =
-        projectOffers.reduce(
-          (sum, offer) =>
-            sum +
-            Number(offer.totalInclVat ?? 0),
-          0,
-        );
-
-      const valueExcl =
-        projectOffers.reduce(
-          (sum, offer) =>
-            sum +
-            Number(offer.totalExclVat ?? 0),
-          0,
-        );
-
-      const projectAttribution =
-        projectOffers.length
-          ? projectOffers.some(
-              offer =>
-                documentAttribution(
-                  offer.date,
-                  lead.created_at,
-                ) === "DATE_CONFLICT",
-            )
-            ? "DATE_CONFLICT"
-            : "EXACT_AFTER_LEAD"
-          : documentAttribution(
-              project.date,
-              lead.created_at,
-            );
-
-      projectRows.push({
-        lead_id: lead.id,
-        service_id: lead.service_id,
-        project_value:
-          valueIncl || null,
-        project_value_excl_vat:
-          valueExcl || null,
-        gross_margin: null,
-        status: "won",
-        won_at:
-          toTimestamp(
-            projectOffers[0]?.date ||
-            project.date,
-          ),
-        project_date: project.date || null,
-        completed_at: null,
-        crm_source: "robaws",
-        crm_external_id: project.id,
-        external_client_id: clientId,
-        external_status:
-          project.status || null,
-        attribution_status:
-          projectAttribution,
       });
     }
 
