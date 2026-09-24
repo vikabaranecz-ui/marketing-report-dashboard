@@ -470,9 +470,11 @@ function aggregateProjectsByLead(rows: RawProject[]) {
   const map = new Map<string, RawProject>();
 
   for (const row of rows) {
-    const existing = map.get(row.lead_id);
+    if (!row.lead_id) continue;
+    const leadId = row.lead_id;
+    const existing = map.get(leadId);
     if (!existing) {
-      map.set(row.lead_id, { ...row });
+      map.set(leadId, { ...row });
       continue;
     }
 
@@ -480,10 +482,10 @@ function aggregateProjectsByLead(rows: RawProject[]) {
     const rowWonAt = row.won_at ?? "";
     const newest = rowWonAt.localeCompare(existingWonAt) > 0 ? row : existing;
 
-    map.set(row.lead_id, {
+    map.set(leadId, {
       ...newest,
       id: existing.id,
-      lead_id: row.lead_id,
+      lead_id: leadId,
       project_value: Number(existing.project_value ?? 0) + Number(row.project_value ?? 0),
       project_value_excl_vat: Number(existing.project_value_excl_vat ?? 0) + Number(row.project_value_excl_vat ?? 0),
       status: existing.status === "won" || row.status === "won" ? "won" : newest.status,
