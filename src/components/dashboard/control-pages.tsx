@@ -9,7 +9,7 @@ import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } f
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
 
-const paidSources = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou"]);
+const paidSources = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"]);
 
 export function FunnelPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
