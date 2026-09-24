@@ -242,33 +242,33 @@ export function OverviewPage({data}:{data:CompanyDataset}) {
       <div className="border-b border-[var(--line)] p-5">
         <SectionHeader title="Can I trust these numbers?" description="Calendar-period business activity and selected lead-cohort attribution are shown separately. Source attribution does not imply an exact campaign."/>
       </div>
-      <div className="grid gap-px bg-[var(--line)] xl:grid-cols-3">
-        <div className="bg-white p-5">
-          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">CALENDAR PERIOD · ROBAWS</p><h3 className="mt-1 text-lg font-semibold">What happened during this period</h3></div><StatusPill tone="good">Source of truth</StatusPill></div>
-          <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
+      <div className="trust-panel-grid">
+        <div className="trust-panel">
+          <div className="trust-panel-head"><div><p className="eyebrow">CALENDAR PERIOD · ROBAWS</p><h3>What happened during this period</h3></div><StatusPill tone="good">Source of truth</StatusPill></div>
+          <div className="truth-metric-grid">
             <TruthMetric label="Projects won" value={formatNumber(periodTotals?.wonProjects??0)}/>
             <TruthMetric label="Invoiced in period" value={formatCurrency(periodTotals?.invoiced??0)}/>
             <TruthMetric label="Paid in period" value={formatCurrency(periodTotals?.paid??0)}/>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatCurrency(periodTotals?.wonProjectValue??0)} of ROBAWS project value was won in this period. {formatNumber(periodCommercialRecords.length)} client record(s) have client_since in the period; {formatNumber(periodClientWonRecords.length)} of those are currently CLIENT_WON.</p>
+          <p className="trust-panel-copy">{formatCurrency(periodTotals?.wonProjectValue??0)} of ROBAWS project value was won in this period. {formatNumber(periodCommercialRecords.length)} client record(s) have client_since in the period; {formatNumber(periodClientWonRecords.length)} of those are currently CLIENT_WON.</p>
         </div>
-        <div className="bg-white p-5">
-          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">ACQUISITION COHORT</p><h3 className="mt-1 text-lg font-semibold">Current clients from leads created in this period</h3></div><StatusPill tone={unknownSourceClients===0?"good":"warn"}>{formatPercent(sourceCoverage)} source covered</StatusPill></div>
-          <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
+        <div className="trust-panel">
+          <div className="trust-panel-head"><div><p className="eyebrow">ACQUISITION COHORT</p><h3>Current clients from leads created in this period</h3></div><StatusPill tone={unknownSourceClients===0?"good":"warn"}>{formatPercent(sourceCoverage)} source covered</StatusPill></div>
+          <div className="truth-metric-grid">
             <TruthMetric label="Known source" value={formatNumber(knownSourceClients.length)}/>
             <TruthMetric label="Known-source paid" value={formatCurrency(knownSourcePaid)}/>
             <TruthMetric label="Unknown source" value={formatNumber(unknownSourceClients)}/>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{formatNumber(cohortCommercialClients.length)} leads from this acquisition cohort are currently ROBAWS-confirmed. Paid amounts are lifetime client cash, not cash collected only in the selected month.</p>
+          <p className="trust-panel-copy">{formatNumber(cohortCommercialClients.length)} leads from this acquisition cohort are currently ROBAWS-confirmed. Paid amounts are lifetime client cash, not cash collected only in the selected month.</p>
         </div>
-        <div className="bg-white p-5">
-          <div className="flex items-center justify-between gap-3"><div><p className="eyebrow">PAID MARKETING EVIDENCE</p><h3 className="mt-1 text-lg font-semibold">Only paid acquisition sources</h3></div><StatusPill tone="warn">Partial attribution</StatusPill></div>
-          <div className="mt-4 grid grid-cols-3 gap-px bg-[var(--line)]">
+        <div className="trust-panel">
+          <div className="trust-panel-head"><div><p className="eyebrow">PAID MARKETING EVIDENCE</p><h3>Only paid acquisition sources</h3></div><StatusPill tone="warn">Partial attribution</StatusPill></div>
+          <div className="truth-metric-grid">
             <TruthMetric label="Paid-source clients" value={formatNumber(paidMarketingClients.length)}/>
             <TruthMetric label="Paid-source paid" value={formatCurrency(paidMarketingPaid)}/>
             <TruthMetric label="Known spend" value={formatCurrency(coveredSpend)}/>
           </div>
-          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">Meta/Facebook, Google Ads, LeadAngel and AgenciYou are treated as paid acquisition. Missing source cost remains missing; it is never converted to €0.</p>
+          <p className="trust-panel-copy">Meta/Facebook, Google Ads, LeadAngel, AgenciYou and Solary are treated as paid acquisition. Missing source cost remains missing; it is never converted to €0.</p>
         </div>
       </div>
     </Card>
@@ -497,7 +497,7 @@ function BudgetCard({source,action,body,tone}:{source:string;action:string;body:
   const cls=tone==="good"?"border-emerald-200 bg-emerald-50":tone==="bad"?"border-rose-200 bg-rose-50":"border-amber-200 bg-amber-50";
   return <div className={`border p-4 ${cls}`}><div className="flex items-start justify-between gap-3"><strong className="text-sm">{source}</strong><StatusPill tone={tone}>{action}</StatusPill></div><p className="mt-3 text-sm leading-6">{body}</p></div>;
 }
-function TruthMetric({label,value}:{label:string;value:string}){return <div className="bg-[var(--surface)] p-3"><span className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted)]">{label}</span><strong className="mt-2 block text-lg">{value}</strong></div>}
+function TruthMetric({label,value}:{label:string;value:string}){return <div className="truth-metric"><span>{label}</span><strong>{value}</strong></div>}
 function Economy({label,value,note}:{label:string;value:string;note:string}){return <div className="economy-cell"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}
 function MoneyRow({label,value,accent=false}:{label:string;value:number;accent?:boolean}){return <div className={`money-row ${accent?"money-row-accent":""}`}><span>{label}</span><strong>{formatCurrency(value)}</strong></div>}
 function Trust({label,ok,detail}:{label:string;ok:boolean;detail:string}){return <div className="trust-card"><div className="flex items-center gap-2">{ok?<CheckCircle2 size={16} className="text-emerald-700"/>:<AlertTriangle size={16} className="text-amber-700"/>}<strong>{label}</strong></div><p>{detail}</p></div>}
