@@ -1,8 +1,8 @@
-import { Activity, Database, FileText, Globe2, LayoutDashboard, Megaphone, Settings, UsersRound } from "lucide-react";
+import { Activity, Database, FileText, Globe2, LayoutDashboard, Megaphone, Settings, UsersRound, WalletCards } from "lucide-react";
 
 export const navItems = [
   { href: "/overview", label: "Home", icon: LayoutDashboard },
-  { href: "/client-journey", label: "Payback", icon: UsersRound },
+  { href: "/client-journey", label: "Payback", icon: WalletCards },
   { href: "/offers-pipeline", label: "Pipeline", icon: FileText },
   { href: "/campaigns", label: "Marketing", icon: Megaphone },
   { href: "/website-seo", label: "Website & SEO", icon: Globe2 },
@@ -11,7 +11,7 @@ export const navItems = [
 
 export const sectionMeta = {
   overview: { eyebrow: "WAT Agency dashboard", title: "Marketing Overview", icon: LayoutDashboard },
-  "client-journey": { eyebrow: "Acquisition cohort → later cash", title: "Customer Payback", icon: UsersRound },
+  "client-journey": { eyebrow: "Acquisition cohort → later cash", title: "Customer Payback", icon: WalletCards },
   "offers-pipeline": { eyebrow: "Offers, follow-up & cash", title: "Pipeline", icon: FileText },
   campaigns: { eyebrow: "Source economics", title: "Marketing", icon: Megaphone },
   "website-seo": { eyebrow: "Demand creation", title: "Website & SEO", icon: Globe2 },
