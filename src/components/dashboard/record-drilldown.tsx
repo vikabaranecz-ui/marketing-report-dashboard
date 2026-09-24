@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ReceiptText, UserRound, X } from "lucide-react";
 import type { CommercialAppointment, CommercialClient, CommercialInvoice, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
@@ -91,6 +92,6 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
 }
 
 function Summary({label,value}:{label:string;value:number}){return <div><span>{label}</span><strong>{formatNumber(value)}</strong></div>}
-function Section({title,icon,children}:{title:string;icon?:React.ReactNode;children:React.ReactNode}){return <section className="record-section"><h3>{icon}{title}</h3>{children}</section>}
+function Section({title,icon,children}:{title:string;icon?:ReactNode;children:ReactNode}){return <section className="record-section"><h3>{icon}{title}</h3>{children}</section>}
 function date(value:string|null|undefined){if(!value)return"—";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{day:"2-digit",month:"short",year:"numeric",timeZone:"Europe/Brussels"}).format(parsed)}
 function dateTime(value:string|null|undefined){if(!value)return"—";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Brussels"}).format(parsed)}
