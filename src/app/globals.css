@@ -1223,3 +1223,96 @@ tbody tr:hover { background: #fffdf0; }
   .payback-milestones { grid-template-columns:1fr; }
   .payback-money-grid { grid-template-columns:1fr 1fr; }
 }
+
+
+/* Trust evidence alignment */
+.trust-panel-grid {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+}
+.trust-panel {
+  display: grid;
+  grid-template-rows: minmax(118px, auto) auto 1fr;
+  min-width: 0;
+  background: white;
+  padding: 1.25rem;
+}
+.trust-panel-head {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: start;
+  gap: .9rem;
+  min-width: 0;
+}
+.trust-panel-head > div {
+  min-width: 0;
+}
+.trust-panel-head h3 {
+  margin-top: .3rem;
+  max-width: 360px;
+  font-size: 1.22rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+.trust-panel-head .status-pill {
+  align-self: start;
+  white-space: nowrap;
+}
+.truth-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 1px;
+  min-width: 0;
+  background: var(--line);
+}
+.truth-metric {
+  display: grid;
+  grid-template-rows: minmax(44px,auto) auto;
+  align-content: start;
+  min-width: 0;
+  background: var(--surface);
+  padding: .9rem .8rem;
+}
+.truth-metric span {
+  display: block;
+  min-width: 0;
+  color: var(--muted);
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1.45;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.truth-metric strong {
+  display: block;
+  min-width: 0;
+  margin-top: .4rem;
+  font-size: clamp(1.02rem,1.35vw,1.45rem);
+  font-weight: 780;
+  line-height: 1.15;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+.trust-panel-copy {
+  align-self: start;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.65;
+}
+@media (min-width: 1280px) {
+  .trust-panel-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+@media (max-width: 1279px) {
+  .trust-panel { grid-template-rows: auto auto auto; }
+  .trust-panel-head { min-height: 0; }
+}
+@media (max-width: 620px) {
+  .trust-panel-head { grid-template-columns: 1fr; }
+  .truth-metric-grid { grid-template-columns: 1fr; }
+  .truth-metric { grid-template-rows: auto; }
+}
