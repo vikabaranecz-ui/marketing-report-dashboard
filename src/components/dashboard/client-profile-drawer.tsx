@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect,useMemo,useState } from "react";
+import { useEffect,useMemo,useState,type ReactNode } from "react";
 import { Building2,ExternalLink,Mail,MapPin,Phone,ReceiptText,UserRound,X } from "lucide-react";
 import type { CommercialClient,CompanyDataset } from "@/lib/data/types";
 import { formatCurrency } from "@/lib/metrics/kpis";
@@ -147,5 +147,5 @@ function extractContacts(value:unknown){
   return [...new Set(out)].slice(0,20);
 }
 function ProfileKpi({label,value,accent=false}:{label:string;value:string;accent?:boolean}){return <div className={`client-profile-kpi ${accent?"is-accent":""}`}><span>{label}</span><strong>{value}</strong></div>}
-function Detail({icon,label,value}:{icon?:React.ReactNode;label:string;value:string}){return <div className="client-detail"><span>{icon}{label}</span><strong>{value}</strong></div>}
+function Detail({icon,label,value}:{icon?:ReactNode;label:string;value:string}){return <div className="client-detail"><span>{icon}{label}</span><strong>{value}</strong></div>}
 function date(value:string|null|undefined){if(!value)return"—";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{day:"2-digit",month:"short",year:"numeric",timeZone:"Europe/Brussels"}).format(parsed)}
