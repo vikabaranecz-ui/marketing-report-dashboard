@@ -5,6 +5,7 @@ import { ReceiptText, Search, UserRound, X } from "lucide-react";
 import type { CommercialAppointment, CommercialClient, CommercialInvoice, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
 import { StatusPill } from "./ui";
+import { ClientProfileDrawer } from "./client-profile-drawer";
 
 export type RecordDrilldown = {
   title:string;
@@ -15,6 +16,7 @@ export type RecordDrilldown = {
   projects?:CommercialProject[];
   invoices?:CommercialInvoice[];
   appointments?:CommercialAppointment[];
+  initialKind?: "all"|"leads"|"clients"|"offers"|"projects"|"invoices"|"appointments";
 };
 
 export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyDataset;selection:RecordDrilldown;onClose:()=>void}){
@@ -25,7 +27,8 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
   const invoices=selection.invoices??[];
   const appointments=selection.appointments??[];
   const [search,setSearch]=useState("");
-  const [kind,setKind]=useState("all");
+  const [kind,setKind]=useState(selection.initialKind??"all");
+  const [selectedClient,setSelectedClient]=useState<CommercialClient|null>(null);
   const [offerOutcome,setOfferOutcome]=useState("all");
   const [limit,setLimit]=useState(20);
   const query=search.trim().toLowerCase();
@@ -43,6 +46,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
   const filteredProjects=useMemo(()=>projects.filter(item=>contains(item.leadName,item.externalId,item.source,item.status,item.externalClientId)),[projects,query]);
   const filteredInvoices=useMemo(()=>invoices.filter(item=>contains(item.leadName,item.number,item.status,item.source,item.externalClientId)),[invoices,query]);
   const filteredAppointments=useMemo(()=>appointments.filter(item=>contains(item.leadName,item.status,item.scheduledAt,item.completedAt)),[appointments,query]);
+  const clientForLead=(leadId:string)=>data.commercialClients?.find(client=>client.matchedLeadId===leadId)??null;
   const sourceForClient=(client:CommercialClient)=>{
     const synced=client.matchedLeadId?data.leads.find(lead=>lead.id===client.matchedLeadId)?.source:null;
     if(synced)return synced;
@@ -80,7 +84,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
 
         {totalRecords>0&&<div className="record-filter-bar">
           <label className="record-search"><Search size={15}/><input value={search} onChange={e=>{setSearch(e.target.value);setLimit(20)}} placeholder="Search name, source, offer, invoice, location…"/></label>
-          {types.length>1&&<select value={kind} onChange={e=>{setKind(e.target.value);setLimit(20)}}><option value="all">All record types</option>{types.map(([value,label,count])=><option key={value} value={value}>{label} ({count})</option>)}</select>}
+          {types.length>1&&<select value={kind} onChange={e=>{setKind(e.target.value as NonNullable<RecordDrilldown["initialKind"]>);setLimit(20)}}><option value="all">All record types</option>{types.map(([value,label,count])=><option key={value} value={value}>{label} ({count})</option>)}</select>}
           {offers.length>0&&<select value={offerOutcome} onChange={e=>{setOfferOutcome(e.target.value);setLimit(20)}}><option value="all">All offer outcomes</option><option value="open">Open</option><option value="accepted">Accepted</option><option value="rejected">Afgekeurd</option><option value="cancelled">Cancelled</option></select>}
           {(search||kind!=="all"||offerOutcome!=="all")&&<button type="button" className="button-secondary" onClick={()=>{setSearch("");setKind("all");setOfferOutcome("all");setLimit(20)}}>Clear</button>}
           <span className="record-result-count">{visibleCount} matching</span>
@@ -90,13 +94,13 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
 
         {show("leads")&&filteredLeads.length>0&&<Section title="People / leads" icon={<UserRound size={16}/>}>
           <div className="table-scroll"><table className="record-table"><thead><tr><th>Name</th><th>Date</th><th>Source</th><th>Campaign</th><th>Service</th><th>Location</th><th>Status</th><th>Contact</th></tr></thead><tbody>
-            {filteredLeads.slice(0,limit).map(lead=><tr key={lead.id}><td className="font-semibold">{lead.name}</td><td>{date(lead.date)}</td><td>{lead.source||"—"}</td><td>{lead.campaign||"—"}</td><td>{lead.service||"—"}</td><td>{lead.municipality||"—"}</td><td><StatusPill tone={lead.isClient?"good":"neutral"}>{lead.crmStatus||lead.stage||"—"}</StatusPill></td><td><div className="record-contact">{lead.email&&<span>{lead.email}</span>}{lead.phone&&<span>{lead.phone}</span>}{!lead.email&&!lead.phone&&"—"}</div></td></tr>)}
+            {filteredLeads.slice(0,limit).map(lead=>{const linkedClient=clientForLead(lead.id);return <tr key={lead.id}><td className="font-semibold">{linkedClient?<button type="button" className="client-link" onClick={()=>setSelectedClient(linkedClient)}>{lead.name}</button>:lead.name}</td><td>{date(lead.date)}</td><td>{lead.source||"—"}</td><td>{lead.campaign||"—"}</td><td>{lead.service||"—"}</td><td>{lead.municipality||"—"}</td><td><StatusPill tone={lead.isClient?"good":"neutral"}>{lead.crmStatus||lead.stage||"—"}</StatusPill></td><td><div className="record-contact">{lead.email&&<span>{lead.email}</span>}{lead.phone&&<span>{lead.phone}</span>}{!lead.email&&!lead.phone&&"—"}</div></td></tr>})}
           </tbody></table></div>
         </Section>}
 
         {show("clients")&&filteredClients.length>0&&<Section title="ROBAWS clients" icon={<UserRound size={16}/>}>
           <div className="table-scroll"><table className="record-table"><thead><tr><th>Client</th><th>Since</th><th>Location</th><th>Source</th><th>Status</th><th>Offers</th><th>Projects</th><th>Invoices</th><th>Project value</th><th>Invoiced</th><th>Paid</th></tr></thead><tbody>
-            {filteredClients.slice(0,limit).map(client=><tr key={client.id}><td className="font-semibold">{client.name}</td><td>{date(client.clientSince)}</td><td>{client.municipality||"—"}</td><td>{sourceForClient(client)}</td><td><StatusPill tone={client.commercialStatus==="CLIENT_WON"?"good":"neutral"}>{client.commercialStatus}</StatusPill></td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{client.invoiceCount}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td></tr>)}
+            {filteredClients.slice(0,limit).map(client=><tr key={client.id}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>setSelectedClient(client)}>{client.name}</button></td><td>{date(client.clientSince)}</td><td>{client.municipality||"—"}</td><td>{sourceForClient(client)}</td><td><StatusPill tone={client.commercialStatus==="CLIENT_WON"?"good":"neutral"}>{client.commercialStatus}</StatusPill></td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{client.invoiceCount}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td></tr>)}
           </tbody></table></div>
         </Section>}
 
@@ -128,6 +132,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
         {totalRecords>0&&visibleCount===0&&<div className="record-empty">No records match these filters.</div>}
       </div>
     </aside>
+    {selectedClient&&<ClientProfileDrawer data={data} client={selectedClient} onClose={()=>setSelectedClient(null)}/>}
   </div>;
 }
 
