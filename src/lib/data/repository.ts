@@ -91,7 +91,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const needsMarketing = profile === "full" || profile === "overview" || profile === "health" || profile === "commercial";
   const needsCommercial = profile === "full" || profile === "overview" || profile === "commercial";
   const needsAppointments = needsCommercial;
-  const needsClients = profile === "full" || profile === "overview" || profile === "health";
+  const needsClients = profile === "full" || profile === "overview" || profile === "health" || profile === "commercial";
   const needsCatalog = profile === "full" || profile === "commercial" || profile === "health";
   const needsWebsite = profile === "full" || profile === "website";
   const needsIntegrations = profile === "full" || profile === "overview" || profile === "health";
@@ -99,6 +99,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const needsOverrides = profile === "full" || profile === "overview" || profile === "commercial" || profile === "health";
   const needsAutomation = profile === "full" || profile === "overview" || profile === "health";
   const needsDecision = profile === "full" || profile === "overview";
+  const needsAllCommercialDetail = needsDecision || needsCommercial || needsClients;
   const selectedYearStart = `${fromDate.slice(0,4)}-01-01`;
   const decisionFromDate = comparison.fromDate < selectedYearStart ? comparison.fromDate : selectedYearStart;
   const decisionFromIso = `${decisionFromDate}T00:00:00.000Z`;
@@ -139,8 +140,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     needsDecision ? supabase.from("projects").select("won_at,project_value,status").eq("company_id",company.id).gte("won_at",decisionFromIso).lte("won_at",toIso) : emptyRows,
     needsCommercial ? supabase.from("projects").select("id,company_id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,project_date,crm_source,crm_external_id,external_client_id,external_status,attribution_status").eq("company_id",company.id).gte("won_at",fromIso).lte("won_at",toIso) : emptyRows,
     needsCommercial ? supabase.from("commercial_invoices").select("id,lead_id,external_client_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id).gte("invoice_date",fromDate).lte("invoice_date",toDate) : emptyRows,
-    needsDecision ? supabase.from("projects").select("id,company_id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,project_date,crm_source,crm_external_id,external_client_id,external_status,attribution_status").eq("company_id",company.id) : emptyRows,
-    needsDecision ? supabase.from("commercial_invoices").select("id,lead_id,external_client_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id) : emptyRows,
+    needsAllCommercialDetail ? supabase.from("projects").select("id,company_id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,project_date,crm_source,crm_external_id,external_client_id,external_status,attribution_status").eq("company_id",company.id) : emptyRows,
+    needsAllCommercialDetail ? supabase.from("commercial_invoices").select("id,lead_id,external_client_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id) : emptyRows,
   ]);
   const firstError = [metricsRes,appointmentsRes,quotesRes,projectsRes,invoicesRes,commercialClientsRes,crmDealsRes,servicesRes,campaignsRes,websiteRes,seoRes,gbpRes,integrationsRes,changeEventsRes,overridesRes,automationRes,decisionMetricsRes,decisionInvoicesRes,decisionLeadsRes,decisionProjectsRes,periodProjectsRes,periodInvoicesRes,allProjectsRes,allInvoicesRes].find(result => result.error)?.error;
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
