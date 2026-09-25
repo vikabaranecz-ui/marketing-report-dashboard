@@ -17,6 +17,7 @@ export type SourcePerformanceRow = {
   offers:number;
   customers:number;
   attributableClients:number;
+  clientIds:string[];
   projectValueExclVat:number;
   projectValueInclVat:number;
   paidValue:number;
@@ -67,6 +68,8 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
     const costState:SourcePerformanceRow["costState"]=nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known";
     const clients=uniqueCommercialClientsForRows(data,group);
+    const attributableLeadIds=new Set(group.filter(item=>item.isAttributableClient).flatMap(item=>item.leadIds));
+    const attributableClientRows=clients.filter(client=>Boolean(client.matchedLeadId&&attributableLeadIds.has(client.matchedLeadId)));
     const projectValueExclVat=clients.length
       ? clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0)
       : group.reduce((sum,row)=>sum+row.projects.reduce((projectSum,project)=>projectSum+Number(project.valueExclVat??0),0),0);
@@ -79,14 +82,14 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const qualified=group.filter(item=>item.isQualified).length;
     const visits=group.filter(hasCompletedVisitEvidence).length;
     const offers=group.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length;
-    const attributableClients=group.filter(item=>item.isAttributableClient).length;
+    const attributableClients=attributableClientRows.length;
     return withCostMetrics({
       source,spend:Number.isFinite(spend as number)?spend:null,costState,
       spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
-      attributableClients,projectValueExclVat,projectValueInclVat,paidValue,
+      attributableClients,clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,paidValue,
     });
   });
 
@@ -113,7 +116,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-        leads:0,qualified:0,visits:0,offers:0,customers:0,attributableClients:0,
+        leads:0,qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
         projectValueExclVat:0,projectValueInclVat:0,paidValue:0,
       });
       bySource.set(source,row);
@@ -121,6 +124,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     }
     row.customers+=1;
     row.attributableClients+=1;
+    if(!row.clientIds.includes(client.id))row.clientIds.push(client.id);
     row.projectValueExclVat+=client.projectValueTotalExclVat;
     row.projectValueInclVat+=client.projectValueTotal;
     row.paidValue+=client.paidTotal;
@@ -244,12 +248,14 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
       : PAID_ACQUISITION_SOURCES.has(inferredSource);
     const spend=campaign&&campaign.spend>0?campaign.spend:(paidSource?null:0);
     const clients=uniqueCommercialClientsForRows(data,rows);
+    const attributableLeadIds=new Set(rows.filter(item=>item.isAttributableClient).flatMap(item=>item.leadIds));
+    const attributableClientIds=clients.filter(item=>Boolean(item.matchedLeadId&&attributableLeadIds.has(item.matchedLeadId))).map(item=>item.id);
     const counts={
       leads:rows.length,
       qualified:rows.filter(item=>item.isQualified).length,
       visits:rows.filter(hasCompletedVisitEvidence).length,
       offers:rows.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length,
-      customers:rows.filter(item=>item.isAttributableClient).length,
+      customers:attributableClientIds.length,
     };
     const coveredSpend=paidSource?spend:0;
     return {
@@ -260,6 +266,7 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
       coveredVisits:spend===null?0:counts.visits,
       coveredOffers:spend===null?0:counts.offers,
       attributableCustomers:spend===null?0:counts.customers,
+      attributableClientIds:spend===null?[]:attributableClientIds,
       cohortValueExclVat:clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
       cohortPaidValue:clients.reduce((sum,client)=>sum+client.paidTotal,0),
       cpl:spend===null?null:safeDivide(spend,counts.leads),
@@ -282,12 +289,13 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const coveredQualified=known.reduce((sum,item)=>sum+item.qualified,0);
   const coveredVisits=known.reduce((sum,item)=>sum+item.visits,0);
   const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
-  const attributableCustomers=known.reduce((sum,item)=>sum+item.attributableClients,0);
+  const attributableClientIds=[...new Set(known.flatMap(item=>item.clientIds))];
+  const attributableCustomers=attributableClientIds.length;
   const cohortValueExclVat=relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
   const cohortPaidValue=relevant.reduce((sum,item)=>sum+item.paidValue,0);
   return {
     costState:missing.length?"partial":known.length?"known":"missing" as "partial"|"known"|"missing",
-    coveredSpend,coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,
+    coveredSpend,coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,attributableClientIds,
     cohortValueExclVat,cohortPaidValue,
     cpl:safeDivide(coveredSpend,coveredLeads),
     costQualified:safeDivide(coveredSpend,coveredQualified),
@@ -401,9 +409,9 @@ function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType
       ? sources
       : sources.filter(item=>item.source===scope.source);
   const sourceSpend=comparableSources.filter(item=>item.costState==="known").reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const sourceCustomers=comparableSources
+  const sourceCustomers=[...new Set(comparableSources
     .filter(item=>PAID_ACQUISITION_SOURCES.has(item.source)&&item.costState==="known")
-    .reduce((sum,item)=>sum+item.attributableClients,0);
+    .flatMap(item=>item.clientIds))].length;
   return {
     spendComparable:scope.campaign==="all",
     coveredSpendDifference:scope.campaign==="all"?Math.abs(sourceSpend-economics.coveredSpend):0,

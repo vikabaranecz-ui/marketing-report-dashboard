@@ -53,6 +53,11 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const selectedOffers=(data.commercialOffers??[]).filter(item=>selectedLeadIds.has(item.leadId));
   const selectedSentOffers=selectedOffers.filter(hasOfferSentEvidence);
   const selectedClients=clientsForRows(data,analytics.rows);
+  const attributableClients=(data.commercialClients??[]).filter(client=>analytics.economics.attributableClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+  const coveredSourceSet=new Set(analytics.economics.coveredSources);
+  const coveredRows=campaignFilter!=="all"?analytics.rows:analytics.rows.filter(row=>coveredSourceSet.has(normalizeAcquisitionSource(row.lead.source)));
+  const coveredLeadIds=new Set(coveredRows.flatMap(row=>row.leadIds));
+  const coveredSentOffers=selectedSentOffers.filter(item=>coveredLeadIds.has(item.leadId));
   const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=now);
   const outstandingInvoices=analytics.business.invoices.filter(item=>netInvoice(item)>item.paidTotal);
   const unattributedWon=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&!resolvedClientSource(data,client));
@@ -83,6 +88,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         leads:analytics.cohort.unique,qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
         offers:analytics.cohort.offers,customers:analytics.cohort.customers,
         attributableClients:analytics.economics.attributableCustomers,
+        clientIds:analytics.economics.attributableClientIds,
         projectValueExclVat:analytics.economics.cohortValueExclVat,
         projectValueInclVat:analytics.cohort.projectValueInclVat,
         paidValue:analytics.economics.cohortPaidValue,
@@ -154,9 +160,9 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           <div className="executive-group-metrics">
             <SummaryMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Known paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
             <SummaryMetric label="Unique leads" value={formatNumber(analytics.cohort.unique)} onClick={()=>openMilestone("leads")}/>
-            <SummaryMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients})}/>
-            <SummaryMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / attributable customers"/>
-            <SummaryMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value / covered spend"/>
+            <SummaryMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
+            <SummaryMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / attributable customers" onClick={()=>setDrilldown({title:"Cohort CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+            <SummaryMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value / covered spend" onClick={()=>setDrilldown({title:"Cohort cash ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
           </div>
         </div>
       </div>
@@ -229,15 +235,15 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     <section>
       <SectionHeader title="Acquisition economics" description="Cost metrics use only paid sources with actual cost coverage. Missing cost stays missing."/>
       <div className="economics-summary-grid">
-        <EconomicsMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={String(analytics.economics.coveredSources.length)+" covered source(s)"}/>
-        <EconomicsMetric label="CPL" value={nullableCurrency(analytics.economics.cpl)} note={String(analytics.economics.coveredLeads)+" covered leads"}/>
-        <EconomicsMetric label="Cost / qualified" value={nullableCurrency(analytics.economics.costQualified)} note={String(analytics.economics.coveredQualified)+" covered qualified"}/>
-        <EconomicsMetric label="Cost / visit" value={nullableCurrency(analytics.economics.costVisit)} note={String(analytics.economics.coveredVisits)+" covered visits"}/>
-        <EconomicsMetric label="Cost / offer" value={nullableCurrency(analytics.economics.costOffer)} note={String(analytics.economics.coveredOffers)+" covered offers"}/>
-        <EconomicsMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note={String(analytics.economics.attributableCustomers)+" attributable customers"}/>
-        <EconomicsMetric label="Cohort value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note="Project value · excl. VAT where available"/>
-        <EconomicsMetric label="Cohort paid value" value={formatCurrency(analytics.economics.cohortPaidValue)} note="Lifetime invoice paid_total · incl. VAT"/>
-        <EconomicsMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Paid value / covered acquisition spend"/>
+        <EconomicsMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={String(analytics.economics.coveredSources.length)+" covered source(s)"} onClick={()=>setDrilldown({title:"Covered acquisition spend",subtitle:scopeLabel,initialKind:"spend",spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="CPL" value={nullableCurrency(analytics.economics.cpl)} note={String(analytics.economics.coveredLeads)+" covered leads"} onClick={()=>setDrilldown({title:"Covered leads behind CPL",subtitle:scopeLabel,leads:coveredRows.map(item=>item.lead),spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Cost / qualified" value={nullableCurrency(analytics.economics.costQualified)} note={String(analytics.economics.coveredQualified)+" covered qualified"} onClick={()=>setDrilldown({title:"Covered qualified leads",subtitle:scopeLabel,leads:coveredRows.filter(item=>item.isQualified).map(item=>item.lead),spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Cost / visit" value={nullableCurrency(analytics.economics.costVisit)} note={String(analytics.economics.coveredVisits)+" covered visits"} onClick={()=>setDrilldown({title:"Covered visit evidence",subtitle:scopeLabel,leads:coveredRows.filter(hasCompletedVisitEvidence).map(item=>item.lead),appointments:(data.commercialAppointments??[]).filter(item=>coveredLeadIds.has(item.leadId)&&Boolean(item.completedAt)),spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Cost / offer" value={nullableCurrency(analytics.economics.costOffer)} note={String(analytics.economics.coveredOffers)+" covered offers"} onClick={()=>setDrilldown({title:"Covered offers",subtitle:scopeLabel,offers:coveredSentOffers,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note={String(analytics.economics.attributableCustomers)+" attributable customers"} onClick={()=>setDrilldown({title:"Cohort CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Cohort value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note="Project value · excl. VAT where available" onClick={()=>setDrilldown({title:"Cohort customer value",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
+        <EconomicsMetric label="Cohort paid value" value={formatCurrency(analytics.economics.cohortPaidValue)} note="Lifetime invoice paid_total · incl. VAT" onClick={()=>setDrilldown({title:"Cohort paid value",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
+        <EconomicsMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Paid value / covered acquisition spend" onClick={()=>setDrilldown({title:"Cohort cash ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
       </div>
       <Card className="mt-4 p-5">
         <SectionHeader title="Cost to reach each outcome" description="Bar length shows acquisition cost per increasingly valuable outcome. This is not a funnel."/>
@@ -412,8 +418,9 @@ function FlowStep({label,value,note,tone}:{label:string;value:string;note?:strin
   return <div className={"acquisition-flow-step "+(tone==="yellow"?"is-yellow":"")}><span>{label}</span><strong>{value}</strong>{note&&<small>{note}</small>}</div>;
 }
 
-function EconomicsMetric({label,value,note}:{label:string;value:string;note:string}){
-  return <div className="economics-metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;
+function EconomicsMetric({label,value,note,onClick}:{label:string;value:string;note:string;onClick?:()=>void}){
+  const body=<><span>{label}</span><strong>{value}</strong><small>{note}</small></>;
+  return onClick?<button type="button" className="economics-metric drillable text-left" onClick={onClick}>{body}</button>:<div className="economics-metric">{body}</div>;
 }
 
 function ActionButton({title,value,detail,onClick}:{title:string;value:string;detail:string;onClick:()=>void}){
@@ -443,7 +450,7 @@ function trustIntegration(label:string,integration:CompanyDataset["integrations"
   return{label,state:"Complete" as TrustState,detail:"Last successful sync: "+formatTimestamp(integration.lastSuccess)};
 }
 function reconciliationTrust(value:ReturnType<typeof buildOverviewAnalytics>["reconciliation"]){
-  const ok=(!value.spendComparable||value.coveredSpendDifference===0)&&value.sourceCustomerDifference===0&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
+  const ok=(!value.spendComparable||(value.coveredSpendDifference===0&&value.sourceCustomerDifference===0))&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
   return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?(value.spendComparable?"Source spend and period project/invoice aggregates reconcile to their underlying records.":"Period project/invoice aggregates reconcile; campaign-level spend is checked against campaign evidence separately."):"One or more dashboard aggregates do not reconcile to their underlying records."};
 }
 

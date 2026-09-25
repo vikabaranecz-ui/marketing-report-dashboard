@@ -84,10 +84,15 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
           {clients.length>0&&<Summary label="Invoiced" value={formatCurrency(clients.reduce((sum,item)=>sum+item.invoicedTotal,0))}/>}
           {clients.length>0&&<Summary label="Paid value" value={formatCurrency(clients.reduce((sum,item)=>sum+item.paidTotal,0))}/>} 
           {offers.length>0&&<Summary label="Offers" value={offers.length}/>}
+          {offers.length>0&&<Summary label="Offer value" value={formatCurrency(offers.reduce((sum,item)=>sum+item.priceInclVat,0))}/>}
           {projects.length>0&&<Summary label="Projects" value={projects.length}/>}
+          {projects.length>0&&<Summary label="Project value" value={formatCurrency(projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0))}/>}
           {invoices.length>0&&<Summary label="Invoices" value={invoices.length}/>}
+          {invoices.length>0&&<Summary label="Invoice value" value={formatCurrency(invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0))}/>}
+          {invoices.length>0&&<Summary label="Paid on invoices" value={formatCurrency(invoices.reduce((sum,item)=>sum+item.paidTotal,0))}/>}
           {appointments.length>0&&<Summary label="Appointments" value={appointments.length}/>}
           {spendRows.length>0&&<Summary label="Spend records" value={spendRows.length}/>}
+          {spendRows.some(item=>item.state==="known"&&item.spend!==null)&&<Summary label="Covered spend" value={formatCurrency(spendRows.reduce((sum,item)=>sum+(item.state==="known"&&item.spend!==null?item.spend:0),0))}/>} 
         </div>
 
         {totalRecords>0&&<div className="record-filter-bar">
