@@ -21,6 +21,7 @@ export type SourcePerformanceRow = {
   offers:number;
   customers:number;
   attributableClients:number;
+  undatedClients:number;
   clientIds:string[];
   projectValueExclVat:number;
   projectValueInclVat:number;
@@ -79,17 +80,17 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const attributableLeadIds=new Set(group.filter(item=>item.isAttributableClient).flatMap(item=>item.leadIds));
     const attributableClientRows=clients.filter(client=>Boolean(client.matchedLeadId&&attributableLeadIds.has(client.matchedLeadId)));
     const projectValueExclVat=clients.length
-      ? clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0)
-      : group.reduce((sum,row)=>sum+row.projects.reduce((projectSum,project)=>projectSum+Number(project.valueExclVat??0),0),0);
+      ? attributableClientRows.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0)
+      : group.filter(row=>row.isAttributableClient).reduce((sum,row)=>sum+row.projects.reduce((projectSum,project)=>projectSum+Number(project.valueExclVat??0),0),0);
     const projectValueInclVat=clients.length
-      ? clients.reduce((sum,client)=>sum+client.projectValueTotal,0)
-      : group.reduce((sum,row)=>sum+row.projectValue,0);
+      ? attributableClientRows.reduce((sum,client)=>sum+client.projectValueTotal,0)
+      : group.filter(row=>row.isAttributableClient).reduce((sum,row)=>sum+row.projectValue,0);
     const invoicedValue=clients.length
-      ? clients.reduce((sum,client)=>sum+client.invoicedTotal,0)
-      : uniqueInvoices(group.flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0);
+      ? attributableClientRows.reduce((sum,client)=>sum+client.invoicedTotal,0)
+      : uniqueInvoices(group.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0);
     const paidValue=clients.length
-      ? clients.reduce((sum,client)=>sum+client.paidTotal,0)
-      : uniqueInvoices(group.flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0);
+      ? attributableClientRows.reduce((sum,client)=>sum+client.paidTotal,0)
+      : uniqueInvoices(group.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0);
     const qualified=group.filter(item=>item.isQualified).length;
     const visits=group.filter(hasCompletedVisitEvidence).length;
     const offers=group.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length;
@@ -100,14 +101,15 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
-      attributableClients,clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
+      attributableClients,undatedClients:Math.max(0,clients.length-attributableClientRows.length),clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
     });
   });
 
   const bySource=new Map(result.map(row=>[row.source,row]));
   const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
   const manualOnlyClients=(data.commercialClients??[]).filter(client=>
-    client.commercialStatus==="CLIENT_WON"
+    data.periodKey==="ytd"
+    && client.commercialStatus==="CLIENT_WON"
     && clientInSelectedPeriod(data,client)
     && Boolean(manualClientSource(data,client))
     && !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
@@ -130,19 +132,14 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-        leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
+        leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,undatedClients:0,clientIds:[],
         projectValueExclVat:0,projectValueInclVat:0,invoicedValue:0,paidValue:0,
       });
       bySource.set(source,row);
       result.push(row);
     }
     row.customers+=1;
-    row.attributableClients+=1;
-    if(!row.clientIds.includes(client.id))row.clientIds.push(client.id);
-    row.projectValueExclVat+=client.projectValueTotalExclVat;
-    row.projectValueInclVat+=client.projectValueTotal;
-    row.invoicedValue+=client.invoicedTotal;
-    row.paidValue+=client.paidTotal;
+    row.undatedClients+=1;
     refreshCostMetrics(row);
   }
 
