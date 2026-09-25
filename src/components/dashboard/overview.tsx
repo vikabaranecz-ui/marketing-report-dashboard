@@ -89,9 +89,15 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         isManualSpend:false,recurringSpend:0,
         leads:analytics.cohort.unique,deliveredLeads:null,supplierOnlyLeads:0,supplierMatchedPeople:null,leadCountNote:"",qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
         offers:analytics.cohort.offers,customers:analytics.cohort.customers,
+        sourceKnownClients:analytics.economics.attributableCustomers,
+        sourceClientIds:analytics.economics.attributableClientIds,
         attributableClients:analytics.economics.attributableCustomers,
         undatedClients:0,
         clientIds:analytics.economics.attributableClientIds,
+        sourceProjectValueExclVat:analytics.economics.cohortValueExclVat,
+        sourceProjectValueInclVat:analytics.cohort.projectValueInclVat,
+        sourceInvoicedValue:analytics.cohort.invoicedToDate,
+        sourcePaidValue:analytics.economics.cohortPaidValue,
         projectValueExclVat:analytics.economics.cohortValueExclVat,
         projectValueInclVat:analytics.cohort.projectValueInclVat,
         invoicedValue:analytics.cohort.invoicedToDate,
@@ -102,7 +108,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
       }];
   const sortedSources=[...scopedPerformanceRows].sort((a,b)=>sourceComparator(a,b,sourceSort));
   const sourceChartRows=sortedSources.map(row=>({
-    source:row.source,spend:row.spend,paid:row.paidValue,customers:row.attributableClients,
+    source:row.source,spend:row.spend,paid:row.sourcePaidValue,customers:row.sourceKnownClients,
   }));
 
   const openSource=(source:string)=>{
@@ -291,7 +297,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
 
     <section>
       <div className="section-row">
-        <SectionHeader title="Source performance" description="Visual comparison first. Customer value is acquisition-cohort value; cost metrics remain blank when spend is missing."/>
+        <SectionHeader title="Source performance" description="Full source-known business value is shown separately from dated cohort value. Cost metrics remain blank when spend is missing."/>
         <div className="source-sort-controls">
           <label>Sort by
             <select value={sourceSort} onChange={e=>setSourceSort(e.target.value as SourceSort)}>
@@ -303,11 +309,11 @@ export function OverviewPage({data}:{data:CompanyDataset}){
       <Card className="p-5">
         <SourcePerformanceChart data={sourceChartRows} onSourceClick={campaignFilter==="all"?openSource:()=>setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}/>
         <div className="mt-4 flex justify-between gap-3">
-          <p className="chart-footnote">Yellow = covered spend. Black = lifetime paid value attributable to the acquisition source.</p>
+          <p className="chart-footnote">Yellow = covered spend. Black = full lifetime paid value for source-known clients. Monthly cohort CAC/ROAS below remains limited to clients with a trustworthy acquisition month.</p>
           <button type="button" className="button-secondary" onClick={()=>setShowSourceTable(value=>!value)}>{showSourceTable?"Hide detailed table":"Show detailed table"}</button>
         </div>
-        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Dated cohort clients</th><th>Cohort project value excl. VAT</th><th>Cohort paid value</th><th>CPL</th><th>Cost / qualified</th><th>CAC</th><th>Cohort paid ROAS</th></tr></thead><tbody>
-          {sortedSources.map(row=><tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.deliveredLeads===null&&row.leads===0&&row.customers>0?<><StatusPill tone="warn">Lead count missing</StatusPill><small className="block text-[var(--muted)]">Source-known client exists; no CRM/supplier lead count</small></>:<>{row.deliveredLeads??row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.leads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributableClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} source-known, month unverified</small>}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(row.costQualified)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>)}
+        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Source-known clients</th><th>Dated cohort clients</th><th>Source project value excl. VAT</th><th>Source paid value</th><th>Cohort project value excl. VAT</th><th>Cohort paid value</th><th>CPL</th><th>Source CAC</th><th>Cohort CAC</th><th>Source paid ROAS</th><th>Cohort paid ROAS</th></tr></thead><tbody>
+          {sortedSources.map(row=>{const sourceCac=row.spend===null?null:safeDivide(row.spend,row.sourceKnownClients);const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;return <tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.deliveredLeads===null&&row.leads===0&&row.sourceKnownClients>0?<><StatusPill tone="warn">Lead count missing</StatusPill><small className="block text-[var(--muted)]">Source-known client exists; no CRM/supplier lead count</small></>:<>{row.deliveredLeads??row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.leads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.sourceKnownClients}</td><td>{row.attributableClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(sourceCac)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(sourceRoas)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>})}
         </tbody></table>{sortedSources.some(row=>row.deliveredLeads!==null)&&<p className="chart-footnote mt-3">Supplier-reported lead counts are shown when verified source evidence exists. Known acquired-lead totals add only supplier-only people that are absent from CRM; matched supplier people are not counted twice. Qualified, visit and offer counts remain CRM-backed.</p>}</div>}
       </Card>
       <Card className="mt-4 p-5">
