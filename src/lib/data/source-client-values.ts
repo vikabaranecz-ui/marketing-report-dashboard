@@ -111,7 +111,7 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
       sourceOverrideByClient.get(`robaws:${client.external_id}`)
       ?? sourceOverrideByClient.get(client.id)
       ?? (client.matched_lead_id ? sourceOverrideByClient.get(client.matched_lead_id) : undefined);
-    const source = lead?.source?.trim() || manualSource;
+    const source = manualSource || lead?.source?.trim();
     if (!source) return [];
 
     const clientDate = client.client_since?.slice(0, 10) ?? null;
