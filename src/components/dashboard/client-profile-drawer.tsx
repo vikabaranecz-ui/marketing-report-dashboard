@@ -45,6 +45,9 @@ export function ClientProfileDrawer({data,client,onClose}:{data:CompanyDataset;c
   const invoiced=invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0);
   const paid=invoices.reduce((sum,item)=>sum+item.paidTotal,0);
   const open=Math.max(0,invoiced-paid);
+  const storedProjectRows=(data.allCommercialProjects??[]).filter(project=>project.externalClientId===client.externalId);
+  const detailedProjectValue=storedProjectRows.reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
+  const projectValueGap=Math.abs(client.projectValueTotal-detailedProjectValue);
   const contacts=useMemo(()=>extractContacts(profile?.client.contacts),[profile?.client.contacts]);
 
   return <div className="drawer-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
@@ -69,7 +72,9 @@ export function ClientProfileDrawer({data,client,onClose}:{data:CompanyDataset;c
           <ProfileKpi label="Offers" value={String(client.offerCount)} />
           <ProfileKpi label="Projects" value={String(client.projectCount)} />
           <ProfileKpi label="Invoices" value={String(client.invoiceCount)} />
-          <ProfileKpi label="Project value" value={formatCurrency(client.projectValueTotal)} />
+          <ProfileKpi label="Project detail value" value={formatCurrency(detailedProjectValue)} />
+          <ProfileKpi label="Client aggregate" value={formatCurrency(client.projectValueTotal)} />
+          {projectValueGap>0.01&&<ProfileKpi label="Project value gap" value={formatCurrency(projectValueGap)} />}
           <ProfileKpi label="Invoiced" value={formatCurrency(client.invoicedTotal)} />
           <ProfileKpi label="Paid" value={formatCurrency(client.paidTotal)} accent />
         </div>
