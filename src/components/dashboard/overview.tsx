@@ -538,10 +538,10 @@ function sourceComparator(a:SourcePerformanceRow,b:SourcePerformanceRow,key:Sour
     return right-left;
   };
   if(key==="spend")return nullLast(a.spend,b.spend);
-  if(key==="customers")return b.attributableClients-a.attributableClients;
-  if(key==="cac")return nullLast(a.cac,b.cac);
-  if(key==="roas")return nullLast(a.cohortCashRoas,b.cohortCashRoas);
-  return b.paidValue-a.paidValue;
+  if(key==="customers")return b.sourceKnownClients-a.sourceKnownClients;
+  if(key==="cac")return nullLast(a.spend===null?null:safeDivide(a.spend,a.sourceKnownClients),b.spend===null?null:safeDivide(b.spend,b.sourceKnownClients));
+  if(key==="roas")return nullLast(a.spend?a.sourcePaidValue/a.spend:null,b.spend?b.sourcePaidValue/b.spend:null);
+  return b.sourcePaidValue-a.sourcePaidValue;
 }
 
 function nullableCurrency(value:number|null){return value===null?"Cost missing":formatCurrency(value)}
