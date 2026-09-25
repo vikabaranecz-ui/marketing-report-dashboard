@@ -20,9 +20,15 @@ export type SourcePerformanceRow = {
   visits:number;
   offers:number;
   customers:number;
+  sourceKnownClients:number;
+  sourceClientIds:string[];
   attributableClients:number;
   undatedClients:number;
   clientIds:string[];
+  sourceProjectValueExclVat:number;
+  sourceProjectValueInclVat:number;
+  sourceInvoicedValue:number;
+  sourcePaidValue:number;
   projectValueExclVat:number;
   projectValueInclVat:number;
   invoicedValue:number;
@@ -79,6 +85,10 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const clients=uniqueCommercialClientsForRows(data,group);
     const attributableLeadIds=new Set(group.filter(item=>item.isAttributableClient).flatMap(item=>item.leadIds));
     const attributableClientRows=clients.filter(client=>Boolean(client.matchedLeadId&&attributableLeadIds.has(client.matchedLeadId)));
+    const sourceProjectValueExclVat=clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0);
+    const sourceProjectValueInclVat=clients.reduce((sum,client)=>sum+client.projectValueTotal,0);
+    const sourceInvoicedValue=clients.reduce((sum,client)=>sum+client.invoicedTotal,0);
+    const sourcePaidValue=clients.reduce((sum,client)=>sum+client.paidTotal,0);
     const projectValueExclVat=clients.length
       ? attributableClientRows.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0)
       : group.filter(row=>row.isAttributableClient).reduce((sum,row)=>sum+row.projects.reduce((projectSum,project)=>projectSum+Number(project.valueExclVat??0),0),0);
@@ -101,7 +111,10 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
-      attributableClients,undatedClients:Math.max(0,clients.length-attributableClientRows.length),clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
+      sourceKnownClients:clients.length,sourceClientIds:clients.map(item=>item.id),
+      attributableClients,undatedClients:Math.max(0,clients.length-attributableClientRows.length),clientIds:attributableClientRows.map(item=>item.id),
+      sourceProjectValueExclVat,sourceProjectValueInclVat,sourceInvoicedValue,sourcePaidValue,
+      projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
     });
   });
 
@@ -132,13 +145,21 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-        leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,undatedClients:0,clientIds:[],
+        leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,
+        sourceKnownClients:0,sourceClientIds:[],attributableClients:0,undatedClients:0,clientIds:[],
+        sourceProjectValueExclVat:0,sourceProjectValueInclVat:0,sourceInvoicedValue:0,sourcePaidValue:0,
         projectValueExclVat:0,projectValueInclVat:0,invoicedValue:0,paidValue:0,
       });
       bySource.set(source,row);
       result.push(row);
     }
     row.customers+=1;
+    row.sourceKnownClients+=1;
+    row.sourceClientIds.push(client.id);
+    row.sourceProjectValueExclVat+=client.projectValueTotalExclVat;
+    row.sourceProjectValueInclVat+=client.projectValueTotal;
+    row.sourceInvoicedValue+=client.invoicedTotal;
+    row.sourcePaidValue+=client.paidTotal;
     row.undatedClients+=1;
     refreshCostMetrics(row);
   }
