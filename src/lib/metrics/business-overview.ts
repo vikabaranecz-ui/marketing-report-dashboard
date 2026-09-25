@@ -22,6 +22,7 @@ export type SourcePerformanceRow = {
   clientIds:string[];
   projectValueExclVat:number;
   projectValueInclVat:number;
+  invoicedValue:number;
   paidValue:number;
   cpl:number|null;
   costQualified:number|null;
@@ -79,6 +80,9 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const projectValueInclVat=clients.length
       ? clients.reduce((sum,client)=>sum+client.projectValueTotal,0)
       : group.reduce((sum,row)=>sum+row.projectValue,0);
+    const invoicedValue=clients.length
+      ? clients.reduce((sum,client)=>sum+client.invoicedTotal,0)
+      : uniqueInvoices(group.flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0);
     const paidValue=clients.length
       ? clients.reduce((sum,client)=>sum+client.paidTotal,0)
       : uniqueInvoices(group.flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0);
@@ -92,7 +96,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
-      attributableClients,clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,paidValue,
+      attributableClients,clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
     });
   });
 
@@ -121,7 +125,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
         leads:0,deliveredLeads:delivered?Number(delivered.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
-        projectValueExclVat:0,projectValueInclVat:0,paidValue:0,
+        projectValueExclVat:0,projectValueInclVat:0,invoicedValue:0,paidValue:0,
       });
       bySource.set(source,row);
       result.push(row);
@@ -131,6 +135,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     if(!row.clientIds.includes(client.id))row.clientIds.push(client.id);
     row.projectValueExclVat+=client.projectValueTotalExclVat;
     row.projectValueInclVat+=client.projectValueTotal;
+    row.invoicedValue+=client.invoicedTotal;
     row.paidValue+=client.paidTotal;
     refreshCostMetrics(row);
   }
