@@ -12,7 +12,7 @@ import {
   buildOverviewAnalytics, hasCompletedVisitEvidence, hasSafeAcquisitionSource, manualClientSource, normalizeAcquisitionSource,
   PAID_ACQUISITION_SOURCES, type SourcePerformanceRow,
 } from "@/lib/metrics/business-overview";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics/kpis";
+import { formatCurrency, formatNumber, formatPercent, safeDivide } from "@/lib/metrics/kpis";
 import { hasOfferSentEvidence } from "@/lib/metrics/client-funnel";
 import { Card, SectionHeader, StatusPill } from "./ui";
 import {
