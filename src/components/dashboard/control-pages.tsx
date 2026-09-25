@@ -178,19 +178,34 @@ export function RevenuePage({ data }: { data: CompanyDataset }) {
   const offeredValue=sum(sent.map(item=>item.priceInclVat));
   const openValue=sum(open.map(item=>item.priceInclVat));
   const acceptedValue=sum(accepted.map(item=>item.priceInclVat));
-  const projectValue=sum(periodProjects.map(item=>Number(item.valueInclVat??0)));
-  const invoiced=sum(periodInvoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
-  const paid=sum(periodInvoices.map(item=>item.paidTotal));
+  const cohortProjectValue=sum(projects.map(item=>Number(item.valueInclVat??0)));
+  const cohortInvoiced=sum(invoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
+  const cohortPaid=sum(invoices.map(item=>item.paidTotal));
+  const periodProjectValue=sum(periodProjects.map(item=>Number(item.valueInclVat??0)));
+  const periodInvoiced=sum(periodInvoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
+  const periodPaid=sum(periodInvoices.map(item=>item.paidTotal));
 
   return <div className="space-y-6">
-    <div className="revenue-stage-grid">
-      <RevenueStage label="Total offered" value={offeredValue} note={sent.length+" sent offers"} onClick={()=>setDrilldown({title:"Sent offers",subtitle:data.periodLabel,offers:sent})}/>
-      <RevenueStage label="Open pipeline" value={openValue} note={open.length+" still open"} onClick={()=>setDrilldown({title:"Open offers",subtitle:data.periodLabel,offers:open})}/>
-      <RevenueStage label="Accepted / contracted" value={acceptedValue} note={accepted.length+" accepted offers"} onClick={()=>setDrilldown({title:"Accepted offers",subtitle:data.periodLabel,offers:accepted})}/>
-      <RevenueStage label="Project value" value={projectValue} note={periodProjects.length+" project records"} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:periodProjects})}/>
-      <RevenueStage label="Invoiced" value={invoiced} note="Net of credits" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
-      <RevenueStage label="Paid value on period invoices" value={paid} note="Current paid_total on invoices dated in this period; not payment-date cash collection" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
-    </div>
+    <Card className="p-5">
+      <SectionHeader title="Acquisition-cohort commercial value" description="All values in this block follow the lead-acquisition cohort. Later offers, project value, invoices and paid value remain attached to the month the lead was acquired."/>
+      <div className="revenue-stage-grid mt-4">
+        <RevenueStage label="Total offered" value={offeredValue} note={sent.length+" sent offers"} onClick={()=>setDrilldown({title:"Sent offers · acquisition cohort",subtitle:data.periodLabel,offers:sent})}/>
+        <RevenueStage label="Open pipeline" value={openValue} note={open.length+" still open"} onClick={()=>setDrilldown({title:"Open offers · acquisition cohort",subtitle:data.periodLabel,offers:open})}/>
+        <RevenueStage label="Accepted / contracted" value={acceptedValue} note={accepted.length+" accepted offers"} onClick={()=>setDrilldown({title:"Accepted offers · acquisition cohort",subtitle:data.periodLabel,offers:accepted})}/>
+        <RevenueStage label="Cohort project value" value={cohortProjectValue} note={projects.length+" linked project records"} onClick={()=>setDrilldown({title:"Projects attributed to acquisition cohort",subtitle:data.periodLabel,projects})}/>
+        <RevenueStage label="Cohort invoiced" value={cohortInvoiced} note="Lifetime linked invoices · net of credits" onClick={()=>setDrilldown({title:"Invoices attributed to acquisition cohort",subtitle:data.periodLabel,invoices})}/>
+        <RevenueStage label="Cohort paid value" value={cohortPaid} note="Current paid_total on linked invoices; not payment-date cash" onClick={()=>setDrilldown({title:"Paid value attributed to acquisition cohort",subtitle:data.periodLabel,invoices:invoices.filter(item=>item.paidTotal>0)})}/>
+      </div>
+    </Card>
+
+    <Card className="p-5">
+      <SectionHeader title="Business this period" description="Separate operational clock: projects and invoices are counted by their actual calendar dates in the selected period, regardless of when the lead was acquired."/>
+      <div className="revenue-stage-grid mt-4">
+        <RevenueStage label="Projects won" value={periodProjectValue} note={periodProjects.length+" project records"} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:periodProjects})}/>
+        <RevenueStage label="Invoiced" value={periodInvoiced} note="Invoices dated in selected period · net of credits" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:periodInvoices})}/>
+        <RevenueStage label="Paid value on period invoices" value={periodPaid} note="Current paid_total on invoices dated in this period; not payment-date cash collection" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:periodInvoices.filter(item=>item.paidTotal>0)})}/>
+      </div>
+    </Card>
 
     <Card className="p-5">
       <SectionHeader title="Commercial client ledger" description="Signed status, ROBAWS confirmation, project value, invoiced and paid stay separate."/>
