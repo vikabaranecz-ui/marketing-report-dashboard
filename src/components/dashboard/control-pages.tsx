@@ -248,11 +248,15 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
   const attributedPaid=wonClients.filter(client=>attributedClientIds.has(client.id)).reduce((sum,client)=>sum+client.paidTotal,0);
   const paidCoverage=percentage(attributedPaid,businessPaid)??0;
+  const projectDetailValue=(data.allCommercialProjects??[]).reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
+  const projectAggregateValue=wonClients.reduce((sum,client)=>sum+client.projectValueTotal,0);
+  const projectValueGap=Math.abs(projectAggregateValue-projectDetailValue);
   const checks=[
     {label:"CRM source completeness",ok:data.dataHealth.missingSource===0,detail:data.dataHealth.missingSource+" leads missing source"},
     {label:"Duplicate control",ok:data.dataHealth.duplicates===0,detail:data.dataHealth.duplicates+" potential duplicate CRM rows"},
     {label:"Campaign attribution",ok:data.dataHealth.missingCampaign===0,detail:data.dataHealth.missingCampaign+" leads missing campaign"},
     {label:"ROBAWS client reconciliation",ok:wonClients.length>0&&unmatchedWon.length===0,detail:wonClients.length===0?"Full ROBAWS client snapshot not populated":unmatchedWon.length+" commercial clients unmatched"},
+    {label:"Project value reconciliation",ok:projectValueGap<=0.01,detail:"Detailed project rows "+formatCurrency(projectDetailValue)+" vs client aggregate "+formatCurrency(projectAggregateValue)+" · gap "+formatCurrency(projectValueGap)},
     {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:attributedClientIds.size+" / "+wonClients.length+" commercial clients have a safe source ("+supplierVerifiedSourceOverrides.length+" supplier-verified lead mappings, "+userSourceOverrides.length+" user/manual source overrides, "+formatPercent(attributionCoverage)+")"},
     {label:"Paid-value attribution",ok:paidCoverage>=90,detail:formatCurrency(attributedPaid)+" / "+formatCurrency(businessPaid)+" source-attributed ("+formatPercent(paidCoverage)+")"},
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
@@ -283,6 +287,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Supplier-only / undated" value={supplierOnly}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Acquisition date conflicts" value={acquisitionDateConflictRows.length}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Source-known clients without month" value={sourceKnownWithoutTrustedMonth}/>
+          <HealthMetric icon={<CircleDollarSign size={15}/>} label="Project value gap" value={formatCurrency(projectValueGap)}/>
         </div>
       </Card>
     </div>
