@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
-import { buildSourcePerformance, hasCompletedVisitEvidence, normalizeAcquisitionSource } from "@/lib/metrics/business-overview";
+import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, normalizeAcquisitionSource } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
@@ -15,14 +15,16 @@ import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown"
 export function FunnelPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const summary = buildFunnelSummary(data);
+  const acquisition = buildOverviewAnalytics(data,{source:"all",campaign:"all"});
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   const appointments = rows.filter(hasAppointmentEvidence).length;
   const completedVisits = rows.filter(hasCompletedVisitEvidence).length;
   const sentOffers = rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
   const commercialClients = rows.filter(row => row.isCommercialClient).length;
   const stages = [
-    { label:"Unique leads", value:summary.uniquePeople, note:"Deduplicated CRM people" },
-    { label:"Qualified", value:summary.qualified, note:"Relevant / progressed" },
+    { label:"Known acquired leads", value:acquisition.cohort.knownAcquired, note:`${summary.uniquePeople} CRM-tracked · ${acquisition.cohort.supplierOnly} supplier-only` },
+    { label:"CRM tracked", value:summary.uniquePeople, note:"Deduplicated CRM people with acquisition date" },
+    { label:"Qualified", value:summary.qualified, note:"Relevant / progressed CRM people" },
     { label:"Appointments", value:appointments, note:"Booked appointment evidence" },
     { label:"Visits", value:completedVisits, note:"Completed / post-visit evidence" },
     { label:"Offers sent", value:sentOffers, note:"ROBAWS status / sent date or CRM offer-stage evidence" },
@@ -45,7 +47,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
           const conversion = previous===null ? null : stageConversion(stage.value,previous);
-          const relevant=stage.label==="Unique leads"?rows
+          const relevant=["Known acquired leads","CRM tracked"].includes(stage.label)?rows
             :stage.label==="Qualified"?rows.filter(row=>row.isQualified)
             :stage.label==="Appointments"?rows.filter(hasAppointmentEvidence)
             :stage.label==="Visits"?rows.filter(hasCompletedVisitEvidence)
@@ -56,7 +58,9 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
           const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
           const selection:RecordDrilldown={
             title:stage.label,
-            subtitle:data.periodLabel,
+            subtitle:stage.label==="Known acquired leads"
+              ? `${data.periodLabel} · ${summary.uniquePeople} CRM-tracked records shown here; ${acquisition.cohort.supplierOnly} supplier-only leads have no CRM record/acquisition date`
+              : data.periodLabel,
             leads:relevant.map(row=>row.lead),
             appointments:["Appointments","Visits"].includes(stage.label)?(data.commercialAppointments??[]).filter(item=>leadIds.has(item.leadId)):undefined,
             offers:["Offers sent","Accepted"].includes(stage.label)?relevant.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index):undefined,
@@ -134,13 +138,13 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   return <div className="space-y-6">
     <div className="callout"><AlertTriangle size={18}/><div><strong>Source economics currently cover {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>CRM-linked clients use verified lead attribution. Unmatched ROBAWS clients are included only when a manual source has been explicitly assigned; they never receive a guessed source.</p></div></div>
     <Card className="p-5">
-      <SectionHeader title="Source → business result" description="Paid sources are compared only when their actual spend exists. Organic sources keep cost metrics blank."/>
+      <SectionHeader title="Source → business result" description="Marketing outcomes follow the acquisition source and acquisition cohort. Supplier-delivered counts are used when verified; downstream stages remain CRM-backed. Later project value stays with the month/source that acquired the lead."/>
       <div className="table-scroll"><table className="wide-decision-table">
         <thead><tr><th>Source</th><th>Spend</th><th>Unique leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project € excl. VAT</th><th>Paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
           <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>commercialClientInPeriod(data,client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||decisionSource(manualRobawsSource(data,client)??"")===row.source)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
-          <td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
+          <td>{row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.crmLeads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}</td>
           <td>{formatCurrency(row.projectValue)}</td><td className="font-semibold">{formatCurrency(row.paid)}</td>
           <td>{costMetric(row.spend,row.leads)}</td><td>{costMetric(row.spend,row.qualified)}</td><td>{costMetric(row.spend,row.visits)}</td><td>{costMetric(row.spend,row.offers)}</td><td>{costMetric(row.spend,row.attributedClients)}</td>
@@ -293,7 +297,8 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
 export type SourceBusinessRow = {
   source:string; spend:number|null; costState:"known"|"missing"|"not-applicable";
   isManualSpend:boolean; manualNote:string; recurringSpend:number;
-  leads:number; qualified:number; visits:number; offers:number; sentValue:number; openValue:number;
+  leads:number; crmLeads:number; deliveredLeads:number|null; supplierOnlyLeads:number;
+  qualified:number; visits:number; offers:number; sentValue:number; openValue:number;
   signed:number; commercialClients:number; attributedClients:number; projectValue:number; paid:number;
 };
 
@@ -305,7 +310,10 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     isManualSpend:row.isManualSpend,
     manualNote:row.spendNote,
     recurringSpend:row.recurringSpend,
-    leads:row.leads,
+    leads:row.deliveredLeads??row.leads,
+    crmLeads:row.leads,
+    deliveredLeads:row.deliveredLeads,
+    supplierOnlyLeads:row.supplierOnlyLeads,
     qualified:row.qualified,
     visits:row.visits,
     offers:row.offers,
