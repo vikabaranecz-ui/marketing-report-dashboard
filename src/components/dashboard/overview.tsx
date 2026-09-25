@@ -85,7 +85,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         costState:analytics.economics.costState==="missing"?"missing":"known",
         spendNote:"Campaign-level acquisition scope",
         isManualSpend:false,recurringSpend:0,
-        leads:analytics.cohort.unique,deliveredLeads:null,leadCountNote:"",qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
+        leads:analytics.cohort.unique,deliveredLeads:null,supplierOnlyLeads:0,supplierMatchedPeople:null,leadCountNote:"",qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
         offers:analytics.cohort.offers,customers:analytics.cohort.customers,
         attributableClients:analytics.economics.attributableCustomers,
         clientIds:analytics.economics.attributableClientIds,
@@ -129,7 +129,8 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   };
 
   const openMilestone=(key:string)=>{
-    if(key==="leads") return setDrilldown({title:"Unique acquired leads",subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead)});
+    if(key==="acquired") return setDrilldown({title:"Known acquired leads",subtitle:`${scopeLabel} · ${analytics.cohort.unique} CRM-tracked + ${analytics.cohort.supplierOnly} supplier-only without CRM record`,leads:analytics.rows.map(row=>row.lead)});
+    if(key==="tracked") return setDrilldown({title:"CRM-tracked acquired people",subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead)});
     if(key==="qualified") return setDrilldown({title:"Qualified acquired leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isQualified).map(row=>row.lead)});
     if(key==="visits") return setDrilldown({title:"Completed visit evidence",subtitle:scopeLabel,leads:analytics.rows.filter(hasCompletedVisitEvidence).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>selectedLeadIds.has(item.leadId)&&Boolean(item.completedAt))});
     if(key==="offers") return setDrilldown({title:"Offers sent for acquired leads",subtitle:scopeLabel,offers:selectedSentOffers});
@@ -160,7 +161,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>Leads acquired in selected period · lifetime outcomes</small></div>
           <div className="executive-group-metrics">
             <SummaryMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Known paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
-            <SummaryMetric label="Unique leads" value={formatNumber(analytics.cohort.unique)} onClick={()=>openMilestone("leads")}/>
+            <SummaryMetric label="Known acquired leads" value={formatNumber(analytics.cohort.knownAcquired)} note={analytics.cohort.supplierOnly?formatNumber(analytics.cohort.unique)+" CRM-tracked · "+formatNumber(analytics.cohort.supplierOnly)+" supplier-only":formatNumber(analytics.cohort.unique)+" CRM-tracked"} onClick={()=>openMilestone("acquired")}/>
             <SummaryMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
             <SummaryMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / attributable customers" onClick={()=>setDrilldown({title:"Cohort CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
             <SummaryMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value / covered spend" onClick={()=>setDrilldown({title:"Cohort cash ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
@@ -205,10 +206,10 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     </section>
 
     <section>
-      <SectionHeader title="Acquisition cohort" description="Leads created in the selected period and their current outcomes. Later commercial value stays attached to the acquisition cohort."/>
+      <SectionHeader title="Acquisition cohort" description="Marketing value follows the month the lead was acquired. Later wins, invoices and paid value stay attached to that acquisition cohort; supplier-only leads without a reliable date remain unassigned to a month."/>
       <div className="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
       <Card className="p-5">
-        <SectionHeader title="Conversion milestones" description="Bars are independently evidenced and scaled against unique leads; this is not forced into a narrowing funnel."/>
+        <SectionHeader title="Conversion milestones" description="Known acquired leads include verified supplier-only records. Downstream qualification, visit and offer stages use CRM-tracked people only; this is not forced into a false narrowing funnel."/>
         <div className="milestone-list">
           {analytics.cohort.milestones.map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
         </div>
@@ -220,7 +221,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <div className="acquisition-flow">
           <FlowStep label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} tone="yellow"/>
           <ArrowRight size={16}/>
-          <FlowStep label="Leads" value={formatNumber(analytics.cohort.unique)}/>
+          <FlowStep label="Known acquired" value={formatNumber(analytics.cohort.knownAcquired)} note={formatNumber(analytics.cohort.unique)+" CRM tracked"}/>
           <ArrowRight size={16}/>
           <FlowStep label="Customers" value={formatNumber(analytics.economics.attributableCustomers)}/>
           <ArrowRight size={16}/>
