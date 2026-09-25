@@ -30,10 +30,10 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   return <div className="space-y-6">
     <div className="kpi-grid border-l border-t border-[var(--line)]">
       <KpiCard label="Covered acquisition spend" value={formatCurrency(spend,true)} meta={analytics.economics.missingCostSources.length ? "Partial cost coverage" : "Paid sources with known cost"}/>
-      <KpiCard label="CRM paid-source leads" value={formatNumber(leads)} meta={`${formatCurrency(analytics.economics.cpl)} CPL · deduplicated`}/>
+      <KpiCard label="Known paid-source leads" value={formatNumber(leads)} meta={leads!==paidJourneyRows.length?`${paidJourneyRows.length} CRM-tracked · supplier evidence included · ${formatCurrency(analytics.economics.cpl)} CPL`:`${formatCurrency(analytics.economics.cpl)} CPL · CRM-tracked`}/>
       <KpiCard label="Not relevant" value={formatNumber(notRelevant)} meta={`${formatPercent(percentage(notRelevant,paidJourneyRows.length))} of paid-source CRM people`}/>
-      <KpiCard label="Visited" value={formatNumber(visits)} meta={`${formatPercent(percentage(visits,leads))} of covered CRM leads`}/>
-      <KpiCard label="Clients" value={formatNumber(won)} meta={`${formatPercent(percentage(won,leads))} CRM lead → client`}/>
+      <KpiCard label="Visited" value={formatNumber(visits)} meta={`${formatPercent(percentage(visits,paidJourneyRows.length))} of CRM-tracked paid-source people`}/>
+      <KpiCard label="Clients" value={formatNumber(won)} meta={`${formatPercent(percentage(won,paidJourneyRows.length))} CRM-tracked → client`}/>
       <KpiCard label="CAC" value={formatCurrency(analytics.economics.cac)} meta="Covered spend / attributable clients"/>
       <KpiCard label="Platform leads" value={formatNumber(platform)} meta="Directional ad-platform count"/>
       <KpiCard label="Paid value" value={formatCurrency(paidValue,true)} meta={analytics.economics.cohortCashRoas===null?"—":`${formatNumber(analytics.economics.cohortCashRoas)}× paid-value ROAS`}/> 
@@ -56,9 +56,9 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
     </Card>
 
     <Card className="p-5">
-      <SectionHeader title="CRM source → pipeline → revenue" description="Every source uses the same client-funnel definitions. Offer counts and € values come from commercial offer evidence, not inferred CRM labels."/>
+      <SectionHeader title="CRM-tracked source → pipeline → revenue" description="This table is the operational CRM funnel only. Supplier-only leads are intentionally excluded because they have no CRM stage/date; source economics above includes verified supplier totals."/>
       <div className="table-scroll"><table>
-        <thead><tr><th>CRM source</th><th>Unique people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified clients</th><th>Revenue</th></tr></thead>
+        <thead><tr><th>Reporting source</th><th>CRM-tracked people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified clients</th><th>Revenue</th></tr></thead>
         <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offers}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.signed}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
       </table></div>
     </Card>
