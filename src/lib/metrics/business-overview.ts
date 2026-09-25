@@ -275,9 +275,12 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
       customers:attributableClientIds.length,
     };
     const coveredSpend=paidSource?spend:0;
+    const cplCoveredSpend=spend===null||counts.leads===0?0:Number(coveredSpend);
     return {
       costState:paidSource?(spend===null?"missing":"known"):"not-applicable" as const,
       coveredSpend:spend===null?0:Number(coveredSpend),
+      cplCoveredSpend,
+      cplCoveredSources:spend===null||counts.leads===0?[]:[scope.campaign],
       coveredLeads:spend===null?0:counts.leads,
       coveredQualified:spend===null?0:counts.qualified,
       coveredVisits:spend===null?0:counts.visits,
@@ -286,7 +289,7 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
       attributableClientIds:spend===null?[]:attributableClientIds,
       cohortValueExclVat:clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
       cohortPaidValue:clients.reduce((sum,client)=>sum+client.paidTotal,0),
-      cpl:spend===null?null:safeDivide(spend,counts.leads),
+      cpl:spend===null?null:safeDivide(cplCoveredSpend,counts.leads),
       costQualified:spend===null?null:safeDivide(spend,counts.qualified),
       costVisit:spend===null?null:safeDivide(spend,counts.visits),
       costOffer:spend===null?null:safeDivide(spend,counts.offers),
@@ -302,7 +305,9 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const known=paidRelevant.filter(item=>item.costState==="known"&&item.spend!==null);
   const missing=paidRelevant.filter(item=>item.costState==="missing");
   const coveredSpend=known.reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const coveredLeads=known.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
+  const leadCountCovered=known.filter(item=>!(item.deliveredLeads===null&&item.leads===0&&item.customers>0));
+  const cplCoveredSpend=leadCountCovered.reduce((sum,item)=>sum+Number(item.spend??0),0);
+  const coveredLeads=leadCountCovered.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
   const coveredQualified=known.reduce((sum,item)=>sum+item.qualified,0);
   const coveredVisits=known.reduce((sum,item)=>sum+item.visits,0);
   const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
@@ -319,9 +324,9 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
     : relevant.reduce((sum,item)=>sum+item.paidValue,0);
   return {
     costState:missing.length?"partial":known.length?"known":"missing" as "partial"|"known"|"missing",
-    coveredSpend,coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,attributableClientIds,
+    coveredSpend,cplCoveredSpend,cplCoveredSources:leadCountCovered.map(item=>item.source),coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,attributableClientIds,
     cohortValueExclVat,cohortPaidValue,
-    cpl:safeDivide(coveredSpend,coveredLeads),
+    cpl:safeDivide(cplCoveredSpend,coveredLeads),
     costQualified:safeDivide(coveredSpend,coveredQualified),
     costVisit:safeDivide(coveredSpend,coveredVisits),
     costOffer:safeDivide(coveredSpend,coveredOffers),
