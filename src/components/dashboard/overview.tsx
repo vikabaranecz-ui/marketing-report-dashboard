@@ -69,7 +69,6 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const commercialLedgerClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
   const paidLedgerClients=commercialLedgerClients.filter(client=>client.paidTotal>0).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const invoicedLedgerClients=commercialLedgerClients.filter(client=>client.invoicedTotal>0).sort((a,b)=>b.invoicedTotal-a.invoicedTotal||a.name.localeCompare(b.name));
-  const projectLedgerClients=commercialLedgerClients.filter(client=>client.projectValueTotal>0).sort((a,b)=>b.projectValueTotal-a.projectValueTotal||a.name.localeCompare(b.name));
 
   const insight=managementInsight(analytics);
   const monthly=(data.businessDecision?.monthly??[]).map(item=>({
@@ -181,7 +180,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <div className="ledger-strip-label"><span>ROBAWS commercial ledger · all time</span><small>Separate from selected-period business activity</small></div>
         <SummaryMetric label="Paid value" value={formatCurrency(analytics.commercialLedger.paid)} note={formatNumber(analytics.commercialLedger.payingClients)+" paying client(s)"} onClick={()=>setDrilldown({title:"Clients behind all-time paid value",subtitle:"ROBAWS commercial ledger · current paid_total, no payment-date filter",initialKind:"clients",clients:paidLedgerClients})}/>
         <SummaryMetric label="Invoiced" value={formatCurrency(analytics.commercialLedger.invoiced)} onClick={()=>setDrilldown({title:"Clients behind all-time invoiced value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:invoicedLedgerClients})}/>
-        <SummaryMetric label="Project value" value={formatCurrency(analytics.commercialLedger.projectValue)} onClick={()=>setDrilldown({title:"Clients behind all-time project value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:projectLedgerClients})}/>
+        <SummaryMetric label="Project detail value" value={formatCurrency(analytics.commercialLedger.projectValue)} note={analytics.commercialLedger.projectValueGap>0?"Client aggregate differs by "+formatCurrency(analytics.commercialLedger.projectValueGap):"Detailed projects reconcile"} onClick={()=>setDrilldown({title:"ROBAWS project records",subtitle:"Detailed project rows · all time",projects:data.allCommercialProjects??[]})}/>
       </div>
     </section>
 
@@ -346,9 +345,10 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         {undatedCohortClients>0&&<ActionLink title="Source-known clients without trusted acquisition month" value={formatNumber(undatedCohortClients)} detail="They stay visible under their source but are excluded from monthly cohort CAC/ROAS until a trustworthy lead-acquisition date exists." href={scopedHref("/data-health")}/>}
         {acquisitionDateConflicts>0&&<ActionLink title="Acquisition date conflicts" value={formatNumber(acquisitionDateConflicts)} detail="Client evidence predates the linked CRM lead date. These records are excluded from cohort-month attribution." href={scopedHref("/data-health")}/>}
         {(analytics.coverage.missingInvoices>0||analytics.coverage.missingProjects>0)&&<ActionButton title="ROBAWS detail coverage incomplete" value={String(analytics.coverage.loadedInvoices)+"/"+String(analytics.coverage.expectedInvoices)+" invoices"} detail={String(analytics.coverage.missingInvoices)+" invoice row(s) and "+String(analytics.coverage.missingProjects)+" project row(s) are not represented in the detailed snapshot."} onClick={()=>setDrilldown({title:"Clients affected by ROBAWS detail gaps",subtitle:"Reconciliation coverage",initialKind:"clients",clients:affectedCoverageClients})}/>}
+        {analytics.coverage.projectValueGap>0.01&&<ActionButton title="Project value reconciliation gap" value={formatCurrency(analytics.coverage.projectValueGap)} detail={"Detailed project rows total "+formatCurrency(analytics.coverage.loadedProjectValue)+" while the ROBAWS client aggregate reports "+formatCurrency(analytics.coverage.clientAggregateProjectValue)+". The aggregate can include offer values not safely attributable as won project value."} onClick={()=>setDrilldown({title:"Detailed ROBAWS projects",subtitle:"Use project rows for won-value attribution until aggregate logic is reconciled",projects:data.allCommercialProjects??[]})}/>}
         {data.dataHealth.duplicates>0&&<ActionLink title="Potential duplicate leads" value={formatNumber(data.dataHealth.duplicates)} detail="Review duplicate candidates before trusting unique-lead conversion." href={scopedHref("/data-health")}/>}
         {integrationIssues.length>0&&<ActionLink title="Integration sync needs review" value={formatNumber(integrationIssues.length)} detail={integrationIssues.map(item=>item.name).join(", ")} href={scopedHref("/data-health")}/>}
-        {dueOffers.length===0&&analytics.business.notYetInvoicedPeriodGap===0&&analytics.business.outstanding===0&&analytics.economics.missingCostSources.length===0&&unattributedWon.length===0&&undatedCohortClients===0&&acquisitionDateConflicts===0&&analytics.coverage.missingInvoices===0&&analytics.coverage.missingProjects===0&&data.dataHealth.duplicates===0&&integrationIssues.length===0&&
+        {dueOffers.length===0&&analytics.business.notYetInvoicedPeriodGap===0&&analytics.business.outstanding===0&&analytics.economics.missingCostSources.length===0&&unattributedWon.length===0&&undatedCohortClients===0&&acquisitionDateConflicts===0&&analytics.coverage.missingInvoices===0&&analytics.coverage.missingProjects===0&&analytics.coverage.projectValueGap<=0.01&&data.dataHealth.duplicates===0&&integrationIssues.length===0&&
           <div className="action-clear"><CheckCircle2 size={17}/><strong>No supported action alert is currently triggered.</strong></div>}
       </div>
     </section>
@@ -373,7 +373,8 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         ]}/>
         <TrustPanel title="Commercial / ROBAWS" icon={<Database size={16}/>} items={[
           trustFromCoverage("Invoice detail coverage",analytics.coverage.invoiceCoverage,String(analytics.coverage.loadedInvoices)+" / "+String(analytics.coverage.expectedInvoices)+" invoice rows loaded. Missing detail affects invoice drilldowns and reconciliation."),
-          trustFromCoverage("Project detail coverage",analytics.coverage.projectCoverage,String(analytics.coverage.loadedProjects)+" / "+String(analytics.coverage.expectedProjects)+" project rows loaded. Missing detail affects won-project drilldowns and monthly won value."),
+          trustFromCoverage("Project detail coverage",analytics.coverage.projectCoverage,String(analytics.coverage.loadedProjects)+" / "+String(analytics.coverage.expectedProjects)+" project rows loaded."),
+          {label:"Project value reconciliation",state:(analytics.coverage.projectValueGap<=0.01?"Complete":"Needs review") as "Complete"|"Needs review",detail:"Detailed project rows "+formatCurrency(analytics.coverage.loadedProjectValue)+" vs client aggregate "+formatCurrency(analytics.coverage.clientAggregateProjectValue)+" · gap "+formatCurrency(analytics.coverage.projectValueGap)+". Detailed rows drive won-value attribution."},
           {label:"Payment timing",state:"Partial" as const,detail:"paid_total exists, but payment_date/payment_amount do not. Paid values cannot be labelled cash collected by date."},
         ]}/>
         <TrustPanel title="Attribution" icon={<ShieldCheck size={16}/>} items={[
