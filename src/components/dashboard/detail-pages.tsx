@@ -44,7 +44,7 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
 
     <div className="grid gap-6 xl:grid-cols-2">
       <Card className="p-5"><SectionHeader title="Spend vs attributable paid value" description="Paid acquisition sources with known cost"/><ComparisonBars accent={data.company.accent} data={paidSourceRows.filter(row=>row.spend!==null).map(row=>({name:row.source,value:Number(row.spend??0),secondary:row.paidValue}))}/></Card>
-      <Card className="p-5"><SectionHeader title="Lead cost trend" description="Selected acquisition period"/><TrendChart data={data.trend} metric="cpl" accent={data.company.accent}/></Card>
+      <Card className="p-5"><SectionHeader title="Synced CRM lead cost trend" description="Dated synced spend ÷ dated CRM leads only. Manual YTD supplier spend and supplier-only leads are not spread across days without evidence."/><TrendChart data={data.trend} metric="cpl" accent={data.company.accent}/></Card>
     </div>
 
     <Card className="p-5">
