@@ -74,7 +74,7 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
       </div>
       <div className="system-pulse-meta">
         <span><Clock3 size={14}/> Last update {lastSync?relativeTime(lastSync):"never"}</span>
-        <span><Sparkles size={14}/> {(data.manualOverrides??[]).length} manual corrections</span>
+        <span><Sparkles size={14}/> {(data.manualOverrides??[]).length} reporting overrides</span>
         <button type="button" onClick={syncAll} disabled={syncing||!connected.length} className="button-primary"><RefreshCw size={14} className={syncing?"animate-spin":""}/>{syncing?"Syncing…":"Sync now"}</button>
       </div>
     </div>
