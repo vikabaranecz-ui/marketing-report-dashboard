@@ -245,7 +245,7 @@ export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
   const projectValue=projects.reduce((n,p)=>n+Number(p.valueInclVat??0),0);
   const invoiced=invoices.reduce((n,i)=>n+Math.max(0,i.totalInclVat-i.creditedTotal),0);
   const paid=invoices.reduce((n,i)=>n+i.paidTotal,0);
-  const now=Date.now();
+  const [now]=useState(()=>Date.now());
   const followUpsDue=open.filter(o=>o.followUpAt&&new Date(o.followUpAt).getTime()<=now);
   const sum=(items:typeof offers)=>items.reduce((n,o)=>n+o.priceInclVat,0);
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);

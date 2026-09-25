@@ -394,7 +394,7 @@ function buildAttributionCoverage(data:CompanyDataset,sources:SourcePerformanceR
   };
 }
 
-function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType<typeof buildEconomics>,business:any,coverage:ReturnType<typeof buildCoverage>,scope:OverviewScope){
+function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType<typeof buildEconomics>,business:{projects:CommercialProject[];invoices:CommercialInvoice[];wonValueInclVat:number;invoicedInclVat:number},coverage:ReturnType<typeof buildCoverage>,scope:OverviewScope){
   const comparableSources=scope.campaign!=="all"
     ? []
     : scope.source==="all"

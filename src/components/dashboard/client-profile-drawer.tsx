@@ -24,7 +24,6 @@ export function ClientProfileDrawer({data,client,onClose}:{data:CompanyDataset;c
 
   useEffect(()=>{
     let active=true;
-    setLoading(true);setError("");
     fetch(`/api/robaws/client-profile?companyId=${encodeURIComponent(data.company.id)}&externalId=${encodeURIComponent(client.externalId)}`,{cache:"no-store"})
       .then(async response=>{
         const body=await response.json();

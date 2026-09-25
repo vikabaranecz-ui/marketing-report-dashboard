@@ -32,6 +32,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const [sourceSort,setSourceSort]=useState<SourceSort>("paid");
   const [showSourceTable,setShowSourceTable]=useState(false);
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
+  const [now]=useState(()=>Date.now());
 
   const analytics=useMemo(
     ()=>buildOverviewAnalytics(data,{source:sourceFilter,campaign:campaignFilter}),
@@ -52,7 +53,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const selectedOffers=(data.commercialOffers??[]).filter(item=>selectedLeadIds.has(item.leadId));
   const selectedSentOffers=selectedOffers.filter(hasOfferSentEvidence);
   const selectedClients=clientsForRows(data,analytics.rows);
-  const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=Date.now());
+  const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=now);
   const outstandingInvoices=analytics.business.invoices.filter(item=>netInvoice(item)>item.paidTotal);
   const unattributedWon=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&!resolvedClientSource(data,client));
   const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);

@@ -146,7 +146,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
         {totalRecords>0&&visibleCount===0&&<div className="record-empty">No records match these filters.</div>}
       </div>
     </aside>
-    {selectedClient&&<ClientProfileDrawer data={data} client={selectedClient} onClose={()=>setSelectedClient(null)}/>}
+    {selectedClient&&<ClientProfileDrawer key={selectedClient.id} data={data} client={selectedClient} onClose={()=>setSelectedClient(null)}/>}
   </div>;
 }
 
