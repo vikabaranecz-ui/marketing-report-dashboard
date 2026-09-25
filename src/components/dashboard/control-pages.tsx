@@ -287,7 +287,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Supplier-only / undated" value={supplierOnly}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Acquisition date conflicts" value={acquisitionDateConflictRows.length}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Source-known clients without month" value={sourceKnownWithoutTrustedMonth}/>
-          <HealthMetric icon={<CircleDollarSign size={15}/>} label="Project value gap" value={formatCurrency(projectValueGap)}/>
+          <HealthMetric icon={<CircleDollarSign size={15}/>} label="Project value gap" value={projectValueGap} money/>
         </div>
       </Card>
     </div>
@@ -511,7 +511,7 @@ function sum(values:number[]){return values.reduce((total,value)=>total+Number(v
 function formatTimestamp(value:string|null){if(!value)return "—";return new Intl.DateTimeFormat("nl-BE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Brussels"}).format(new Date(value))}
 function Leak({label,value}:{label:string;value:number}){return <div className="bg-white p-4"><span className="text-xs text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{formatNumber(value)}</strong></div>}
 function RevenueStage({label,value,note,onClick}:{label:string;value:number;note:string;onClick?:()=>void}){const content=<><span>{label}</span><strong className={onClick?"drillable-value":""}>{formatCurrency(value,true)}</strong><small>{note}</small></>;return onClick?<button type="button" className="revenue-stage drillable text-left" onClick={onClick}>{content}</button>:<div className="revenue-stage">{content}</div>}
-function HealthMetric({icon,label,value}:{icon:ReactNode;label:string;value:number}){return <div className="bg-white p-4"><div className="flex items-center gap-2 text-[var(--muted)]">{icon}<span className="text-xs font-semibold uppercase tracking-wide">{label}</span></div><strong className={`mt-3 block text-2xl ${value>0?"text-amber-700":"text-emerald-700"}`}>{formatNumber(value)}</strong></div>}
+function HealthMetric({icon,label,value,money=false}:{icon:ReactNode;label:string;value:number;money?:boolean}){return <div className="bg-white p-4"><div className="flex items-center gap-2 text-[var(--muted)]">{icon}<span className="text-xs font-semibold uppercase tracking-wide">{label}</span></div><strong className={`mt-3 block text-2xl ${value>0?"text-amber-700":"text-emerald-700"}`}>{money?formatCurrency(value):formatNumber(value)}</strong></div>}
 
 
 function RobawsSourceEditor({companyId,client,initialSource}:{companyId:string;client:NonNullable<CompanyDataset["commercialClients"]>[number];initialSource:string|null}) {
