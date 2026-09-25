@@ -178,7 +178,29 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const attributableProjects = rawProjects.filter(project => !isDateConflict(project.attribution_status));
   const quoteByLead = latestQuoteByLead(attributableQuotes);
   const projectByLead = aggregateProjectsByLead(attributableProjects);
-  const leads = mapLeads(rawLeads,quoteByLead,projectByLead);
+  const mappedLeads = mapLeads(rawLeads,quoteByLead,projectByLead);
+  const sourceOverrideForLead = (leadId:string) => {
+    const linkedClient = rawCommercialClients.find(client => client.matched_lead_id === leadId);
+    const keys = [
+      leadId,
+      linkedClient ? `robaws:${linkedClient.external_id}` : "",
+      linkedClient?.id ?? "",
+    ].filter(Boolean);
+    const matches = rawOverrides.filter(item =>
+      item.scope_type === "client"
+      && item.field_key === "source"
+      && keys.includes(item.scope_key)
+      && typeof item.value === "string"
+    );
+    const preferred = matches.find(item => item.period_key === period.selectedMonth)
+      ?? matches.find(item => item.period_key === "all")
+      ?? matches[0];
+    return typeof preferred?.value === "string" && preferred.value.trim() ? preferred.value.trim() : null;
+  };
+  const leads = mappedLeads.map(lead => {
+    const source = sourceOverrideForLead(lead.id);
+    return source ? { ...lead, source } : lead;
+  });
   const leadById = new Map(leads.map(lead => [lead.id, lead]));
   const rawLeadById = new Map(rawLeads.map(lead => [lead.id, lead]));
   const commercialOffers = rawQuotes
@@ -392,7 +414,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const campaigns = buildCampaigns((campaignsRes.data??[]) as unknown as {id:string;name:string;channel_id:string;marketing_channels:{name:string}|null}[],rawMetrics,rawLeads,projectByLead);
   const trend = buildTrend(rawMetrics,rawLeads,attributableProjects,projectByLead,rawWebsite);
   const locations = buildLocations(rawLeads,rawMetrics,projectByLead);
-  const leadSources = buildLeadSources(rawLeads,quoteByLead,projectByLead);
+  const leadSources = buildLeadSources(rawLeads,quoteByLead,projectByLead,new Map(leads.map(lead=>[lead.id,lead.source])));
   const websiteTraffic = aggregateGa4WebsiteMetrics(rawWebsite.map(row => ({
     companyId: row.company_id,
     date: row.date,
@@ -726,6 +748,7 @@ function buildLeadSources(
   leads: RawLead[],
   quotes: Map<string,RawQuote>,
   projects: Map<string,RawProject>,
+  sourceByLeadId: Map<string,string> = new Map(),
 ): CompanyDataset["leadSources"] {
   const map = new Map<
     string,
@@ -734,7 +757,7 @@ function buildLeadSources(
 
   for (const lead of leads) {
     const source =
-      lead.source?.trim() || "Unattributed";
+      sourceByLeadId.get(lead.id)?.trim() || lead.source?.trim() || "Unattributed";
 
     const row = map.get(source) ?? {
       source,
