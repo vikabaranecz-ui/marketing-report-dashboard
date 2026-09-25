@@ -375,11 +375,13 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,
     const unique=[...new Map(clients.map(item=>[item.id,item])).values()];
     const current=cohorts.get(month)??{month,customers:new Set<string>(),projectValue:0,invoiced:0,paid:0};
     for(const client of unique){
-      if(current.customers.has(client.id)) continue;
       current.customers.add(client.id);
-      current.projectValue+=client.projectValueTotalExclVat;
-      current.invoiced+=client.invoicedTotal;
-      current.paid+=client.paidTotal;
+    }
+    if(row.isAttributableClient){
+      current.projectValue+=row.projects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
+      const rowInvoices=uniqueInvoices(row.invoices);
+      current.invoiced+=rowInvoices.reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0);
+      current.paid+=rowInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
     }
     cohorts.set(month,current);
 
