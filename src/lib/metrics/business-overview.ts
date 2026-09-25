@@ -347,7 +347,9 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,
   for(const row of rows){
     const month=row.lead.date.slice(0,7);
     if(!month) continue;
-    const clients=row.leadIds.map(id=>clientByLead.get(id)).filter(Boolean) as CommercialClient[];
+    const clients=row.isAttributableClient
+      ? row.leadIds.map(id=>clientByLead.get(id)).filter(Boolean) as CommercialClient[]
+      : [];
     const unique=[...new Map(clients.map(item=>[item.id,item])).values()];
     const current=cohorts.get(month)??{month,customers:new Set<string>(),projectValue:0,invoiced:0,paid:0};
     for(const client of unique){
@@ -359,6 +361,7 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,
     }
     cohorts.set(month,current);
 
+    if(!row.isAttributableClient) continue;
     for(const invoice of uniqueInvoices(row.invoices)){
       if(!invoice.date) continue;
       const offset=monthDistance(month,invoice.date.slice(0,7));
