@@ -247,7 +247,7 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
 }
 
 function buildCommercialLedger(data:CompanyDataset){
-  const clients=data.commercialClients??[];
+  const clients=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
   const payingClients=clients.filter(item=>item.paidTotal>0);
   return {
     clients,
@@ -391,7 +391,7 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,
 }
 
 function buildCoverage(data:CompanyDataset){
-  const clients=data.commercialClients??[];
+  const clients=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
   const allInvoices=data.allCommercialInvoices??[];
   const allProjects=data.allCommercialProjects??[];
   const expectedInvoices=clients.reduce((sum,item)=>sum+item.invoiceCount,0);
@@ -563,7 +563,7 @@ function clientInSelectedPeriod(data:CompanyDataset,client:CommercialClient){
 function uniqueCommercialClientsForRows(data:CompanyDataset,rows:JourneyRow[]){
   const leadIds=new Set(rows.flatMap(row=>row.leadIds));
   return [...new Map((data.commercialClients??[])
-    .filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
+    .filter(client=>client.commercialStatus==="CLIENT_WON"&&Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
     .map(client=>[client.id,client])).values()];
 }
 
