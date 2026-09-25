@@ -206,6 +206,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const sourcePerformance=buildSourcePerformance(data,rows);
   const supplierOnly=sourcePerformance.reduce((sum,row)=>sum+row.supplierOnlyLeads,0);
   const supplierMatchedPeople=sourcePerformance.reduce((sum,row)=>sum+Number(row.supplierMatchedPeople??0),0);
+  const sourceKnownWithoutTrustedMonth=sourcePerformance.reduce((sum,row)=>sum+row.undatedClients,0);
   const knownAcquired=rows.length+supplierOnly;
   const googleSpendPresent=sourcePerformance.some(row=>row.source==="Google Ads"&&row.costState==="known"&&Number(row.spend??0)>0);
   const signedUnconfirmedRows=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
@@ -243,6 +244,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
     {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Verified spend available":"No verified spend"},
     {label:"Supplier → CRM identity coverage",ok:supplierOnly===0,detail:supplierMatchedPeople+" supplier people matched to CRM · "+supplierOnly+" supplier-only without CRM/acquisition date"},
     {label:"Acquisition-date consistency",ok:acquisitionDateConflictRows.length===0,detail:acquisitionDateConflictRows.length+" linked won client(s) have client evidence dated before the CRM lead creation date and are excluded from monthly cohort attribution"},
+    {label:"Cohort-month client coverage",ok:sourceKnownWithoutTrustedMonth===0,detail:sourceKnownWithoutTrustedMonth+" source-known won client(s) do not have a trustworthy acquisition month and are excluded from cohort CAC/ROAS"},
   ];
   const passed=checks.filter(item=>item.ok).length;
 
@@ -265,6 +267,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
           <HealthMetric icon={<Database size={15}/>} label="Known acquired people" value={knownAcquired}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Supplier-only / undated" value={supplierOnly}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Acquisition date conflicts" value={acquisitionDateConflictRows.length}/>
+          <HealthMetric icon={<AlertTriangle size={15}/>} label="Source-known clients without month" value={sourceKnownWithoutTrustedMonth}/>
         </div>
       </Card>
     </div>
