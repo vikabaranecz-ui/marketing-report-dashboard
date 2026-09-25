@@ -497,7 +497,6 @@ function sourceNumericOverride(data:CompanyDataset,source:string,fieldKey:string
   );
   return matches.find(item=>item.periodKey===data.periodKey)
     ??matches.find(item=>item.periodKey==="all")
-    ??matches[0]
     ??null;
 }
 
