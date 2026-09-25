@@ -12,6 +12,7 @@ import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown"
 
 export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const rows = useMemo(() => buildJourneyRows(data), [data]);
+  const cohortAnalytics = useMemo(() => buildOverviewAnalytics(data,{source:"all",campaign:"all"}), [data]);
   const paybackRows = useMemo(() => rows
     .filter(row => row.isCommercialClient || row.projects.length > 0 || row.invoices.length > 0)
     .map(buildPaybackRecord)
@@ -73,6 +74,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
       </div>
     </Card>
 
+    {cohortAnalytics.cohort.supplierOnly>0&&<div className="payback-truth-note"><strong>Acquisition coverage:</strong> {formatNumber(cohortAnalytics.cohort.supplierOnly)} supplier-only leads are known but have no CRM record/acquisition date, so they are not assigned to a monthly payback cohort.</div>}
     <div className="payback-kpis">
       <PaybackKpi label="Customers" value={formatNumber(totals.clients)} note="Commercially evidenced customers"/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
@@ -296,7 +298,7 @@ export function SalesProjectsPage({ data }: { data: CompanyDataset }) {
       <KpiCard label="Invoiced" value={formatCurrency(invoiced,true)} onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices})}/>
       <KpiCard label="Paid" value={formatCurrency(paid,true)} onClick={()=>setDrilldown({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:invoices.filter(item=>item.paidTotal>0)})}/>
     </div>
-    <Card className="p-5"><SectionHeader title="Commercially verified projects" description="Project rows use the selected calendar period."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Won date</th><th>Source</th><th>Project</th><th>Status</th><th>Value excl. VAT</th><th>Value incl. VAT</th></tr></thead><tbody>{projects.map(p=><tr key={p.id}><td className="font-semibold">{p.leadName}</td><td>{date(p.date)}</td><td>{p.source}</td><td>{p.externalId}</td><td>{p.status}</td><td>{formatCurrency(p.valueExclVat)}</td><td className="font-semibold">{formatCurrency(p.valueInclVat)}</td></tr>)}</tbody></table></div></Card>
+    <Card className="p-5"><SectionHeader title="Commercially verified projects" description="Operational business clock: project rows use the actual won/calendar date in the selected period. Marketing cohort reporting separately attributes their value back to the lead-acquisition month."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Won date</th><th>Source</th><th>Project</th><th>Status</th><th>Value excl. VAT</th><th>Value incl. VAT</th></tr></thead><tbody>{projects.map(p=><tr key={p.id}><td className="font-semibold">{p.leadName}</td><td>{date(p.date)}</td><td>{p.source}</td><td>{p.externalId}</td><td>{p.status}</td><td>{formatCurrency(p.valueExclVat)}</td><td className="font-semibold">{formatCurrency(p.valueInclVat)}</td></tr>)}</tbody></table></div></Card>
     {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
   </div>;
 }
@@ -315,12 +317,13 @@ export function CohortsPage({ data }: { data: CompanyDataset }) {
 export function SalesTeamPage({ data }: { data: CompanyDataset }) {
   const rows=buildJourneyRows(data),names=[...new Set(rows.map(r=>r.lead.salesperson||"Unassigned"))];
   const team=names.map(name=>{const g=rows.filter(r=>(r.lead.salesperson||"Unassigned")===name);return {name,leads:g.length,visits:g.filter(r=>r.hasVisit).length,offersCreated:g.filter(r=>r.offers.length>0).length,offers:g.filter(r=>r.offers.some(o=>Boolean(o.sentAt))).length,quoted:g.reduce((n,r)=>n+r.sentOfferValue,0),open:g.reduce((n,r)=>n+r.openOfferValue,0),signed:g.filter(r=>r.isSigned).length,verified:g.filter(r=>r.stage==="verified").length,revenue:g.reduce((n,r)=>n+r.projectValue,0)}}).sort((a,b)=>b.revenue-a.revenue||b.leads-a.leads);
-  return <Card className="p-5"><SectionHeader title="Sales team performance" description="Separates lead quality from sales execution; unassigned leads remain visible."/><div className="table-scroll"><table><thead><tr><th>Salesperson</th><th>Unique people</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified</th><th>Revenue</th><th>Offer → verified</th></tr></thead><tbody>{team.map(r=><tr key={r.name}><td className="font-semibold">{r.name}</td><td>{r.leads}</td><td>{r.visits}</td><td>{r.offersCreated}</td><td>{r.offers}</td><td>{formatCurrency(r.quoted)}</td><td>{formatCurrency(r.open)}</td><td>{r.signed}</td><td>{r.verified}</td><td>{formatCurrency(r.revenue)}</td><td>{formatPercent(percentage(r.verified,r.offers))}</td></tr>)}</tbody></table></div></Card>;
+  return <Card className="p-5"><SectionHeader title="Sales team performance" description="CRM-tracked people only. Supplier-only leads have no salesperson/stage evidence and are not assigned here."/><div className="table-scroll"><table><thead><tr><th>Salesperson</th><th>CRM-tracked people</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified</th><th>Revenue</th><th>Offer → verified</th></tr></thead><tbody>{team.map(r=><tr key={r.name}><td className="font-semibold">{r.name}</td><td>{r.leads}</td><td>{r.visits}</td><td>{r.offersCreated}</td><td>{r.offers}</td><td>{formatCurrency(r.quoted)}</td><td>{formatCurrency(r.open)}</td><td>{r.signed}</td><td>{r.verified}</td><td>{formatCurrency(r.revenue)}</td><td>{formatPercent(percentage(r.verified,r.offers))}</td></tr>)}</tbody></table></div></Card>;
 }
 
 function Funnel({ data }: { data: CompanyDataset }) {
   const s=buildFunnelSummary(data);
-  const stages=[["Leads",s.leads],["Unique people",s.uniquePeople],["Qualified",s.qualified],["Visits",s.visits],["People with offer",s.offersCreated],["Sent",s.offersSent],["Open",s.openOffers],["Accepted",s.acceptedOffers],["Signed",s.crmSigned],["Commercial clients",s.commercialClients]] as const;
+  const a=buildOverviewAnalytics(data,{source:"all",campaign:"all"});
+  const stages=[["Known acquired",a.cohort.knownAcquired],["CRM tracked",s.uniquePeople],["Qualified",s.qualified],["Visits",s.visits],["People with offer",s.offersCreated],["Sent",s.offersSent],["Open",s.openOffers],["Accepted",s.acceptedOffers],["Signed",s.crmSigned],["Commercial clients",s.commercialClients]] as const;
   return <Card className="overflow-hidden"><div className="overflow-x-auto"><div className="flex min-w-[1320px] divide-x divide-[var(--line)]"><div className="min-w-[150px] bg-[var(--ink)] p-4 text-white"><span className="text-xs uppercase text-white/60">Funnel scope</span><strong className="mt-2 block text-xl">{formatNumber(s.uniquePeople)}</strong><small className="mt-1 block text-[10px] text-white/45">Deduplicated people in selected period</small></div>{stages.map(([label,value])=><div key={label} className="min-w-[130px] flex-1 bg-white p-4"><span className="text-xs uppercase text-[var(--muted)]">{label}</span><strong className="mt-2 block text-xl">{value}</strong></div>)}</div></div><div className="border-t border-[var(--line)] bg-amber-50 px-4 py-3 text-xs text-amber-900"><strong>{s.qualifiedNoOffer} qualified people currently have no linked ROBAWS offer.</strong> Qualified means sales-relevant or progressed; it does not mean an offer already exists.</div></Card>;
 }
 
