@@ -51,12 +51,16 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
   const filteredSpend=useMemo(()=>spendRows.filter(item=>contains(item.label,item.source,item.campaign,item.state,item.note,item.spend)),[spendRows,query]);
   const clientForLead=(leadId:string)=>data.commercialClients?.find(client=>client.matchedLeadId===leadId)??null;
   const sourceForClient=(client:CommercialClient)=>{
-    const synced=client.matchedLeadId?data.leads.find(lead=>lead.id===client.matchedLeadId)?.source:null;
-    if(synced)return synced;
     const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
-    const match=(data.manualOverrides??[]).find(item=>item.scopeType==="client"&&item.fieldKey==="source"&&keys.includes(item.scopeKey)&&typeof item.value==="string");
-    return typeof match?.value==="string"&&match.value.trim()?match.value.trim():"Unattributed";
+    const matches=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&keys.includes(item.scopeKey)&&typeof item.value==="string");
+    const match=matches.find(item=>item.scopeKey===`robaws:${client.externalId}`)??matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
+    if(typeof match?.value==="string"&&match.value.trim())return match.value.trim();
+    const synced=client.matchedLeadId?data.leads.find(lead=>lead.id===client.matchedLeadId)?.source:null;
+    return synced||"Unattributed";
   };
+  const projectValueForClient=(client:CommercialClient)=>(data.allCommercialProjects??[])
+    .filter(project=>project.externalClientId===client.externalId)
+    .reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
   const totalRecords=leads.length+clients.length+offers.length+projects.length+invoices.length+appointments.length+spendRows.length;
   const types=[
     ["leads","Leads",leads.length],
@@ -80,7 +84,8 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
         <div className="record-summary-grid">
           {leads.length>0&&<Summary label="Leads" value={leads.length}/>}
           {clients.length>0&&<Summary label="Clients" value={clients.length}/>}
-          {clients.length>0&&<Summary label="Project value" value={formatCurrency(clients.reduce((sum,item)=>sum+item.projectValueTotal,0))}/>}
+          {clients.length>0&&<Summary label="Project detail value" value={formatCurrency(clients.reduce((sum,item)=>sum+projectValueForClient(item),0))}/>}
+          {clients.length>0&&<Summary label="Client aggregate project value" value={formatCurrency(clients.reduce((sum,item)=>sum+item.projectValueTotal,0))}/>} 
           {clients.length>0&&<Summary label="Invoiced" value={formatCurrency(clients.reduce((sum,item)=>sum+item.invoicedTotal,0))}/>}
           {clients.length>0&&<Summary label="Paid value" value={formatCurrency(clients.reduce((sum,item)=>sum+item.paidTotal,0))}/>} 
           {offers.length>0&&<Summary label="Offers" value={offers.length}/>}
@@ -112,8 +117,8 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
         </Section>}
 
         {show("clients")&&filteredClients.length>0&&<Section title="ROBAWS clients" icon={<UserRound size={16}/>}>
-          <div className="table-scroll"><table className="record-table"><thead><tr><th>Client</th><th>Since</th><th>Location</th><th>Source</th><th>Status</th><th>Offers</th><th>Projects</th><th>Invoices</th><th>Project value</th><th>Invoiced</th><th>Paid</th></tr></thead><tbody>
-            {filteredClients.slice(0,limit).map(client=><tr key={client.id}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>setSelectedClient(client)}>{client.name}</button></td><td>{date(client.clientSince)}</td><td>{client.municipality||"—"}</td><td>{sourceForClient(client)}</td><td><StatusPill tone={client.commercialStatus==="CLIENT_WON"?"good":"neutral"}>{client.commercialStatus}</StatusPill></td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{client.invoiceCount}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td></tr>)}
+          <div className="table-scroll"><table className="record-table"><thead><tr><th>Client</th><th>Since</th><th>Location</th><th>Source</th><th>Status</th><th>Offers</th><th>Projects</th><th>Invoices</th><th>Project detail</th><th>Client aggregate</th><th>Gap</th><th>Invoiced</th><th>Paid</th></tr></thead><tbody>
+            {filteredClients.slice(0,limit).map(client=>{const detail=projectValueForClient(client);const gap=Math.abs(client.projectValueTotal-detail);return <tr key={client.id}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>setSelectedClient(client)}>{client.name}</button></td><td>{date(client.clientSince)}</td><td>{client.municipality||"—"}</td><td>{sourceForClient(client)}</td><td><StatusPill tone={client.commercialStatus==="CLIENT_WON"?"good":"neutral"}>{client.commercialStatus}</StatusPill></td><td>{client.offerCount}</td><td>{client.projectCount}</td><td>{client.invoiceCount}</td><td>{formatCurrency(detail)}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{gap>0.01?<StatusPill tone="warn">{formatCurrency(gap)}</StatusPill>:"—"}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td></tr>})}
           </tbody></table></div>
         </Section>}
 
