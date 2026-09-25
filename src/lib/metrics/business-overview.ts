@@ -308,6 +308,11 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
     };
     const coveredSpend=paidSource?spend:0;
     const cplCoveredSpend=spend===null||counts.leads===0?0:Number(coveredSpend);
+    const campaignAttributableRows=rows.filter(item=>item.isAttributableClient);
+    const campaignProjects=[...new Map(campaignAttributableRows.flatMap(row=>row.projects).map(project=>[project.id,project])).values()];
+    const campaignInvoices=uniqueInvoices(campaignAttributableRows.flatMap(row=>row.invoices));
+    const campaignProjectValueExclVat=campaignProjects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
+    const campaignPaidValue=campaignInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
     return {
       costState:paidSource?(spend===null?"missing":"known"):"not-applicable" as const,
       coveredSpend:spend===null?0:Number(coveredSpend),
@@ -319,14 +324,14 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
       coveredOffers:spend===null?0:counts.offers,
       attributableCustomers:spend===null?0:counts.customers,
       attributableClientIds:spend===null?[]:attributableClientIds,
-      cohortValueExclVat:clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
-      cohortPaidValue:clients.reduce((sum,client)=>sum+client.paidTotal,0),
+      cohortValueExclVat:campaignProjectValueExclVat,
+      cohortPaidValue:campaignPaidValue,
       cpl:spend===null?null:safeDivide(cplCoveredSpend,counts.leads),
       costQualified:spend===null?null:safeDivide(spend,counts.qualified),
       costVisit:spend===null?null:safeDivide(spend,counts.visits),
       costOffer:spend===null?null:safeDivide(spend,counts.offers),
       cac:spend===null?null:safeDivide(spend,counts.customers),
-      cohortCashRoas:spend===null||spend===0?null:clients.reduce((sum,client)=>sum+client.paidTotal,0)/spend,
+      cohortCashRoas:spend===null||spend===0?null:campaignPaidValue/spend,
       missingCostSources:spend===null?[scope.campaign]:[],
       coveredSources:spend===null?[]:[scope.campaign],
     };
