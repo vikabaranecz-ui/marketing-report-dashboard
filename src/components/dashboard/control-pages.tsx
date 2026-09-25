@@ -88,7 +88,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
             const conversion = stageConversion(stage.value,previous.value);
             const lost = Math.max(0,previous.value-stage.value);
             return <div className="transition-row" key={stage.label}>
-              <div><strong>{previous.label} → {stage.label}</strong><span>{lost} did not progress</span></div>
+              <div><strong>{previous.label} → {stage.label}</strong><span>{index===0?lost+" known leads are supplier-only / not CRM-tracked":lost+" did not progress"}</span></div>
               <b>{formatPercent(conversion)}</b>
             </div>;
           })}
@@ -216,8 +216,8 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
   const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
   const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
-  const supplierVerifiedSourceOverrides=sourceOverrides.filter(item=>item.note.includes("Verified from Isoprotech x Agenciyou workbook"));
-  const userSourceOverrides=sourceOverrides.filter(item=>!item.note.includes("Verified from Isoprotech x Agenciyou workbook"));
+  const supplierVerifiedSourceOverrides=sourceOverrides.filter(item=>item.note.toLowerCase().includes("agenciyou workbook"));
+  const userSourceOverrides=sourceOverrides.filter(item=>!item.note.toLowerCase().includes("agenciyou workbook")&&!item.note.toLowerCase().includes("propagated from user-verified robaws client source"));
   const manualSourceForClient=(client:NonNullable<CompanyDataset["commercialClients"]>[number])=>{
     const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
     const matches=sourceOverrides.filter(item=>keys.includes(item.scopeKey));
