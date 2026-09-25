@@ -409,12 +409,24 @@ export function campaignPipelineRows(data: CompanyDataset) {
   return pipelineRowsBy(data, row => row.lead.campaign || "Unattributed");
 }
 
+function normalizedReportingSource(source:string){
+  const lower=String(source??"").trim().toLowerCase();
+  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")||lower.includes("facade ad")) return "Meta Ads / Facebook";
+  if(lower.includes("google ads")) return "Google Ads";
+  if(lower.includes("leadangel")) return "LeadAngel";
+  if(lower.includes("agenciyou")) return "AgenciYou";
+  if(lower.includes("solary")) return "Solary";
+  if(lower.includes("web calculator")) return "Web calculator";
+  if(lower==="web"||lower.includes("website")) return "Web";
+  return String(source??"").trim()||"Unattributed";
+}
+
 export function sourcePipelineRows(data: CompanyDataset) {
   const rows = buildJourneyRows(data);
-  const sources = [...new Set(rows.map(row => row.lead.source || "Unattributed"))];
+  const sources = [...new Set(rows.map(row => normalizedReportingSource(row.lead.source)))];
 
   return sources.map(source => {
-    const sourceRows = rows.filter(row => (row.lead.source || "Unattributed") === source);
+    const sourceRows = rows.filter(row => normalizedReportingSource(row.lead.source) === source);
     const costs = sourceRows.map(row => row.lead.acquisitionCost);
     const cost = costs.length > 0 && costs.every(value => value !== null)
       ? costs.reduce<number>((sum, value) => sum + Number(value), 0)
