@@ -91,6 +91,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         clientIds:analytics.economics.attributableClientIds,
         projectValueExclVat:analytics.economics.cohortValueExclVat,
         projectValueInclVat:analytics.cohort.projectValueInclVat,
+        invoicedValue:analytics.cohort.invoicedToDate,
         paidValue:analytics.economics.cohortPaidValue,
         cpl:analytics.economics.cpl,costQualified:analytics.economics.costQualified,
         costVisit:analytics.economics.costVisit,costOffer:analytics.economics.costOffer,
