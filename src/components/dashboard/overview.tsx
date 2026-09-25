@@ -474,6 +474,9 @@ function managementInsight(analytics:ReturnType<typeof buildOverviewAnalytics>){
   if(analytics.coverage.missingInvoices>0||analytics.coverage.missingProjects>0){
     return "ROBAWS detail coverage is incomplete: "+String(analytics.coverage.loadedInvoices)+" of "+String(analytics.coverage.expectedInvoices)+" invoice rows and "+String(analytics.coverage.loadedProjects)+" of "+String(analytics.coverage.expectedProjects)+" project rows are loaded, so detailed commercial views can be understated.";
   }
+  if(analytics.coverage.projectValueGap>0.01){
+    return "Project row count is complete, but project value still needs reconciliation: detailed projects total "+formatCurrency(analytics.coverage.loadedProjectValue)+" versus "+formatCurrency(analytics.coverage.clientAggregateProjectValue)+" in the client aggregate. Detailed project rows drive won-value reporting until this is resolved.";
+  }
   if(analytics.economics.missingCostSources.length){
     return "Acquisition cost is missing for "+analytics.economics.missingCostSources.join(", ")+"; CAC and cohort cash ROAS are intentionally unavailable for that uncovered spend.";
   }
