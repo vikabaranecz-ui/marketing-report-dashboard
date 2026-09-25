@@ -125,6 +125,8 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
   const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&commercialClientInPeriod(data,client));
+  const datedCohortClients=sources.reduce((sum,row)=>sum+row.attributedClients,0);
+  const undatedSourceClients=sources.reduce((sum,row)=>sum+row.undatedClients,0);
   const safelyAttributedLeadIds=new Set(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.leadIds));
   const attributedWonClients=allWonClients.filter(client=>
     Boolean(manualRobawsSource(data,client)) ||
@@ -136,16 +138,16 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
 
   return <div className="space-y-6">
-    <div className="callout"><AlertTriangle size={18}/><div><strong>Source economics currently cover {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>CRM-linked clients use verified lead attribution. Unmatched ROBAWS clients are included only when a manual source has been explicitly assigned; they never receive a guessed source.</p></div></div>
+    <div className="callout"><AlertTriangle size={18}/><div><strong>Source is known for {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>{datedCohortClients} client(s) have a trusted acquisition date and can drive cohort CAC/ROAS. {undatedSourceClients} source-known client(s) have no trustworthy acquisition month and remain visible but excluded from cohort economics.</p></div></div>
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Marketing outcomes follow the acquisition source and acquisition cohort. Supplier-delivered counts are used when verified; downstream stages remain CRM-backed. Later project value stays with the month/source that acquired the lead."/>
       <div className="table-scroll"><table className="wide-decision-table">
-        <thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>ROBAWS clients</th><th>Attributed clients</th><th>Project € excl. VAT</th><th>Paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Paid ROAS</th></tr></thead>
+        <thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>Source-known clients</th><th>Dated cohort clients</th><th>Cohort project € excl. VAT</th><th>Cohort paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Cohort paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
           <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>commercialClientInPeriod(data,client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||decisionSource(manualRobawsSource(data,client)??"")===row.source)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
           <td>{row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.crmLeads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
-          <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}</td>
+          <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td>
           <td>{formatCurrency(row.projectValue)}</td><td className="font-semibold">{formatCurrency(row.paid)}</td>
           <td>{costMetric(row.spend,row.leads)}</td><td>{costMetric(row.spend,row.qualified)}</td><td>{costMetric(row.spend,row.visits)}</td><td>{costMetric(row.spend,row.offers)}</td><td>{costMetric(row.spend,row.attributedClients)}</td>
           <td>{ratioMetric(row.openValue,row.spend)}</td><td className="font-semibold">{ratioMetric(row.paid,row.spend)}</td>
@@ -214,6 +216,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const knownAcquired=rows.length+supplierOnly;
   const googleSpendPresent=sourcePerformance.some(row=>row.source==="Google Ads"&&row.costState==="known"&&Number(row.spend??0)>0);
   const signedUnconfirmedRows=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
+  const acquisitionDateConflictRows=rows.filter(row=>row.hasAcquisitionDateConflict);
   const signedUnconfirmed=signedUnconfirmedRows.length;
   const unmatchedClients=clients.filter(client=>!client.matchedLeadId).length;
   const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
@@ -246,6 +249,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
     {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Verified spend available":"No verified spend"},
     {label:"Supplier → CRM identity coverage",ok:supplierOnly===0,detail:supplierMatchedPeople+" supplier people matched to CRM · "+supplierOnly+" supplier-only without CRM/acquisition date"},
+    {label:"Acquisition-date consistency",ok:acquisitionDateConflictRows.length===0,detail:acquisitionDateConflictRows.length+" linked won client(s) have client evidence dated before the CRM lead creation date and are excluded from monthly cohort attribution"},
   ];
   const passed=checks.filter(item=>item.ok).length;
 
@@ -267,6 +271,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Signed, not ROBAWS client" value={signedUnconfirmed}/>
           <HealthMetric icon={<Database size={15}/>} label="Known acquired people" value={knownAcquired}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Supplier-only / undated" value={supplierOnly}/>
+          <HealthMetric icon={<AlertTriangle size={15}/>} label="Acquisition date conflicts" value={acquisitionDateConflictRows.length}/>
         </div>
       </Card>
     </div>
@@ -307,7 +312,7 @@ export type SourceBusinessRow = {
   isManualSpend:boolean; manualNote:string; recurringSpend:number;
   leads:number; crmLeads:number; deliveredLeads:number|null; supplierOnlyLeads:number;
   qualified:number; visits:number; offers:number; sentValue:number; openValue:number;
-  signed:number; commercialClients:number; attributedClients:number; projectValue:number; paid:number;
+  signed:number; commercialClients:number; attributedClients:number; undatedClients:number; projectValue:number; paid:number;
 };
 
 export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):SourceBusinessRow[] {
@@ -330,6 +335,7 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     signed:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source&&item.isSigned).length,
     commercialClients:row.customers,
     attributedClients:row.attributableClients,
+    undatedClients:row.undatedClients,
     projectValue:row.projectValueExclVat,
     paid:row.paidValue,
   }));
