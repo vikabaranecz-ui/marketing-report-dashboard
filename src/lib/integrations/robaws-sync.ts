@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchAllRobaws } from "@/lib/integrations/robaws-client";
+import { selectRobawsClientProjectValueOffers, selectRobawsProjectValueOffers } from "@/lib/integrations/robaws-client-core";
 
 type LeadRow = {
   id: string;
@@ -229,13 +230,7 @@ export async function syncRobawsProvider(
     const clientProjects = projectsByClient.get(client.id) ?? [];
     const clientInvoices = invoicesByClient.get(client.id) ?? [];
     const acceptedOffers = clientOffers.filter(isAccepted);
-    const projectIds = new Set(clientProjects.map(project => project.id));
-    const projectLinkedOffers = clientOffers.filter(offer => Boolean(offer.projectId) && projectIds.has(offer.projectId!));
-    const projectValueOffers = projectLinkedOffers.length
-      ? projectLinkedOffers
-      : clientProjects.length === 1
-        ? (acceptedOffers.length ? acceptedOffers : clientOffers)
-        : acceptedOffers;
+    const projectValueOffers = selectRobawsClientProjectValueOffers(clientProjects,clientOffers);
     const openOffers = clientOffers.filter(offer => !isAccepted(offer) && !isRejected(offer));
     const hasInvoice = clientInvoices.some(invoice =>
       normalize(invoice.status) !== "gecrediteerd" &&
@@ -356,17 +351,7 @@ export async function syncRobawsProvider(
     const matchedLead = clientId ? uniqueLeadByClient.get(clientId) ?? null : null;
     const clientOffers = clientId ? offersByClient.get(clientId) ?? [] : [];
     const clientProjects = clientId ? projectsByClient.get(clientId) ?? [] : [];
-    const linkedOffers = clientOffers.filter(offer => offer.projectId === project.id);
-    const linkedAccepted = linkedOffers.filter(isAccepted);
-    const acceptedOffers = clientOffers.filter(isAccepted);
-    const projectOffers =
-      linkedAccepted.length
-        ? linkedAccepted
-        : linkedOffers.length
-          ? linkedOffers
-          : clientProjects.length === 1
-            ? (acceptedOffers.length ? acceptedOffers : clientOffers)
-            : [];
+    const projectOffers = selectRobawsProjectValueOffers(project.id,clientProjects,clientOffers);
     const valueIncl = projectOffers.reduce((sum, offer) => sum + Number(offer.totalInclVat ?? 0), 0);
     const valueExcl = projectOffers.reduce((sum, offer) => sum + Number(offer.totalExclVat ?? 0), 0);
     const attributionStatus = matchedLead
