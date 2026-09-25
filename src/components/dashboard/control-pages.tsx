@@ -219,6 +219,8 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
   const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
   const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
+  const supplierVerifiedSourceOverrides=sourceOverrides.filter(item=>item.note.includes("Verified from Isoprotech x Agenciyou workbook"));
+  const userSourceOverrides=sourceOverrides.filter(item=>!item.note.includes("Verified from Isoprotech x Agenciyou workbook"));
   const manualSourceForClient=(client:NonNullable<CompanyDataset["commercialClients"]>[number])=>{
     const keys=[`robaws:${client.externalId}`,client.id,client.matchedLeadId??""].filter(Boolean);
     const matches=sourceOverrides.filter(item=>keys.includes(item.scopeKey));
@@ -240,7 +242,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
     {label:"Duplicate control",ok:data.dataHealth.duplicates===0,detail:data.dataHealth.duplicates+" potential duplicate CRM rows"},
     {label:"Campaign attribution",ok:data.dataHealth.missingCampaign===0,detail:data.dataHealth.missingCampaign+" leads missing campaign"},
     {label:"ROBAWS client reconciliation",ok:wonClients.length>0&&unmatchedWon.length===0,detail:wonClients.length===0?"Full ROBAWS client snapshot not populated":unmatchedWon.length+" commercial clients unmatched"},
-    {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:attributedClientIds.size+" / "+wonClients.length+" commercial clients have a safe source ("+manualAttributedWon.length+" manually assigned, "+formatPercent(attributionCoverage)+")"},
+    {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:attributedClientIds.size+" / "+wonClients.length+" commercial clients have a safe source ("+supplierVerifiedSourceOverrides.length+" supplier-verified lead mappings, "+userSourceOverrides.length+" user/manual source overrides, "+formatPercent(attributionCoverage)+")"},
     {label:"Paid cash attribution",ok:paidCoverage>=90,detail:formatCurrency(attributedPaid)+" / "+formatCurrency(businessPaid)+" source-attributed ("+formatPercent(paidCoverage)+")"},
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
     {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Verified spend available":"No verified spend"},
@@ -434,6 +436,8 @@ function ManualOverridesPanel({data}:{data:CompanyDataset}){
   const router=useRouter();
   const [pending,setPending]=useState<string|null>(null);
   const overrides=data.manualOverrides??[];
+  const supplierVerified=overrides.filter(item=>item.note.includes("Verified from Isoprotech x Agenciyou workbook"));
+  const visibleOverrides=overrides.filter(item=>!item.note.includes("Verified from Isoprotech x Agenciyou workbook"));
 
   async function reset(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
     setPending(item.id);
@@ -449,10 +453,11 @@ function ManualOverridesPanel({data}:{data:CompanyDataset}){
   }
 
   return <Card className="p-5">
-    <SectionHeader title="Manual corrections" description="Visible override layer. Synced source data is never overwritten."/>
-    {overrides.length?<div className="table-scroll"><table><thead><tr><th>Scope</th><th>Item</th><th>Field</th><th>Manual value</th><th>Note</th><th>Updated</th><th></th></tr></thead><tbody>
-      {overrides.map(item=><tr key={item.id}><td>{item.scopeType}</td><td className="font-semibold">{item.scopeKey}</td><td>{item.fieldKey}</td><td>{typeof item.value==="number"?formatCurrency(item.value):String(item.value??"—")}</td><td>{item.note||"—"}</td><td>{formatTimestamp(item.updatedAt)}</td><td><button type="button" disabled={pending===item.id} onClick={()=>reset(item)} className="button-secondary"><RotateCcw size={13}/>{pending===item.id?"Resetting…":"Reset"}</button></td></tr>)}
-    </tbody></table></div>:<EmptyState title="No manual corrections" body="Everything in this period currently comes from synced source data."/>}
+    <SectionHeader title="Verified reporting overrides" description="Reporting-only corrections are separated by provenance. Raw synced CRM/ROBAWS source data is never overwritten."/>
+    {supplierVerified.length>0&&<div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950"><strong>{supplierVerified.length} supplier-verified source mappings</strong><p className="mt-1 text-xs">These mappings come from the verified AgenciYou supplier workbook and are applied for reporting attribution. They are grouped here instead of being presented as user-entered manual corrections.</p></div>}
+    {visibleOverrides.length?<div className="table-scroll"><table><thead><tr><th>Scope</th><th>Item</th><th>Field</th><th>Reporting value</th><th>Note</th><th>Updated</th><th></th></tr></thead><tbody>
+      {visibleOverrides.map(item=><tr key={item.id}><td>{item.scopeType}</td><td className="font-semibold">{item.scopeKey}</td><td>{item.fieldKey}</td><td>{typeof item.value==="number"?formatCurrency(item.value):String(item.value??"—")}</td><td>{item.note||"—"}</td><td>{formatTimestamp(item.updatedAt)}</td><td><button type="button" disabled={pending===item.id} onClick={()=>reset(item)} className="button-secondary"><RotateCcw size={13}/>{pending===item.id?"Resetting…":"Reset"}</button></td></tr>)}
+    </tbody></table></div>:<EmptyState title="No user/manual corrections" body={supplierVerified.length?"Supplier-verified attribution mappings are active; there are no additional user-entered corrections.":"Everything in this period currently comes from synced source data."}/>}
   </Card>;
 }
 
