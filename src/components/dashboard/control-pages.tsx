@@ -482,14 +482,17 @@ function ManualOverridesPanel({data}:{data:CompanyDataset}){
 function RevenueClientTable({data}:{data:CompanyDataset}) {
   const clients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON").sort((a,b)=>b.projectValueTotal-a.projectValueTotal||b.paidTotal-a.paidTotal);
   if(!clients.length) return <EmptyState title="No commercial clients" body="ROBAWS CLIENT_WON rows appear here after commercial sync."/>;
-  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Reporting source</th><th>CRM link</th><th>Match</th><th>Accepted offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid value €</th><th>Acquisition month</th></tr></thead><tbody>
+  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Reporting source</th><th>CRM link</th><th>Match</th><th>Accepted offer €</th><th>Project detail €</th><th>Client aggregate €</th><th>Gap €</th><th>Invoiced €</th><th>Paid value €</th><th>Acquisition month</th></tr></thead><tbody>
     {clients.map(client=>{
       const lead=client.matchedLeadId?data.leads.find(item=>item.id===client.matchedLeadId):undefined;
       const source=manualRobawsSource(data,client)??lead?.source??"Unknown";
       const leadDate=lead?.date?.slice(0,10)??"";
       const clientDate=client.clientSince?.slice(0,10)??"";
       const trustedMonth=Boolean(leadDate&&(!clientDate||clientDate>=leadDate));
-      return <tr key={client.id}><td className="font-semibold">{client.name}</td><td>{source}</td><td>{lead?<StatusPill tone="good">CRM linked</StatusPill>:<StatusPill tone="neutral">No CRM lead</StatusPill>}</td><td>{client.matchMethod||"NONE"}</td><td>{formatCurrency(client.acceptedOfferTotal)}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td><td>{trustedMonth?<StatusPill tone="good">{leadDate.slice(0,7)}</StatusPill>:<StatusPill tone="warn">Month unverified</StatusPill>}</td></tr>;
+      const projectRows=(data.allCommercialProjects??[]).filter(project=>project.externalClientId===client.externalId);
+      const detailProjectValue=projectRows.reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
+      const gap=Math.abs(client.projectValueTotal-detailProjectValue);
+      return <tr key={client.id}><td className="font-semibold">{client.name}</td><td>{source}</td><td>{lead?<StatusPill tone="good">CRM linked</StatusPill>:<StatusPill tone="neutral">No CRM lead</StatusPill>}</td><td>{client.matchMethod||"NONE"}</td><td>{formatCurrency(client.acceptedOfferTotal)}</td><td>{formatCurrency(detailProjectValue)}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{gap>0.01?<StatusPill tone="warn">{formatCurrency(gap)}</StatusPill>:"—"}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td><td>{trustedMonth?<StatusPill tone="good">{leadDate.slice(0,7)}</StatusPill>:<StatusPill tone="warn">Month unverified</StatusPill>}</td></tr>;
     })}
   </tbody></table></div>;
 }
