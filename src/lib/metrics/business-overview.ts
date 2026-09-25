@@ -55,6 +55,11 @@ export function normalizeAcquisitionSource(source:string){
   return String(source??"").trim()||"Unattributed";
 }
 
+export function hasSafeAcquisitionSource(source:string|null|undefined){
+  const value=normalizeAcquisitionSource(String(source??"")).trim().toLowerCase();
+  return !["","unknown","unattributed","onbekend","n/a","—"].includes(value);
+}
+
 export function hasCompletedVisitEvidence(row:JourneyRow){
   const status=normalized(row.lead.crmStatus);
   const stage=normalized(row.lead.stage);
@@ -438,7 +443,13 @@ function buildCoverage(data:CompanyDataset){
 
 function buildAttributionCoverage(data:CompanyDataset,sources:SourcePerformanceRow[]){
   const won=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
-  const resolved=won.filter(client=>Boolean(client.matchedLeadId)||Boolean(manualClientSource(data,client)));
+  const resolved=won.filter(client=>{
+    const manual=manualClientSource(data,client);
+    if(manual!==null)return hasSafeAcquisitionSource(manual);
+    if(!client.matchedLeadId)return false;
+    const lead=data.leads.find(item=>item.id===client.matchedLeadId);
+    return hasSafeAcquisitionSource(lead?.source);
+  });
   const paidTotal=won.reduce((sum,item)=>sum+item.paidTotal,0);
   const attributedPaid=resolved.reduce((sum,item)=>sum+item.paidTotal,0);
   const paidSources=sources.filter(item=>PAID_ACQUISITION_SOURCES.has(item.source));
