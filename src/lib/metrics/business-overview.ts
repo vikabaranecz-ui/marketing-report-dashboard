@@ -90,22 +90,19 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const clients=uniqueCommercialClientsForRows(data,group);
     const attributableLeadIds=new Set(group.filter(item=>item.isAttributableClient).flatMap(item=>item.leadIds));
     const attributableClientRows=clients.filter(client=>Boolean(client.matchedLeadId&&attributableLeadIds.has(client.matchedLeadId)));
-    const sourceProjectValueExclVat=clients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0);
-    const sourceProjectValueInclVat=clients.reduce((sum,client)=>sum+client.projectValueTotal,0);
+    const sourceClientExternalIds=new Set(clients.map(client=>client.externalId));
+    const sourceProjects=(data.allCommercialProjects??[]).filter(project=>Boolean(project.externalClientId&&sourceClientExternalIds.has(project.externalClientId)));
+    const sourceProjectValueExclVat=sourceProjects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
+    const sourceProjectValueInclVat=sourceProjects.reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
     const sourceInvoicedValue=clients.reduce((sum,client)=>sum+client.invoicedTotal,0);
     const sourcePaidValue=clients.reduce((sum,client)=>sum+client.paidTotal,0);
-    const projectValueExclVat=clients.length
-      ? attributableClientRows.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0)
-      : group.filter(row=>row.isAttributableClient).reduce((sum,row)=>sum+row.projects.reduce((projectSum,project)=>projectSum+Number(project.valueExclVat??0),0),0);
-    const projectValueInclVat=clients.length
-      ? attributableClientRows.reduce((sum,client)=>sum+client.projectValueTotal,0)
-      : group.filter(row=>row.isAttributableClient).reduce((sum,row)=>sum+row.projectValue,0);
-    const invoicedValue=clients.length
-      ? attributableClientRows.reduce((sum,client)=>sum+client.invoicedTotal,0)
-      : uniqueInvoices(group.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0);
-    const paidValue=clients.length
-      ? attributableClientRows.reduce((sum,client)=>sum+client.paidTotal,0)
-      : uniqueInvoices(group.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0);
+    const attributableRows=group.filter(row=>row.isAttributableClient);
+    const cohortProjects=[...new Map(attributableRows.flatMap(row=>row.projects).map(project=>[project.id,project])).values()];
+    const cohortInvoices=uniqueInvoices(attributableRows.flatMap(row=>row.invoices));
+    const projectValueExclVat=cohortProjects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
+    const projectValueInclVat=cohortProjects.reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
+    const invoicedValue=cohortInvoices.reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0);
+    const paidValue=cohortInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
     const qualified=group.filter(item=>item.isQualified).length;
     const visits=group.filter(hasCompletedVisitEvidence).length;
     const offers=group.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length;
@@ -161,8 +158,9 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     row.customers+=1;
     row.sourceKnownClients+=1;
     row.sourceClientIds.push(client.id);
-    row.sourceProjectValueExclVat+=client.projectValueTotalExclVat;
-    row.sourceProjectValueInclVat+=client.projectValueTotal;
+    const clientProjects=(data.allCommercialProjects??[]).filter(project=>project.externalClientId===client.externalId);
+    row.sourceProjectValueExclVat+=clientProjects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
+    row.sourceProjectValueInclVat+=clientProjects.reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
     row.sourceInvoicedValue+=client.invoicedTotal;
     row.sourcePaidValue+=client.paidTotal;
     row.undatedClients+=1;
@@ -227,10 +225,10 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const cohort={
     rows,clients:cohortClients,
     unique,knownAcquired,supplierOnly,qualified,visits,offers,signed,customers,
-    projectValueExclVat:cohortClients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
-    projectValueInclVat:cohortClients.reduce((sum,client)=>sum+client.projectValueTotal,0),
-    invoicedToDate:cohortClients.reduce((sum,client)=>sum+client.invoicedTotal,0),
-    paidToDate:cohortClients.reduce((sum,client)=>sum+client.paidTotal,0),
+    projectValueExclVat:[...new Map(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.projects).map(project=>[project.id,project])).values()].reduce((sum,project)=>sum+Number(project.valueExclVat??0),0),
+    projectValueInclVat:[...new Map(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.projects).map(project=>[project.id,project])).values()].reduce((sum,project)=>sum+Number(project.valueInclVat??0),0),
+    invoicedToDate:uniqueInvoices(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0),
+    paidToDate:uniqueInvoices(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0),
     sequentialSupported,
     milestones:[
       {key:"acquired",label:"Known acquired leads",value:knownAcquired,rate:knownAcquired?100:0},
@@ -339,15 +337,8 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
   const attributableClientIds=[...new Set(known.flatMap(item=>item.clientIds))];
   const attributableCustomers=attributableClientIds.length;
-  const attributableClientIdSet=new Set(attributableClientIds);
-  const attributableClients=(data.commercialClients??[]).filter(item=>attributableClientIdSet.has(item.id));
-  const paidAcquisitionScope=scope.source==="all"||PAID_ACQUISITION_SOURCES.has(scope.source);
-  const cohortValueExclVat=paidAcquisitionScope
-    ? attributableClients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0)
-    : relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
-  const cohortPaidValue=paidAcquisitionScope
-    ? attributableClients.reduce((sum,item)=>sum+item.paidTotal,0)
-    : relevant.reduce((sum,item)=>sum+item.paidValue,0);
+  const cohortValueExclVat=relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
+  const cohortPaidValue=relevant.reduce((sum,item)=>sum+item.paidValue,0);
   return {
     costState:missing.length?"partial":known.length?"known":"missing" as "partial"|"known"|"missing",
     coveredSpend,cplCoveredSpend,cplCoveredSources:leadCountCovered.map(item=>item.source),coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,attributableClientIds,
