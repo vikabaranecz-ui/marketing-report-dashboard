@@ -232,7 +232,6 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const safelyAttributedClientIds=new Set(wonClients.filter(client=>client.matchedLeadId&&safeLeadIds.has(client.matchedLeadId)).map(client=>client.id));
   const manuallyAttributedClientIds=new Set(wonClients.filter(client=>Boolean(manualSourceForClient(client))).map(client=>client.id));
   const attributedClientIds=new Set([...safelyAttributedClientIds,...manuallyAttributedClientIds]);
-  const manualAttributedWon=wonClients.filter(client=>manuallyAttributedClientIds.has(client.id));
   const attributionCoverage=percentage(attributedClientIds.size,wonClients.length)??0;
   const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
   const attributedPaid=wonClients.filter(client=>attributedClientIds.has(client.id)).reduce((sum,client)=>sum+client.paidTotal,0);
