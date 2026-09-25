@@ -13,6 +13,8 @@ export type SourcePerformanceRow = {
   recurringSpend:number;
   leads:number;
   deliveredLeads:number|null;
+  supplierOnlyLeads:number;
+  supplierMatchedPeople:number|null;
   leadCountNote:string;
   qualified:number;
   visits:number;
@@ -66,6 +68,8 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
   const result=[...groups.entries()].map(([source,group])=>{
     const manual=sourceSpendOverride(data,source);
     const delivered=sourceNumericOverride(data,source,"delivered_leads");
+    const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
+    const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
     const recurring=recurringSourceSpend(data,source);
     const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,group);
     const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
@@ -94,7 +98,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       source,spend:Number.isFinite(spend as number)?spend:null,costState,
       spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-      leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
+      leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
       attributableClients,clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
     });
@@ -115,6 +119,8 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     if(!row){
       const manual=sourceSpendOverride(data,source);
       const delivered=sourceNumericOverride(data,source,"delivered_leads");
+      const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
+      const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
       const recurring=recurringSourceSpend(data,source);
       const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,[]);
       const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
@@ -124,7 +130,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-        leads:0,deliveredLeads:delivered?Number(delivered.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
+        leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
         projectValueExclVat:0,projectValueInclVat:0,invoicedValue:0,paidValue:0,
       });
       bySource.set(source,row);
@@ -175,6 +181,10 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   };
 
   const unique=rows.length;
+  const supplierOnly=scope.campaign==="all"
+    ? supplierOnlyLeadCount(data,scope.source)
+    : 0;
+  const knownAcquired=unique+supplierOnly;
   const qualified=rows.filter(row=>row.isQualified).length;
   const visits=rows.filter(hasCompletedVisitEvidence).length;
   const offers=rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).length;
@@ -193,14 +203,15 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const cohortClients=uniqueCommercialClientsForRows(data,rows);
   const cohort={
     rows,clients:cohortClients,
-    unique,qualified,visits,offers,signed,customers,
+    unique,knownAcquired,supplierOnly,qualified,visits,offers,signed,customers,
     projectValueExclVat:cohortClients.reduce((sum,client)=>sum+client.projectValueTotalExclVat,0),
     projectValueInclVat:cohortClients.reduce((sum,client)=>sum+client.projectValueTotal,0),
     invoicedToDate:cohortClients.reduce((sum,client)=>sum+client.invoicedTotal,0),
     paidToDate:cohortClients.reduce((sum,client)=>sum+client.paidTotal,0),
     sequentialSupported,
     milestones:[
-      {key:"leads",label:"Unique leads",value:unique,rate:unique?100:0},
+      {key:"acquired",label:"Known acquired leads",value:knownAcquired,rate:knownAcquired?100:0},
+      {key:"tracked",label:"CRM-tracked people",value:unique,rate:percentage(unique,knownAcquired)??0},
       {key:"qualified",label:"Qualified",value:qualified,rate:percentage(qualified,unique)??0},
       {key:"visits",label:"Completed visits",value:visits,rate:percentage(visits,unique)??0},
       {key:"offers",label:"Offers sent",value:offers,rate:percentage(offers,unique)??0},
@@ -213,10 +224,10 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const conversion={
     sequentialSupported,
     leadRelative:[
-      {key:"qualified",label:"Qualified / Leads",numerator:qualified,denominator:unique,rate:percentage(qualified,unique)},
-      {key:"visits",label:"Visits / Leads",numerator:visits,denominator:unique,rate:percentage(visits,unique)},
-      {key:"offers",label:"Offers / Leads",numerator:offers,denominator:unique,rate:percentage(offers,unique)},
-      {key:"customers",label:"Customers / Leads",numerator:customers,denominator:unique,rate:percentage(customers,unique)},
+      {key:"qualified",label:"Qualified / CRM tracked",numerator:qualified,denominator:unique,rate:percentage(qualified,unique)},
+      {key:"visits",label:"Visits / CRM tracked",numerator:visits,denominator:unique,rate:percentage(visits,unique)},
+      {key:"offers",label:"Offers / CRM tracked",numerator:offers,denominator:unique,rate:percentage(offers,unique)},
+      {key:"customers",label:"Customers / CRM tracked",numerator:customers,denominator:unique,rate:percentage(customers,unique)},
     ],
     sequential:sequentialSupported?[
       {key:"qualified-visits",label:"Qualified → Visit",numerator:visits,denominator:qualified,rate:percentage(visits,qualified)},
@@ -294,9 +305,7 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const known=paidRelevant.filter(item=>item.costState==="known"&&item.spend!==null);
   const missing=paidRelevant.filter(item=>item.costState==="missing");
   const coveredSpend=known.reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const coveredLeads=scope.source==="all"
-    ? known.reduce((sum,item)=>sum+item.leads,0)
-    : known.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
+  const coveredLeads=known.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
   const coveredQualified=known.reduce((sum,item)=>sum+item.qualified,0);
   const coveredVisits=known.reduce((sum,item)=>sum+item.visits,0);
   const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
@@ -461,6 +470,25 @@ function refreshCostMetrics(row:SourcePerformanceRow){
   row.costOffer=safeDivide(row.spend,row.offers);
   row.cac=safeDivide(row.spend,row.attributableClients);
   row.cohortCashRoas=row.spend?row.paidValue/row.spend:null;
+}
+
+export function supplierOnlyLeadCount(data:CompanyDataset,source:string="all"){
+  if(source!=="all"){
+    const item=sourceNumericOverride(data,source,"supplier_only_leads");
+    return item?Number(item.value):0;
+  }
+  const sources=[...new Set((data.manualOverrides??[])
+    .filter(item=>item.scopeType==="source"&&item.fieldKey==="supplier_only_leads")
+    .map(item=>item.scopeKey))];
+  return sources.reduce((sum,key)=>{
+    const item=sourceNumericOverride(data,key,"supplier_only_leads");
+    return sum+(item?Number(item.value):0);
+  },0);
+}
+
+export function knownAcquiredLeadCount(data:CompanyDataset,source:string="all"){
+  const rows=buildJourneyRows(data).filter(row=>source==="all"||normalizeAcquisitionSource(row.lead.source)===source);
+  return rows.length+supplierOnlyLeadCount(data,source);
 }
 
 function sourceNumericOverride(data:CompanyDataset,source:string,fieldKey:string){
