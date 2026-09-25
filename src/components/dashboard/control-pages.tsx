@@ -475,16 +475,16 @@ function ManualOverridesPanel({data}:{data:CompanyDataset}){
 }
 
 function RevenueClientTable({data}:{data:CompanyDataset}) {
-  const rows=buildJourneyRows(data).filter(row=>row.isSigned||row.isCommercialClient||row.offers.length>0||row.projects.length>0);
-  const invoices=(data.commercialInvoices??[]).filter(item=>!hasDateConflict(item.attributionStatus));
-  if(!rows.length) return <EmptyState title="No commercial records" body="Commercial rows appear after CRM / ROBAWS data is synced."/>;
-  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>CRM signed</th><th>ROBAWS client</th><th>Sent offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid value €</th><th>Attribution</th></tr></thead><tbody>
-    {rows.sort((a,b)=>b.projectValue-a.projectValue).map(row=>{
-      const ids=new Set(row.leadIds);
-      const clientInvoices=invoices.filter(item=>item.leadId&&ids.has(item.leadId));
-      const invoiced=sum(clientInvoices.map(item=>Math.max(0,item.totalInclVat-item.creditedTotal)));
-      const paid=sum(clientInvoices.map(item=>item.paidTotal));
-      return <tr key={row.lead.id}><td className="font-semibold">{row.lead.name}</td><td>{row.lead.source}</td><td>{row.isSigned?<StatusPill tone="good">Signed</StatusPill>:"—"}</td><td>{row.isCommercialClient?<StatusPill tone="good">CLIENT_WON</StatusPill>:row.lead.commercialStatus==="OFFER_SENT"?<StatusPill tone="warn">Offer only</StatusPill>:"—"}</td><td>{formatCurrency(row.sentOfferValue)}</td><td>{formatCurrency(row.projectValue)}</td><td>{formatCurrency(invoiced)}</td><td className="font-semibold">{formatCurrency(paid)}</td><td>{row.isAttributableClient?<StatusPill tone="good">Attributable</StatusPill>:hasDateConflict(row.lead.attributionLevel)?<StatusPill tone="bad">Date conflict</StatusPill>:<StatusPill tone="neutral">Review</StatusPill>}</td></tr>;
+  const clients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON").sort((a,b)=>b.projectValueTotal-a.projectValueTotal||b.paidTotal-a.paidTotal);
+  if(!clients.length) return <EmptyState title="No commercial clients" body="ROBAWS CLIENT_WON rows appear here after commercial sync."/>;
+  return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Reporting source</th><th>CRM link</th><th>Match</th><th>Accepted offer €</th><th>Project €</th><th>Invoiced €</th><th>Paid value €</th><th>Acquisition month</th></tr></thead><tbody>
+    {clients.map(client=>{
+      const lead=client.matchedLeadId?data.leads.find(item=>item.id===client.matchedLeadId):undefined;
+      const source=manualRobawsSource(data,client)??lead?.source??"Unknown";
+      const leadDate=lead?.date?.slice(0,10)??"";
+      const clientDate=client.clientSince?.slice(0,10)??"";
+      const trustedMonth=Boolean(leadDate&&(!clientDate||clientDate>=leadDate));
+      return <tr key={client.id}><td className="font-semibold">{client.name}</td><td>{source}</td><td>{lead?<StatusPill tone="good">CRM linked</StatusPill>:<StatusPill tone="neutral">No CRM lead</StatusPill>}</td><td>{client.matchMethod||"NONE"}</td><td>{formatCurrency(client.acceptedOfferTotal)}</td><td>{formatCurrency(client.projectValueTotal)}</td><td>{formatCurrency(client.invoicedTotal)}</td><td className="font-semibold">{formatCurrency(client.paidTotal)}</td><td>{trustedMonth?<StatusPill tone="good">{leadDate.slice(0,7)}</StatusPill>:<StatusPill tone="warn">Month unverified</StatusPill>}</td></tr>;
     })}
   </tbody></table></div>;
 }
