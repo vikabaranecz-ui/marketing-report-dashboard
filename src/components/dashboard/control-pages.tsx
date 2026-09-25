@@ -124,27 +124,20 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
-  const allWonClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&commercialClientInPeriod(data,client));
+  const sourceKnownClients=sources.reduce((sum,row)=>sum+row.commercialClients,0);
   const datedCohortClients=sources.reduce((sum,row)=>sum+row.attributedClients,0);
   const undatedSourceClients=sources.reduce((sum,row)=>sum+row.undatedClients,0);
-  const safelyAttributedLeadIds=new Set(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.leadIds));
-  const attributedWonClients=allWonClients.filter(client=>
-    Boolean(manualRobawsSource(data,client)) ||
-    Boolean(client.matchedLeadId&&safelyAttributedLeadIds.has(client.matchedLeadId))
-  );
-  const safeAttributed=attributedWonClients.length;
-  const attributionCoverage=percentage(safeAttributed,allWonClients.length)??0;
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
 
   return <div className="space-y-6">
-    <div className="callout"><AlertTriangle size={18}/><div><strong>Source is known for {safeAttributed} of {allWonClients.length} ROBAWS commercial clients ({formatPercent(attributionCoverage)}).</strong><p>{datedCohortClients} client(s) have a trusted acquisition date and can drive cohort CAC/ROAS. {undatedSourceClients} source-known client(s) have no trustworthy acquisition month and remain visible but excluded from cohort economics.</p></div></div>
+    <div className="callout"><AlertTriangle size={18}/><div><strong>{sourceKnownClients} source-known commercial client(s) are visible in this acquisition scope.</strong><p>{datedCohortClients} client(s) have a trusted acquisition date and can drive cohort CAC/ROAS. {undatedSourceClients} source-known client(s) have no trustworthy acquisition month and remain visible but excluded from cohort economics.</p></div></div>
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Marketing outcomes follow the acquisition source and acquisition cohort. Supplier-delivered counts are used when verified; downstream stages remain CRM-backed. Later project value stays with the month/source that acquired the lead."/>
       <div className="table-scroll"><table className="wide-decision-table">
         <thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>Source-known clients</th><th>Dated cohort clients</th><th>Cohort project € excl. VAT</th><th>Cohort paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Pipeline ROAS</th><th>Cohort paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
-          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>commercialClientInPeriod(data,client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||decisionSource(manualRobawsSource(data,client)??"")===row.source)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
+          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||(data.periodKey==="ytd"&&decisionSource(manualRobawsSource(data,client)??"")===row.source))).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
           <td>{row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.crmLeads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td>
@@ -339,12 +332,6 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     projectValue:row.projectValueExclVat,
     paid:row.paidValue,
   }));
-}
-
-function commercialClientInPeriod(data:CompanyDataset,client:NonNullable<CompanyDataset["commercialClients"]>[number]){
-  const [from,to]=data.periodLabel.split(" — ");
-  const date=client.clientSince?.slice(0,10)??"";
-  return Boolean(date&&from&&to&&date>=from&&date<=to);
 }
 
 function manualRobawsSource(data:CompanyDataset,client:NonNullable<CompanyDataset["commercialClients"]>[number]){
