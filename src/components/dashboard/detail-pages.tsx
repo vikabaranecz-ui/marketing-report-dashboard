@@ -39,7 +39,7 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
       <KpiCard label="Paid value" value={formatCurrency(paidValue,true)} meta={analytics.economics.cohortCashRoas===null?"—":`${formatNumber(analytics.economics.cohortCashRoas)}× paid-value ROAS`}/> 
     </div>
 
-    {googleSpendMissing && <div className="callout"><AlertCircle size={18}/><div><strong>Google Ads spend is not included yet.</strong><p>The Google Ads connection has not completed a successful data sync, so paid-media totals and CPL/CAC currently reflect only channels with verified spend data.</p></div></div>}
+    {googleSpendMissing && <div className="callout"><AlertCircle size={18}/><div><strong>Google Ads platform sync is incomplete.</strong><p>Verified manual Google Ads spend is still included in source economics where available; impressions, clicks and other platform-delivery fields remain unavailable until the Google Ads sync succeeds.</p></div></div>}
     <div className="callout"><AlertCircle size={18}/><div><strong>Platform conversions are directional.</strong><p>They are shown separately from CRM-confirmed leads, visits, clients, and revenue.</p></div></div>
 
     <div className="grid gap-6 xl:grid-cols-2">
