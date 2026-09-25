@@ -12,6 +12,8 @@ export type SourcePerformanceRow = {
   isManualSpend:boolean;
   recurringSpend:number;
   leads:number;
+  deliveredLeads:number|null;
+  leadCountNote:string;
   qualified:number;
   visits:number;
   offers:number;
@@ -62,6 +64,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
 
   const result=[...groups.entries()].map(([source,group])=>{
     const manual=sourceSpendOverride(data,source);
+    const delivered=sourceNumericOverride(data,source,"delivered_leads");
     const recurring=recurringSourceSpend(data,source);
     const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,group);
     const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
@@ -87,7 +90,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       source,spend:Number.isFinite(spend as number)?spend:null,costState,
       spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-      leads:group.length,qualified,visits,offers,
+      leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
       attributableClients,clientIds:attributableClientRows.map(item=>item.id),projectValueExclVat,projectValueInclVat,paidValue,
     });
@@ -107,6 +110,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     let row=bySource.get(source);
     if(!row){
       const manual=sourceSpendOverride(data,source);
+      const delivered=sourceNumericOverride(data,source,"delivered_leads");
       const recurring=recurringSourceSpend(data,source);
       const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,[]);
       const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
@@ -116,7 +120,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
-        leads:0,qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
+        leads:0,deliveredLeads:delivered?Number(delivered.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,attributableClients:0,clientIds:[],
         projectValueExclVat:0,projectValueInclVat:0,paidValue:0,
       });
       bySource.set(source,row);
@@ -285,14 +289,23 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const known=paidRelevant.filter(item=>item.costState==="known"&&item.spend!==null);
   const missing=paidRelevant.filter(item=>item.costState==="missing");
   const coveredSpend=known.reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const coveredLeads=known.reduce((sum,item)=>sum+item.leads,0);
+  const coveredLeads=scope.source==="all"
+    ? known.reduce((sum,item)=>sum+item.leads,0)
+    : known.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
   const coveredQualified=known.reduce((sum,item)=>sum+item.qualified,0);
   const coveredVisits=known.reduce((sum,item)=>sum+item.visits,0);
   const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
   const attributableClientIds=[...new Set(known.flatMap(item=>item.clientIds))];
   const attributableCustomers=attributableClientIds.length;
-  const cohortValueExclVat=relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
-  const cohortPaidValue=relevant.reduce((sum,item)=>sum+item.paidValue,0);
+  const attributableClientIdSet=new Set(attributableClientIds);
+  const attributableClients=(data.commercialClients??[]).filter(item=>attributableClientIdSet.has(item.id));
+  const paidAcquisitionScope=scope.source==="all"||PAID_ACQUISITION_SOURCES.has(scope.source);
+  const cohortValueExclVat=paidAcquisitionScope
+    ? attributableClients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0)
+    : relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
+  const cohortPaidValue=paidAcquisitionScope
+    ? attributableClients.reduce((sum,item)=>sum+item.paidTotal,0)
+    : relevant.reduce((sum,item)=>sum+item.paidValue,0);
   return {
     costState:missing.length?"partial":known.length?"known":"missing" as "partial"|"known"|"missing",
     coveredSpend,coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,attributableClientIds,
@@ -437,7 +450,7 @@ function refreshCostMetrics(row:SourcePerformanceRow){
     row.cpl=row.costQualified=row.costVisit=row.costOffer=row.cac=row.cohortCashRoas=null;
     return;
   }
-  row.cpl=safeDivide(row.spend,row.leads);
+  row.cpl=safeDivide(row.spend,row.deliveredLeads??row.leads);
   row.costQualified=safeDivide(row.spend,row.qualified);
   row.costVisit=safeDivide(row.spend,row.visits);
   row.costOffer=safeDivide(row.spend,row.offers);
@@ -445,14 +458,18 @@ function refreshCostMetrics(row:SourcePerformanceRow){
   row.cohortCashRoas=row.spend?row.paidValue/row.spend:null;
 }
 
-function sourceSpendOverride(data:CompanyDataset,source:string){
+function sourceNumericOverride(data:CompanyDataset,source:string,fieldKey:string){
   const matches=(data.manualOverrides??[]).filter(item=>
-    item.scopeType==="source"&&item.scopeKey===source&&item.fieldKey==="spend"&&typeof item.value==="number"
+    item.scopeType==="source"&&item.scopeKey===source&&item.fieldKey===fieldKey&&typeof item.value==="number"
   );
   return matches.find(item=>item.periodKey===data.periodKey)
     ??matches.find(item=>item.periodKey==="all")
     ??matches[0]
     ??null;
+}
+
+function sourceSpendOverride(data:CompanyDataset,source:string){
+  return sourceNumericOverride(data,source,"spend");
 }
 
 function recurringSourceSpend(data:CompanyDataset,source:string){
