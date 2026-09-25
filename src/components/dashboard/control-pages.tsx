@@ -208,7 +208,11 @@ export function RevenuePage({ data }: { data: CompanyDataset }) {
 export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const rows=buildJourneyRows(data);
   const clients=data.commercialClients??[];
-  const googleSpendPresent=data.channels.some(channel=>channel.channel==="Google Ads"&&channel.spend>0);
+  const sourcePerformance=buildSourcePerformance(data,rows);
+  const supplierOnly=sourcePerformance.reduce((sum,row)=>sum+row.supplierOnlyLeads,0);
+  const supplierMatchedPeople=sourcePerformance.reduce((sum,row)=>sum+Number(row.supplierMatchedPeople??0),0);
+  const knownAcquired=rows.length+supplierOnly;
+  const googleSpendPresent=sourcePerformance.some(row=>row.source==="Google Ads"&&row.costState==="known"&&Number(row.spend??0)>0);
   const signedUnconfirmedRows=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
   const signedUnconfirmed=signedUnconfirmedRows.length;
   const unmatchedClients=clients.filter(client=>!client.matchedLeadId).length;
@@ -239,7 +243,8 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
     {label:"Marketing attribution coverage",ok:attributionCoverage>=90,detail:attributedClientIds.size+" / "+wonClients.length+" commercial clients have a safe source ("+manualAttributedWon.length+" manually assigned, "+formatPercent(attributionCoverage)+")"},
     {label:"Paid cash attribution",ok:paidCoverage>=90,detail:formatCurrency(attributedPaid)+" / "+formatCurrency(businessPaid)+" source-attributed ("+formatPercent(paidCoverage)+")"},
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
-    {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Spend available":"Spend not synced"},
+    {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Verified spend available":"No verified spend"},
+    {label:"Supplier → CRM identity coverage",ok:supplierOnly===0,detail:supplierMatchedPeople+" supplier people matched to CRM · "+supplierOnly+" supplier-only without CRM/acquisition date"},
   ];
   const passed=checks.filter(item=>item.ok).length;
 
@@ -259,12 +264,14 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
           <HealthMetric icon={<FilterX size={15}/>} label="Potential duplicates" value={data.dataHealth.duplicates}/>
           <HealthMetric icon={<CircleDollarSign size={15}/>} label="Campaigns without spend" value={data.dataHealth.campaignsWithoutSpend}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Signed, not ROBAWS client" value={signedUnconfirmed}/>
+          <HealthMetric icon={<Database size={15}/>} label="Known acquired people" value={knownAcquired}/>
+          <HealthMetric icon={<AlertTriangle size={15}/>} label="Supplier-only / undated" value={supplierOnly}/>
         </div>
       </Card>
     </div>
 
     <Card className="p-5">
-      <SectionHeader title="Reconciliation queue" description="This is the work required before marketing CAC / ROAS can be treated as complete business truth."/>
+      <SectionHeader title="Reconciliation queue" description="This is the work required before monthly cohort CAC / ROAS can be treated as complete business truth. Supplier-only leads remain visible rather than being assigned to a guessed month."/>
       <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
         <div>
           <div className="mb-3 flex items-center justify-between gap-3"><div><strong className="text-sm">Unmatched ROBAWS commercial clients</strong><p className="mt-1 text-xs text-[var(--muted)]">{unmatchedWon.length} of {wonClients.length} commercial clients are not linked to a CRM person. Assign a source manually when you know where the client came from; this changes reporting only and does not edit ROBAWS.</p></div><StatusPill tone={attributionCoverage>=90?"good":"warn"}>{formatPercent(attributionCoverage)} source covered</StatusPill></div>
