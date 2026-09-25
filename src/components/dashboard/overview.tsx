@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { CommercialClient, CommercialInvoice, CompanyDataset } from "@/lib/data/types";
 import {
-  buildOverviewAnalytics, hasCompletedVisitEvidence, manualClientSource, normalizeAcquisitionSource,
+  buildOverviewAnalytics, hasCompletedVisitEvidence, hasSafeAcquisitionSource, manualClientSource, normalizeAcquisitionSource,
   PAID_ACQUISITION_SOURCES, type SourcePerformanceRow,
 } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics/kpis";
@@ -505,10 +505,10 @@ function clientsForRows(data:CompanyDataset,rows:ReturnType<typeof buildOverview
 
 function resolvedClientSource(data:CompanyDataset,client:CommercialClient){
   const manual=manualClientSource(data,client);
-  if(manual)return normalizeAcquisitionSource(manual);
+  if(manual!==null)return hasSafeAcquisitionSource(manual)?normalizeAcquisitionSource(manual):"";
   if(client.matchedLeadId){
     const lead=data.leads.find(item=>item.id===client.matchedLeadId);
-    if(lead?.source)return normalizeAcquisitionSource(lead.source);
+    if(hasSafeAcquisitionSource(lead?.source))return normalizeAcquisitionSource(lead?.source??"");
   }
   return "";
 }
