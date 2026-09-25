@@ -60,6 +60,13 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);
   const affectedCoverageClients=coverageGapClients(data);
   const integrationIssues=data.integrations.filter(item=>item.status!=="Connected"||!item.lastSuccess);
+  const commercialLedgerClients=[...(data.commercialClients??[])];
+  const paidLedgerClients=commercialLedgerClients.filter(client=>client.paidTotal>0).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+  const invoicedLedgerClients=commercialLedgerClients.filter(client=>client.invoicedTotal>0).sort((a,b)=>b.invoicedTotal-a.invoicedTotal||a.name.localeCompare(b.name));
+  const projectLedgerClients=commercialLedgerClients.filter(client=>client.projectValueTotal>0).sort((a,b)=>b.projectValueTotal-a.projectValueTotal||a.name.localeCompare(b.name));
+  const allTimePaidValue=commercialLedgerClients.reduce((sum,item)=>sum+item.paidTotal,0);
+  const allTimeInvoicedValue=commercialLedgerClients.reduce((sum,item)=>sum+item.invoicedTotal,0);
+  const allTimeProjectValue=commercialLedgerClients.reduce((sum,item)=>sum+item.projectValueTotal,0);
 
   const insight=managementInsight(analytics);
   const monthly=(data.businessDecision?.monthly??[]).map(item=>({
@@ -138,6 +145,15 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <div className="overview-mode-toggle" role="tablist" aria-label="Overview focus">
           <button type="button" role="tab" aria-selected={mode==="period"} onClick={()=>setMode("period")}>Period</button>
           <button type="button" role="tab" aria-selected={mode==="cohort"} onClick={()=>setMode("cohort")}>Cohort</button>
+        </div>
+      </div>
+
+      <div>
+        <p className="eyebrow">ROBAWS commercial ledger · all time</p>
+        <div className="executive-summary-grid">
+          <ExecutiveMetric label="Paid value · all time" value={formatCurrency(allTimePaidValue)} note={formatNumber(paidLedgerClients.length)+" client(s) with recorded paid value · click to see who generated it"} onClick={()=>setDrilldown({title:"Clients behind all-time paid value",subtitle:"ROBAWS commercial ledger · current paid_total, no payment-date filter",initialKind:"clients",clients:paidLedgerClients})}/>
+          <ExecutiveMetric label="Invoiced · all time" value={formatCurrency(allTimeInvoicedValue)} note="Current ROBAWS invoiced totals across all commercial clients" onClick={()=>setDrilldown({title:"Clients behind all-time invoiced value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:invoicedLedgerClients})}/>
+          <ExecutiveMetric label="Project value · all time" value={formatCurrency(allTimeProjectValue)} note="Current ROBAWS project totals across all commercial clients" onClick={()=>setDrilldown({title:"Clients behind all-time project value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:projectLedgerClients})}/>
         </div>
       </div>
 
