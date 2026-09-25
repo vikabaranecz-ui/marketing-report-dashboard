@@ -64,7 +64,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);
   const affectedCoverageClients=coverageGapClients(data);
   const integrationIssues=data.integrations.filter(item=>item.status!=="Connected"||!item.lastSuccess);
-  const commercialLedgerClients=[...(data.commercialClients??[])];
+  const commercialLedgerClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
   const paidLedgerClients=commercialLedgerClients.filter(client=>client.paidTotal>0).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const invoicedLedgerClients=commercialLedgerClients.filter(client=>client.invoicedTotal>0).sort((a,b)=>b.invoicedTotal-a.invoicedTotal||a.name.localeCompare(b.name));
   const projectLedgerClients=commercialLedgerClients.filter(client=>client.projectValueTotal>0).sort((a,b)=>b.projectValueTotal-a.projectValueTotal||a.name.localeCompare(b.name));
