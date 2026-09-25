@@ -14,9 +14,10 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const rows = useMemo(() => buildJourneyRows(data), [data]);
   const cohortAnalytics = useMemo(() => buildOverviewAnalytics(data,{source:"all",campaign:"all"}), [data]);
   const paybackRows = useMemo(() => rows
-    .filter(row => row.isCommercialClient || row.projects.length > 0 || row.invoices.length > 0)
+    .filter(row => row.isAttributableClient && (row.isCommercialClient || row.projects.length > 0 || row.invoices.length > 0))
     .map(buildPaybackRecord)
     .sort((a,b) => b.acquired.localeCompare(a.acquired)), [rows]);
+  const undatedSourceClients = cohortAnalytics.sourceRows.reduce((sum,row)=>sum+row.undatedClients,0);
 
   const [search,setSearch]=useState("");
   const [source,setSource]=useState("all");
@@ -74,7 +75,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
       </div>
     </Card>
 
-    {cohortAnalytics.cohort.supplierOnly>0&&<div className="payback-truth-note"><strong>Acquisition coverage:</strong> {formatNumber(cohortAnalytics.cohort.supplierOnly)} supplier-only leads are known but have no CRM record/acquisition date, so they are not assigned to a monthly payback cohort.</div>}
+    {(cohortAnalytics.cohort.supplierOnly>0||undatedSourceClients>0)&&<div className="payback-truth-note"><strong>Acquisition coverage:</strong> {formatNumber(cohortAnalytics.cohort.supplierOnly)} supplier-only lead(s) have no CRM acquisition date, and {formatNumber(undatedSourceClients)} source-known client(s) do not have a trustworthy acquisition month. They remain in source/business totals but are excluded from monthly payback cohorts rather than being assigned to a guessed month.</div>}
     <div className="payback-kpis">
       <PaybackKpi label="Customers" value={formatNumber(totals.clients)} note="Commercially evidenced customers"/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
