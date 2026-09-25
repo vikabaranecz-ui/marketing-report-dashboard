@@ -5,6 +5,7 @@ import { AlertCircle, Check, ChevronDown, Search, ShieldCheck } from "lucide-rea
 import type { CampaignMetric, CompanyDataset } from "@/lib/data/types";
 import { calculateKpis, formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { buildJourneyRows, campaignPipelineRows, locationPipelineRows, servicePipelineRows, sourcePipelineRows } from "@/lib/metrics/client-funnel";
+import { buildOverviewAnalytics, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES } from "@/lib/metrics/business-overview";
 import { ComparisonBars, TrendChart } from "./charts";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
@@ -12,44 +13,45 @@ import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown"
 
 export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   const paid = data.channels.filter(c => c.spend > 0);
-  const spend = paid.reduce((s,c)=>s+c.spend,0);
-  const impressions = paid.reduce((s,c)=>s+c.impressions,0);
-  const clicks = paid.reduce((s,c)=>s+c.clicks,0);
   const platform = paid.reduce((s,c)=>s+c.platformConversions,0);
-  const leads = paid.reduce((s,c)=>s+c.leads,0);
-  const notRelevant = paid.reduce((s,c)=>s+(c.notRelevant??0),0);
-  const visits = paid.reduce((s,c)=>s+c.visits,0);
-  const won = paid.reduce((s,c)=>s+c.won,0);
-  const revenue = paid.reduce((s,c)=>s+c.revenue,0);
+  const analytics = buildOverviewAnalytics(data,{source:"all",campaign:"all"});
+  const paidSourceRows = analytics.sourceRows.filter(row=>PAID_ACQUISITION_SOURCES.has(row.source));
+  const paidJourneyRows = analytics.allRows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
+  const spend = analytics.economics.coveredSpend;
+  const leads = analytics.economics.coveredLeads;
+  const notRelevant = paidJourneyRows.filter(row=>row.isNotRelevant).length;
+  const visits = analytics.economics.coveredVisits;
+  const won = analytics.economics.attributableCustomers;
+  const paidValue = analytics.economics.cohortPaidValue;
   const sourceRows = sourcePipelineRows(data);
   const googleAds = data.integrations.find(item => item.provider === "google_ads");
   const googleSpendMissing = googleAds?.status === "Connected" && !googleAds.lastSuccess;
 
   return <div className="space-y-6">
     <div className="kpi-grid border-l border-t border-[var(--line)]">
-      <KpiCard label="Paid media spend" value={formatCurrency(spend,true)} meta={googleSpendMissing ? "Known spend only — Google Ads missing" : "All synced paid channels"}/>
-      <KpiCard label="CRM leads" value={formatNumber(leads)} meta={`${formatCurrency(safeDivide(spend,leads))} CPL`}/>
-      <KpiCard label="Not relevant" value={formatNumber(notRelevant)} meta={`${formatPercent(percentage(notRelevant,leads))} of paid leads`}/>
-      <KpiCard label="Visited" value={formatNumber(visits)} meta={`${formatPercent(percentage(visits,leads))} of paid leads`}/>
-      <KpiCard label="Clients" value={formatNumber(won)} meta={`${formatPercent(percentage(won,leads))} lead → client`}/>
-      <KpiCard label="Cost / client" value={formatCurrency(safeDivide(spend,won))} meta="Tracked spend / verified clients"/>
+      <KpiCard label="Covered acquisition spend" value={formatCurrency(spend,true)} meta={analytics.economics.missingCostSources.length ? "Partial cost coverage" : "Paid sources with known cost"}/>
+      <KpiCard label="CRM paid-source leads" value={formatNumber(leads)} meta={`${formatCurrency(analytics.economics.cpl)} CPL · deduplicated`}/>
+      <KpiCard label="Not relevant" value={formatNumber(notRelevant)} meta={`${formatPercent(percentage(notRelevant,paidJourneyRows.length))} of paid-source CRM people`}/>
+      <KpiCard label="Visited" value={formatNumber(visits)} meta={`${formatPercent(percentage(visits,leads))} of covered CRM leads`}/>
+      <KpiCard label="Clients" value={formatNumber(won)} meta={`${formatPercent(percentage(won,leads))} CRM lead → client`}/>
+      <KpiCard label="CAC" value={formatCurrency(analytics.economics.cac)} meta="Covered spend / attributable clients"/>
       <KpiCard label="Platform leads" value={formatNumber(platform)} meta="Directional ad-platform count"/>
-      <KpiCard label="Revenue" value={formatCurrency(revenue,true)} meta={spend ? `${formatNumber(safeDivide(revenue,spend))}× ROAS` : "—"}/>
+      <KpiCard label="Paid value" value={formatCurrency(paidValue,true)} meta={analytics.economics.cohortCashRoas===null?"—":`${formatNumber(analytics.economics.cohortCashRoas)}× paid-value ROAS`}/> 
     </div>
 
     {googleSpendMissing && <div className="callout"><AlertCircle size={18}/><div><strong>Google Ads spend is not included yet.</strong><p>The Google Ads connection has not completed a successful data sync, so paid-media totals and CPL/CAC currently reflect only channels with verified spend data.</p></div></div>}
     <div className="callout"><AlertCircle size={18}/><div><strong>Platform conversions are directional.</strong><p>They are shown separately from CRM-confirmed leads, visits, clients, and revenue.</p></div></div>
 
     <div className="grid gap-6 xl:grid-cols-2">
-      <Card className="p-5"><SectionHeader title="Spend vs attributed revenue" description="Paid channels only"/><ComparisonBars accent={data.company.accent} data={paid.map(c=>({name:c.channel.replace(" Ads",""),value:c.spend,secondary:c.revenue}))}/></Card>
+      <Card className="p-5"><SectionHeader title="Spend vs attributable paid value" description="Paid acquisition sources with known cost"/><ComparisonBars accent={data.company.accent} data={paidSourceRows.filter(row=>row.spend!==null).map(row=>({name:row.source,value:Number(row.spend??0),secondary:row.paidValue}))}/></Card>
       <Card className="p-5"><SectionHeader title="Lead cost trend" description="Selected acquisition period"/><TrendChart data={data.trend} metric="cpl" accent={data.company.accent}/></Card>
     </div>
 
     <Card className="p-5">
-      <SectionHeader title="Paid channel detail" description="Marketing delivery alongside CRM-confirmed outcomes"/>
+      <SectionHeader title="Paid acquisition source detail" description="Manual supplier evidence and CRM attribution use one source-economics model. Supplier lead totals do not inflate company-wide unique CRM leads."/>
       <div className="table-scroll"><table>
-        <thead><tr><th>Channel</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>CPC</th><th>Platform conv.</th><th>CRM leads</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Clients</th><th>Revenue</th><th>CPL</th><th>CAC</th><th>ROAS</th></tr></thead>
-        <tbody>{paid.map(row=>{const k=calculateKpis(row);return <tr key={row.id}><td className="font-semibold">{row.channel}</td><td>{formatCurrency(row.spend)}</td><td>{formatNumber(row.impressions)}</td><td>{formatNumber(row.clicks)}</td><td>{formatPercent(percentage(row.clicks,row.impressions))}</td><td>{formatCurrency(safeDivide(row.spend,row.clicks))}</td><td>{row.platformConversions}</td><td>{row.leads}</td><td>{row.notRelevant ?? 0}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.won}</td><td>{formatCurrency(row.revenue)}</td><td>{formatCurrency(k.cpl)}</td><td>{formatCurrency(k.cac)}</td><td className="font-semibold">{k.roas===null?"—":`${formatNumber(k.roas)}×`}</td></tr>})}</tbody>
+        <thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Clients</th><th>Project value excl. VAT</th><th>Paid value</th><th>CPL</th><th>CAC</th><th>Paid ROAS</th></tr></thead>
+        <tbody>{paidSourceRows.map(row=><tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.spend===null?"Cost missing":formatCurrency(row.spend)}</td><td>{formatNumber(row.deliveredLeads??row.leads)}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{formatNumber(row.leads)} CRM-attributed</small>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributableClients}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{formatCurrency(row.cpl)}</td><td>{formatCurrency(row.cac)}</td><td className="font-semibold">{row.cohortCashRoas===null?"—":`${formatNumber(row.cohortCashRoas)}×`}</td></tr>)}</tbody>
       </table></div>
     </Card>
 
