@@ -4,11 +4,12 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, Mail, MapPin, Phone, X } from "lucide-react";
 import type { CommercialInvoice, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
+import { buildSourcePerformance, normalizeAcquisitionSource } from "@/lib/metrics/business-overview";
 import { EmptyState, StatusPill } from "./ui";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
 type OfferTab = "open" | "accepted" | "rejected" | "cancelled" | "all";
-type SourceRow = { source: string; leads: number; matched: number; offers: number; openValue: number; rejectedValue: number; acceptedValue: number; clients: number; invoiced: number; paid: number; cost: number | null };
+type SourceRow = { source: string; leads: number; crmLeads: number; deliveredLeads: number | null; matched: number; offers: number; openValue: number; rejectedValue: number; acceptedValue: number; clients: number; invoiced: number; paid: number; cost: number | null; cac: number | null; roas: number | null };
 const verifiedMethods = new Set(["EMAIL+PHONE", "EMAIL", "PHONE", "NAME"]);
 const emptyOffers: CommercialOffer[] = [];
 const emptyProjects: CommercialProject[] = [];
@@ -24,11 +25,12 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
   const invoices = data.commercialInvoices ?? emptyInvoices;
   const appointmentLeadIds = new Set(data.appointmentLeadIds ?? []);
   const robaws = data.integrations.find(item => item.provider === "robaws");
-  const sourceRows = useMemo(() => buildSourceRows(data.leads, offers, projects, invoices), [data.leads, offers, projects, invoices]);
-  const filteredLeads = source ? data.leads.filter(lead => lead.source === source) : data.leads;
-  const filteredOffers = source ? offers.filter(offer => offer.source === source) : offers;
-  const filteredProjects = source ? projects.filter(project => project.source === source) : projects;
-  const filteredInvoices = source ? invoices.filter(invoice => invoice.source === source) : invoices;
+  const sourceRows = useMemo(() => buildSourceRows(data, offers, projects, invoices), [data, offers, projects, invoices]);
+  const selectedSourceRow = source ? sourceRows.find(row => row.source === source) ?? null : null;
+  const filteredLeads = source ? data.leads.filter(lead => normalizeAcquisitionSource(lead.source) === source) : data.leads;
+  const filteredOffers = source ? offers.filter(offer => normalizeAcquisitionSource(offer.source) === source) : offers;
+  const filteredProjects = source ? projects.filter(project => normalizeAcquisitionSource(project.source) === source) : projects;
+  const filteredInvoices = source ? invoices.filter(invoice => normalizeAcquisitionSource(invoice.source) === source) : invoices;
   const attributedProjects = filteredProjects.filter(project => !hasDateConflict(project.attributionStatus));
   const attributedInvoices = filteredInvoices.filter(invoice => !hasDateConflict(invoice.attributionStatus));
   const verifiedClients = filteredLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON" && !hasDateConflict(lead.attributionLevel));
@@ -75,12 +77,12 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
     {robaws?.status !== "Connected" && <div className="sales-data-notice"><AlertTriangle size={17} /><div><strong>ROBAWS commercial data is not connected yet.</strong><p>Lead sources are live. Offers, project values, invoices and payments remain empty until ROBAWS is connected and synced.</p></div></div>}
 
     <section aria-labelledby="executive-snapshot"><SectionTitle id="executive-snapshot" eyebrow="01 · Executive snapshot" title="Money and movement" description={source ? `Filtered to ${source}` : "All real CRM leads and verified ROBAWS evidence"} /><div className="sales-kpi-grid">
-      <Metric label="Leads" value={formatNumber(filteredLeads.length)} note="CRM records" onClick={()=>setRecords({title:"Leads",subtitle:data.periodLabel,leads:filteredLeads})}/><Metric label="ROBAWS matched" value={formatNumber(matchedLeads.length)} note="Email, phone or unique exact name" onClick={()=>setRecords({title:"ROBAWS-matched leads",subtitle:data.periodLabel,leads:matchedLeads})}/><Metric label="Offers sent" value={formatNumber(filteredOffers.length)} note="Individual offers" onClick={()=>setRecords({title:"ROBAWS offers",subtitle:data.periodLabel,offers:filteredOffers})}/><Metric label="Open offer value" value={formatCurrency(sum(openOffers, "priceInclVat"), true)} note={`${openOffers.length} waiting`} money onClick={()=>setRecords({title:"Open offers",subtitle:data.periodLabel,offers:openOffers})}/><Metric label="Accepted project value" value={formatCurrency(sum(attributedProjects, "valueInclVat"), true)} note="Date conflicts excluded" money onClick={()=>setRecords({title:"Attributed projects",subtitle:data.periodLabel,projects:attributedProjects})}/><Metric label="Attributed clients" value={formatNumber(verifiedClients.length)} note="ROBAWS evidence" onClick={()=>setRecords({title:"Attributed clients",subtitle:data.periodLabel,leads:verifiedClients})}/><Metric label="Invoiced" value={formatCurrency(invoiced, true)} note="Net of credits · incl. VAT" money onClick={()=>setRecords({title:"Attributed invoices",subtitle:data.periodLabel,invoices:attributedInvoices})}/><Metric label="Paid" value={formatCurrency(paid, true)} note="Verified attribution" money accent onClick={()=>setRecords({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:attributedInvoices.filter(item=>item.paidTotal>0)})}/>
+      <Metric label={selectedSourceRow?.deliveredLeads!==null&&selectedSourceRow?.deliveredLeads!==undefined?"Delivered leads":"Leads"} value={formatNumber(selectedSourceRow?.deliveredLeads??filteredLeads.length)} note={selectedSourceRow?.deliveredLeads!==null&&selectedSourceRow?.deliveredLeads!==undefined?String(filteredLeads.length)+" CRM-attributed records":"CRM records"} onClick={()=>setRecords({title:"Leads",subtitle:data.periodLabel,leads:filteredLeads})}/><Metric label="ROBAWS matched" value={formatNumber(matchedLeads.length)} note="Email, phone or unique exact name" onClick={()=>setRecords({title:"ROBAWS-matched leads",subtitle:data.periodLabel,leads:matchedLeads})}/><Metric label="Offers sent" value={formatNumber(filteredOffers.length)} note="Individual offers" onClick={()=>setRecords({title:"ROBAWS offers",subtitle:data.periodLabel,offers:filteredOffers})}/><Metric label="Open offer value" value={formatCurrency(sum(openOffers, "priceInclVat"), true)} note={`${openOffers.length} waiting`} money onClick={()=>setRecords({title:"Open offers",subtitle:data.periodLabel,offers:openOffers})}/><Metric label="Accepted project value" value={formatCurrency(sum(attributedProjects, "valueInclVat"), true)} note="Date conflicts excluded" money onClick={()=>setRecords({title:"Attributed projects",subtitle:data.periodLabel,projects:attributedProjects})}/><Metric label="Attributed clients" value={formatNumber(verifiedClients.length)} note="ROBAWS evidence" onClick={()=>setRecords({title:"Attributed clients",subtitle:data.periodLabel,leads:verifiedClients})}/><Metric label="Invoiced" value={formatCurrency(invoiced, true)} note="Net of credits · incl. VAT" money onClick={()=>setRecords({title:"Attributed invoices",subtitle:data.periodLabel,invoices:attributedInvoices})}/><Metric label="Paid" value={formatCurrency(paid, true)} note="Verified attribution" money accent onClick={()=>setRecords({title:"Invoices with paid cash",subtitle:data.periodLabel,invoices:attributedInvoices.filter(item=>item.paidTotal>0)})}/>
     </div></section>
 
     <section aria-labelledby="pipeline-value"><SectionTitle id="pipeline-value" eyebrow="02 · Sales pipeline value" title="From lead to cash" description="Counts use distinct leads at each evidence-backed stage; values use the underlying commercial documents." /><div className="pipeline-flow">{pipeline.map((stage, index) => {const selection:RecordDrilldown=stage.label==="Leads"?{title:"Leads",subtitle:data.periodLabel,leads:filteredLeads}:stage.label==="Site visit"?{title:"Visit-stage leads",subtitle:data.periodLabel,leads:filteredLeads.filter(lead=>appointmentLeadIds.has(lead.id)||hasReachedVisit(lead))}:stage.label==="Offer"?{title:"Offers",subtitle:data.periodLabel,offers:filteredOffers}:stage.label==="Waiting"?{title:"Open offers",subtitle:data.periodLabel,offers:openOffers}:stage.label==="Accepted"?{title:"Accepted offers",subtitle:data.periodLabel,offers:acceptedOffers}:stage.label==="Project"?{title:"Projects",subtitle:data.periodLabel,projects:attributedProjects}:stage.label==="Invoiced"?{title:"Invoices",subtitle:data.periodLabel,invoices:attributedInvoices}:{title:"Paid invoices",subtitle:data.periodLabel,invoices:attributedInvoices.filter(item=>item.paidTotal>0)};return <button type="button" onClick={()=>setRecords(selection)} className={`pipeline-node drillable text-left ${stage.label === "Paid" ? "pipeline-node-paid" : ""}`} key={stage.label}><div className="flex items-center justify-between gap-2"><span>{stage.label}</span>{index < pipeline.length - 1 && <ArrowRight size={14} className="pipeline-arrow" />}</div><strong className="drillable-value">{formatNumber(stage.count)}</strong><small>{rate(stage.count, filteredLeads.length)} of leads</small>{stage.value !== null && <em>{formatCurrency(stage.value, true)}</em>}</button>})}</div></section>
 
-    <section aria-labelledby="source-performance"><SectionTitle id="source-performance" eyebrow="03 · Source performance" title="Which sources create money?" description="Click a source to filter the full page. CAC and ROAS appear only when acquisition cost exists on every lead in that source." /><div className="analytics-table-wrap"><table className="analytics-table source-performance-table"><thead><tr><th>Source</th><th>Leads</th><th>ROBAWS matched</th><th>Offers</th><th>Open offer €</th><th>Rejected offer €</th><th>Accepted €</th><th>Clients</th><th>Lead → client</th><th>Invoiced €</th><th>Paid €</th><th>CAC</th><th>ROAS</th></tr></thead><tbody>{sourceRows.map(row => <tr key={row.source} className={source === row.source ? "is-selected" : ""}><td><button className="source-link" onClick={() => setSource(current => current === row.source ? null : row.source)}>{row.source}<span>{source === row.source ? "Filtered" : "Filter"}</span></button></td><td>{formatNumber(row.leads)}</td><td>{formatNumber(row.matched)}</td><td>{formatNumber(row.offers)}</td><td><button className="money-link" onClick={() => focusOpenOffers(row.source)}>{formatCurrency(row.openValue, true)}</button></td><td>{formatCurrency(row.rejectedValue, true)}</td><td className="font-semibold text-[var(--ink)]">{formatCurrency(row.acceptedValue, true)}</td><td>{formatNumber(row.clients)}</td><td>{rate(row.clients, row.leads)}</td><td>{formatCurrency(row.invoiced, true)}</td><td className="font-semibold text-[var(--ink)]">{formatCurrency(row.paid, true)}</td><td>{row.cost === null || !row.clients ? "—" : formatCurrency(row.cost / row.clients, true)}</td><td>{row.cost === null || !row.cost ? "—" : `${(row.paid / row.cost).toFixed(2)}×`}</td></tr>)}</tbody></table></div></section>
+    <section aria-labelledby="source-performance"><SectionTitle id="source-performance" eyebrow="03 · Source performance" title="Which sources create money?" description="Source economics use the same verified acquisition logic as Overview. Supplier-delivered lead counts are used when a verified source file exists; CRM operational stages remain CRM-backed." /><div className="analytics-table-wrap"><table className="analytics-table source-performance-table"><thead><tr><th>Source</th><th>Leads</th><th>ROBAWS matched</th><th>Offers</th><th>Open offer €</th><th>Rejected offer €</th><th>Project value €</th><th>Clients</th><th>Lead → client</th><th>Invoiced €</th><th>Paid €</th><th>CAC</th><th>ROAS</th></tr></thead><tbody>{sourceRows.map(row => <tr key={row.source} className={source === row.source ? "is-selected" : ""}><td><button className="source-link" onClick={() => setSource(current => current === row.source ? null : row.source)}>{row.source}<span>{source === row.source ? "Filtered" : "Filter"}</span></button></td><td>{formatNumber(row.leads)}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{formatNumber(row.crmLeads)} CRM-attributed</small>}</td><td>{formatNumber(row.matched)}</td><td>{formatNumber(row.offers)}</td><td><button className="money-link" onClick={() => focusOpenOffers(row.source)}>{formatCurrency(row.openValue, true)}</button></td><td>{formatCurrency(row.rejectedValue, true)}</td><td className="font-semibold text-[var(--ink)]">{formatCurrency(row.acceptedValue, true)}</td><td>{formatNumber(row.clients)}</td><td>{rate(row.clients, row.leads)}</td><td>{formatCurrency(row.invoiced, true)}</td><td className="font-semibold text-[var(--ink)]">{formatCurrency(row.paid, true)}</td><td>{row.cac===null?"—":formatCurrency(row.cac,true)}</td><td>{row.roas===null?"—":`${row.roas.toFixed(2)}×`}</td></tr>)}</tbody></table></div></section>
 
     <section id="open-opportunities" aria-labelledby="open-opportunities-title" className="scroll-mt-6"><SectionTitle id="open-opportunities-title" eyebrow="04 · Open sales opportunities" title="Money waiting for a decision" description="Non-final ROBAWS offers, sorted by offer price including VAT." meta={`${openOffers.length} open · ${formatCurrency(sum(openOffers, "priceInclVat"), true)}`} />
       {openOffers.length ? <div className="analytics-table-wrap"><table className="analytics-table"><thead><tr><th>Lead</th><th>Source</th><th>Service</th><th>Offer date</th><th>Days waiting</th><th>ROBAWS status</th><th>Offer price incl. VAT</th><th>Offer #</th><th>Project</th></tr></thead><tbody>{openOffers.map(offer => { const lead = data.leads.find(item => item.id === offer.leadId); return <tr key={offer.id} className={offer.daysWaiting !== null && offer.daysWaiting > 14 ? "opportunity-critical" : offer.daysWaiting !== null && offer.daysWaiting > 7 ? "opportunity-warning" : ""}><td><button className="lead-link" onClick={() => lead && setSelected(lead)}>{offer.leadName}</button></td><td>{offer.source}</td><td>{lead?.service ?? "—"}</td><td>{formatDate(offer.date)}</td><td><WaitingBadge days={offer.daysWaiting} /></td><td><StatusPill tone="warn">{offer.status}</StatusPill></td><td className="font-semibold text-[var(--ink)]">{formatCurrency(offer.priceInclVat)} {highestOpenValue > 0 && offer.priceInclVat === highestOpenValue && <span className="highest-value">Highest value</span>}</td><td>{offer.number}</td><td>{offer.projectExternalId ?? "—"}</td></tr>; })}</tbody></table></div> : <EmptyState title="No open ROBAWS offers" body={robaws?.status === "Connected" ? "No non-final offers match this source selection." : "Connect and sync ROBAWS to load offers that are waiting for a client decision."} />}
@@ -101,16 +103,40 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
   </div>;
 }
 
-function buildSourceRows(leads: Lead[], offers: CommercialOffer[], projects: CommercialProject[], invoices: CommercialInvoice[]) {
-  const sources = [...new Set(leads.map(lead => lead.source || "Unattributed"))];
+function buildSourceRows(data: CompanyDataset, offers: CommercialOffer[], projects: CommercialProject[], invoices: CommercialInvoice[]) {
+  const performance = buildSourcePerformance(data);
+  const performanceBySource = new Map(performance.map(row => [row.source, row]));
+  const sources = [...new Set([
+    ...performance.map(row => row.source),
+    ...data.leads.map(lead => normalizeAcquisitionSource(lead.source)),
+  ])];
   return sources.map((source): SourceRow => {
-    const sourceLeads = leads.filter(lead => lead.source === source);
-    const sourceOffers = offers.filter(offer => offer.source === source && !hasDateConflict(offer.attributionStatus));
-    const sourceProjects = projects.filter(project => project.source === source && !hasDateConflict(project.attributionStatus));
-    const sourceInvoices = invoices.filter(invoice => invoice.source === source && !hasDateConflict(invoice.attributionStatus));
-    const costs = sourceLeads.map(lead => lead.acquisitionCost);
-    const cost = costs.length > 0 && costs.every(value => value !== null) ? costs.reduce<number>((total, value) => total + Number(value), 0) : null;
-    return { source, leads: sourceLeads.length, matched: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod)).length, offers: sourceOffers.length, openValue: sum(sourceOffers.filter(offer => offer.isOpen), "priceInclVat"), rejectedValue: sum(sourceOffers.filter(offer => offer.isRejected), "priceInclVat"), acceptedValue: sum(sourceProjects, "valueInclVat"), clients: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON" && !hasDateConflict(lead.attributionLevel)).length, invoiced: sourceInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0), paid: sum(sourceInvoices, "paidTotal"), cost };
+    const sourceLeads = data.leads.filter(lead => normalizeAcquisitionSource(lead.source) === source);
+    const sourceOffers = offers.filter(offer => normalizeAcquisitionSource(offer.source) === source && !hasDateConflict(offer.attributionStatus));
+    const sourceProjects = projects.filter(project => normalizeAcquisitionSource(project.source) === source && !hasDateConflict(project.attributionStatus));
+    const sourceInvoices = invoices.filter(invoice => normalizeAcquisitionSource(invoice.source) === source && !hasDateConflict(invoice.attributionStatus));
+    const row = performanceBySource.get(source);
+    const crmLeads = row?.leads ?? sourceLeads.length;
+    const deliveredLeads = row?.deliveredLeads ?? null;
+    const effectiveLeads = deliveredLeads ?? crmLeads;
+    const clients = row?.attributableClients ?? sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod) && lead.commercialStatus === "CLIENT_WON" && !hasDateConflict(lead.attributionLevel)).length;
+    return {
+      source,
+      leads: effectiveLeads,
+      crmLeads,
+      deliveredLeads,
+      matched: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod)).length,
+      offers: sourceOffers.length,
+      openValue: sum(sourceOffers.filter(offer => offer.isOpen), "priceInclVat"),
+      rejectedValue: sum(sourceOffers.filter(offer => offer.isRejected), "priceInclVat"),
+      acceptedValue: row?.projectValueInclVat ?? sum(sourceProjects, "valueInclVat"),
+      clients,
+      invoiced: row?.invoicedValue ?? sourceInvoices.reduce((total, invoice) => total + Math.max(0, invoice.totalInclVat - invoice.creditedTotal), 0),
+      paid: row?.paidValue ?? sum(sourceInvoices, "paidTotal"),
+      cost: row?.spend ?? null,
+      cac: row?.cac ?? null,
+      roas: row?.cohortCashRoas ?? null,
+    };
   }).sort((a, b) => b.paid - a.paid || b.acceptedValue - a.acceptedValue || b.leads - a.leads);
 }
 
