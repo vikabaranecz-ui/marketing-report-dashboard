@@ -28,6 +28,7 @@ type ClientRow = {
 
 type ProjectRow = {
   lead_id: string | null;
+  external_client_id: string | null;
   project_value: number | string | null;
   attribution_status: string | null;
 };
@@ -38,8 +39,6 @@ type OverrideRow = {
   field_key: string;
   value: unknown;
 };
-
-const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
 export async function getSourceClientValues(companyId: string, month = "ytd"): Promise<SourceClientValue[]> {
   if (!companyId) return [];
@@ -85,16 +84,10 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
       .map(row => [row.scope_key, String(row.value).trim()]),
   );
 
-  const matchedLeadIds = [...new Set(
-    clients
-      .flatMap(client => client.matched_lead_id ? [client.matched_lead_id] : [])
-      .filter(leadId => leadById.has(leadId)),
-  )];
-  const projectScope = matchedLeadIds.length ? matchedLeadIds : [EMPTY_UUID];
   const projectsRes = await supabase
     .from("projects")
-    .select("lead_id,project_value,attribution_status")
-    .in("lead_id", projectScope);
+    .select("lead_id,external_client_id,project_value,attribution_status")
+    .eq("company_id", companyId);
 
   if (projectsRes.error) {
     throw new Error(`Unable to load source client projects: ${projectsRes.error.message}`);
@@ -102,6 +95,7 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
 
   const projects = (projectsRes.data ?? []) as ProjectRow[];
   const projectsByLead = groupBy(projects, row => row.lead_id ?? "");
+  const projectsByClient = groupBy(projects, row => row.external_client_id ?? "");
 
   return clients.flatMap(client => {
     if (client.commercial_status !== "CLIENT_WON") return [];
@@ -124,11 +118,14 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
 
     if (!lead && !manualInPeriod) return [];
 
-    const safeProjects = lead
-      ? (projectsByLead.get(lead.id) ?? []).filter(project =>
-          !String(project.attribution_status ?? "").toLowerCase().includes("date_conflict")
-        )
-      : [];
+    const clientProjects = projectsByClient.get(client.external_id) ?? [];
+    const safeProjects = manualSource
+      ? clientProjects
+      : lead
+        ? (projectsByLead.get(lead.id) ?? []).filter(project =>
+            !String(project.attribution_status ?? "").toLowerCase().includes("date_conflict")
+          )
+        : [];
 
     return [{
       id: client.id,
