@@ -270,11 +270,19 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
 function buildCommercialLedger(data:CompanyDataset){
   const clients=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
   const payingClients=clients.filter(item=>item.paidTotal>0);
+  const projects=data.allCommercialProjects??[];
+  const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
+  const projectValueExclVat=projects.reduce((sum,item)=>sum+Number(item.valueExclVat??0),0);
+  const clientAggregateProjectValue=clients.reduce((sum,item)=>sum+item.projectValueTotal,0);
+  const clientAggregateProjectValueExclVat=clients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0);
   return {
     clients,
     payingClients:payingClients.length,
-    projectValue:clients.reduce((sum,item)=>sum+item.projectValueTotal,0),
-    projectValueExclVat:clients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0),
+    projectValue,
+    projectValueExclVat,
+    clientAggregateProjectValue,
+    clientAggregateProjectValueExclVat,
+    projectValueGap:Math.abs(clientAggregateProjectValue-projectValue),
     invoiced:clients.reduce((sum,item)=>sum+item.invoicedTotal,0),
     paid:clients.reduce((sum,item)=>sum+item.paidTotal,0),
   };
