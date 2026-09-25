@@ -14,6 +14,49 @@ export type RobawsApiOptions = {
 
 const baseUrl = "https://app.robaws.com/api/v2/";
 
+type RobawsProjectRef = { id:string };
+type RobawsOfferRef = { id:string; projectId?:string|null; status?:string|null };
+
+const projectAcceptedStatuses=new Set(["goedgekeurd","gefactureerd","deelfactuur"]);
+const projectRejectedStatuses=new Set(["afgekeurd"]);
+
+function normalizedStatus(value:unknown){
+  return String(value??"").trim().toLowerCase();
+}
+
+export function selectRobawsProjectValueOffers<T extends RobawsOfferRef>(
+  projectId:string,
+  clientProjects:RobawsProjectRef[],
+  clientOffers:T[],
+):T[]{
+  const linked=clientOffers.filter(offer=>offer.projectId===projectId);
+  const linkedAccepted=linked.filter(offer=>projectAcceptedStatuses.has(normalizedStatus(offer.status)));
+  if(linkedAccepted.length)return linkedAccepted;
+
+  const linkedNonRejected=linked.filter(offer=>!projectRejectedStatuses.has(normalizedStatus(offer.status)));
+  if(linkedNonRejected.length)return linkedNonRejected;
+
+  if(clientProjects.length===1){
+    const accepted=clientOffers.filter(offer=>projectAcceptedStatuses.has(normalizedStatus(offer.status)));
+    if(accepted.length)return accepted;
+    return clientOffers.filter(offer=>!projectRejectedStatuses.has(normalizedStatus(offer.status)));
+  }
+
+  return [];
+}
+
+export function selectRobawsClientProjectValueOffers<T extends RobawsOfferRef>(
+  clientProjects:RobawsProjectRef[],
+  clientOffers:T[],
+):T[]{
+  const selected=clientProjects.flatMap(project=>selectRobawsProjectValueOffers(project.id,clientProjects,clientOffers));
+  const selectedIds=new Set(selected.map(offer=>offer.id));
+  const unallocatedAccepted=clientOffers.filter(
+    offer=>projectAcceptedStatuses.has(normalizedStatus(offer.status))&&!selectedIds.has(offer.id),
+  );
+  return [...new Map([...selected,...unallocatedAccepted].map(offer=>[offer.id,offer])).values()];
+}
+
 export async function validateRobawsApi(options: RobawsApiOptions) {
   await Promise.all(
     ["clients", "offers", "projects", "sales-invoices"].map(
