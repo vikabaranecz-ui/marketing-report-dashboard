@@ -422,11 +422,18 @@ function buildCoverage(data:CompanyDataset){
   const expectedProjects=clients.reduce((sum,item)=>sum+item.projectCount,0);
   const expectedInvoiced=clients.reduce((sum,item)=>sum+item.invoicedTotal,0);
   const expectedPaid=clients.reduce((sum,item)=>sum+item.paidTotal,0);
+  const clientAggregateProjectValue=clients.reduce((sum,item)=>sum+item.projectValueTotal,0);
+  const clientAggregateProjectValueExclVat=clients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0);
+  const loadedProjectValue=allProjects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
+  const loadedProjectValueExclVat=allProjects.reduce((sum,item)=>sum+Number(item.valueExclVat??0),0);
   const loadedInvoiced=allInvoices.reduce((sum,item)=>sum+netInvoiceIncl(item),0);
   const loadedPaid=allInvoices.reduce((sum,item)=>sum+item.paidTotal,0);
   return {
     expectedInvoices,loadedInvoices:allInvoices.length,missingInvoices:Math.max(0,expectedInvoices-allInvoices.length),
     expectedProjects,loadedProjects:allProjects.length,missingProjects:Math.max(0,expectedProjects-allProjects.length),
+    clientAggregateProjectValue,clientAggregateProjectValueExclVat,loadedProjectValue,loadedProjectValueExclVat,
+    projectValueGap:Math.abs(clientAggregateProjectValue-loadedProjectValue),
+    projectValueGapExclVat:Math.abs(clientAggregateProjectValueExclVat-loadedProjectValueExclVat),
     expectedInvoiced,loadedInvoiced,missingInvoiced:Math.max(0,expectedInvoiced-loadedInvoiced),
     expectedPaid,loadedPaid,missingPaid:Math.max(0,expectedPaid-loadedPaid),
     invoiceCoverage:percentage(allInvoices.length,expectedInvoices)??0,
