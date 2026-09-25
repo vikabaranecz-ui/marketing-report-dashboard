@@ -92,6 +92,7 @@ type QuoteRow = { id: string; lead_id: string | null; status: string | null; quo
 type ProjectRow = { id: string; lead_id: string | null; status: string | null; project_value: number | string | null; attribution_status: string | null };
 type InvoiceRow = { id: string; lead_id: string | null; total_incl_vat: number | string | null; paid_total: number | string | null; credited_total: number | string | null; attribution_status: string | null };
 type AdRow = { id: string; name: string };
+type OverrideRow = { period_key:string; scope_key:string; field_key:string; value:unknown };
 
 const EMPTY_UUID = "00000000-0000-0000-0000-000000000000";
 
@@ -117,20 +118,30 @@ async function loadCompany(
   // Phase 1: load only tables that are directly company-scoped. Quotes,
   // projects, appointments and ads do not have a company_id column, so they
   // must never be queried with a guessed company filter or left unscoped.
-  const [campaignsRes, metricsRes, attributionRes, leadsRes] = await Promise.all([
+  const [campaignsRes, metricsRes, attributionRes, leadsRes, overridesRes] = await Promise.all([
     supabase.from("campaigns").select("id,name,status").eq("company_id", company.id),
     supabase.from("daily_marketing_metrics").select("campaign_id,spend,impressions,clicks,platform_conversions,marketing_channels!inner(name)").eq("company_id", company.id).eq("marketing_channels.name", "Meta Ads").gte("date", dateFrom).lte("date", dateTo),
     supabase.from("meta_lead_attribution").select("created_time,campaign_id,ad_id,matched_lead_id,match_method,match_status").eq("company_id", company.id).gte("created_time", fromIso).lte("created_time", toIso),
     supabase.from("leads").select("id,created_at,name,source,sales_stage,crm_status,campaign_id,ad_id").eq("company_id", company.id).gte("created_at", fromIso).lte("created_at", toIso),
+    supabase.from("reporting_overrides").select("period_key,scope_key,field_key,value").eq("company_id",company.id).eq("scope_type","client").eq("field_key","source").in("period_key",["all",period.selectedMonth]),
   ]);
-  const phaseOne = [campaignsRes, metricsRes, attributionRes, leadsRes];
+  const phaseOne = [campaignsRes, metricsRes, attributionRes, leadsRes, overridesRes];
   const phaseOneError = phaseOne.find(result => result.error)?.error;
   if (phaseOneError) throw new Error(`Unable to load Meta campaign attribution: ${phaseOneError.message}`);
 
   const campaignRows = (campaignsRes.data ?? []) as CampaignRow[];
   const metricRows = (metricsRes.data ?? []) as unknown as MetricRow[];
   const attributionRows = (attributionRes.data ?? []) as AttributionRow[];
-  const leads = (leadsRes.data ?? []) as LeadRow[];
+  const overrides = (overridesRes.data ?? []) as OverrideRow[];
+  const sourceOverrideByLead = new Map(
+    overrides
+      .filter(row=>typeof row.value==="string"&&String(row.value).trim())
+      .map(row=>[row.scope_key,String(row.value).trim()])
+  );
+  const leads = ((leadsRes.data ?? []) as LeadRow[]).map(lead => {
+    const source=sourceOverrideByLead.get(lead.id);
+    return source ? {...lead,source} : lead;
+  });
 
   // Phase 2: scope dependent tables through the exact company lead IDs and
   // attribution ad IDs. The impossible UUID keeps empty scopes empty instead
@@ -175,7 +186,12 @@ async function loadCompany(
   const exactCampaigns = [...campaignIds].map(campaignId => {
     const campaign = campaignById.get(campaignId);
     const campaignMetrics = metricRows.filter(row => row.campaign_id === campaignId);
-    const campaignAttribution = attributionRows.filter(row => row.campaign_id === campaignId && row.match_status === "MATCHED" && row.matched_lead_id);
+    const campaignAttribution = attributionRows.filter(row =>
+      row.campaign_id === campaignId
+      && row.match_status === "MATCHED"
+      && row.matched_lead_id
+      && isFacebookSource(leadById.get(row.matched_lead_id)?.source)
+    );
     const leadIds = new Set([
       ...campaignAttribution.map(row => row.matched_lead_id as string),
       ...leads.filter(row => row.campaign_id === campaignId && isFacebookSource(row.source)).map(row => row.id),
@@ -241,7 +257,12 @@ async function loadCompany(
 
   const exactAttributedLeadIds = new Set([
     ...attributionRows
-      .filter(row => row.match_status === "MATCHED" && row.campaign_id && row.matched_lead_id)
+      .filter(row =>
+        row.match_status === "MATCHED"
+        && row.campaign_id
+        && row.matched_lead_id
+        && isFacebookSource(leadById.get(row.matched_lead_id)?.source)
+      )
       .map(row => row.matched_lead_id as string),
     ...leads
       .filter(row => row.campaign_id && isFacebookSource(row.source))
