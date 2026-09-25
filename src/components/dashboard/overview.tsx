@@ -16,11 +16,10 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics/kpis"
 import { hasOfferSentEvidence } from "@/lib/metrics/client-funnel";
 import { Card, SectionHeader, StatusPill } from "./ui";
 import {
-  BusinessActivityChart, CohortPaybackChart, CostOutcomeChart, SourcePerformanceChart,
+  BusinessActivityChart, CohortPaybackChart, CostOutcomeChart, SourceDecisionQuadrant, SourcePerformanceChart,
 } from "./charts";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
-type ExecutiveMode="period"|"cohort";
 type SourceSort="spend"|"customers"|"cac"|"paid"|"roas";
 
 export function OverviewPage({data}:{data:CompanyDataset}){
@@ -28,7 +27,6 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const month=searchParams.get("month");
   const scopedHref=(href:string)=>month?href+"?month="+encodeURIComponent(month):href;
 
-  const [mode,setMode]=useState<ExecutiveMode>("period");
   const [sourceFilter,setSourceFilter]=useState("all");
   const [campaignFilter,setCampaignFilter]=useState("all");
   const [sourceSort,setSourceSort]=useState<SourceSort>("paid");
@@ -64,9 +62,6 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const paidLedgerClients=commercialLedgerClients.filter(client=>client.paidTotal>0).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const invoicedLedgerClients=commercialLedgerClients.filter(client=>client.invoicedTotal>0).sort((a,b)=>b.invoicedTotal-a.invoicedTotal||a.name.localeCompare(b.name));
   const projectLedgerClients=commercialLedgerClients.filter(client=>client.projectValueTotal>0).sort((a,b)=>b.projectValueTotal-a.projectValueTotal||a.name.localeCompare(b.name));
-  const allTimePaidValue=commercialLedgerClients.reduce((sum,item)=>sum+item.paidTotal,0);
-  const allTimeInvoicedValue=commercialLedgerClients.reduce((sum,item)=>sum+item.invoicedTotal,0);
-  const allTimeProjectValue=commercialLedgerClients.reduce((sum,item)=>sum+item.projectValueTotal,0);
 
   const insight=managementInsight(analytics);
   const monthly=(data.businessDecision?.monthly??[]).map(item=>({
@@ -138,38 +133,38 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     <section className="overview-executive">
       <div className="overview-executive-head">
         <div>
-          <p className="eyebrow">Management overview</p>
+          <p className="eyebrow">Executive summary</p>
           <h1>Business performance and acquisition economics</h1>
-          <p>Calendar-period company activity and acquisition-cohort performance are intentionally separated.</p>
-        </div>
-        <div className="overview-mode-toggle" role="tablist" aria-label="Overview focus">
-          <button type="button" role="tab" aria-selected={mode==="period"} onClick={()=>setMode("period")}>Period</button>
-          <button type="button" role="tab" aria-selected={mode==="cohort"} onClick={()=>setMode("cohort")}>Cohort</button>
+          <p>Selected-period business activity and acquisition-cohort performance are shown side by side without mixing their time logic.</p>
         </div>
       </div>
-
-      <div>
-        <p className="eyebrow">ROBAWS commercial ledger · all time</p>
-        <div className="executive-summary-grid">
-          <ExecutiveMetric label="Paid value · all time" value={formatCurrency(allTimePaidValue)} note={formatNumber(paidLedgerClients.length)+" client(s) with recorded paid value · click to see who generated it"} onClick={()=>setDrilldown({title:"Clients behind all-time paid value",subtitle:"ROBAWS commercial ledger · current paid_total, no payment-date filter",initialKind:"clients",clients:paidLedgerClients})}/>
-          <ExecutiveMetric label="Invoiced · all time" value={formatCurrency(allTimeInvoicedValue)} note="Current ROBAWS invoiced totals across all commercial clients" onClick={()=>setDrilldown({title:"Clients behind all-time invoiced value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:invoicedLedgerClients})}/>
-          <ExecutiveMetric label="Project value · all time" value={formatCurrency(allTimeProjectValue)} note="Current ROBAWS project totals across all commercial clients" onClick={()=>setDrilldown({title:"Clients behind all-time project value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:projectLedgerClients})}/>
+      <div className="executive-dual-grid">
+        <div className="executive-group">
+          <div className="executive-group-head"><span>Business this period</span><small>Calendar-period ROBAWS activity · incl. VAT</small></div>
+          <div className="executive-group-metrics">
+            <SummaryMetric label="Won project value" value={formatCurrency(analytics.business.wonValueInclVat)} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>
+            <SummaryMetric label="Invoiced" value={formatCurrency(analytics.business.invoicedInclVat)} onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
+            <SummaryMetric label="Paid value on period invoices" value={formatCurrency(analytics.business.paidValueOnPeriodInvoices)} note="Not payment-date cash" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:analytics.business.invoices.filter(item=>item.paidTotal>0)})}/>
+            <SummaryMetric label="Projects won" value={formatNumber(analytics.business.wonProjects)} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>
+          </div>
+        </div>
+        <div className="executive-group is-marketing">
+          <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>Leads acquired in selected period · lifetime outcomes</small></div>
+          <div className="executive-group-metrics">
+            <SummaryMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Known paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
+            <SummaryMetric label="Unique leads" value={formatNumber(analytics.cohort.unique)} onClick={()=>openMilestone("leads")}/>
+            <SummaryMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients})}/>
+            <SummaryMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / attributable customers"/>
+            <SummaryMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value / covered spend"/>
+          </div>
         </div>
       </div>
-
-      {mode==="period"
-        ?<div className="executive-summary-grid">
-          <ExecutiveMetric label="Won project value" value={formatCurrency(analytics.business.wonValueInclVat)} note="ROBAWS projects won in selected calendar period · incl. VAT" onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>
-          <ExecutiveMetric label="Invoiced" value={formatCurrency(analytics.business.invoicedInclVat)} note="Invoices dated in selected calendar period · net of credits · incl. VAT" onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
-          <ExecutiveMetric label="Paid value on period invoices" value={formatCurrency(analytics.business.paidValueOnPeriodInvoices)} note="Current paid_total on invoices dated in this period; not a payment-date metric" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:analytics.business.invoices.filter(item=>item.paidTotal>0)})}/>
-        </div>
-        :<div className="executive-summary-grid executive-summary-cohort">
-          <ExecutiveMetric label="Covered acquisition spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Cost missing: "+analytics.economics.missingCostSources.join(", "):String(analytics.economics.coveredSources.length)+" paid source(s) with cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
-          <ExecutiveMetric label="Unique leads" value={formatNumber(analytics.cohort.unique)} note={scopeLabel} onClick={()=>openMilestone("leads")}/>
-          <ExecutiveMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} note="Used for cohort CAC" onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients})}/>
-          <ExecutiveMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note={analytics.economics.cac===null?"Cost or customer evidence missing":"Covered spend / attributable customers"}/>
-          <ExecutiveMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value currently attributable / covered acquisition spend"/>
-        </div>}
+      <div className="ledger-strip">
+        <div className="ledger-strip-label"><span>ROBAWS commercial ledger · all time</span><small>Separate from selected-period business activity</small></div>
+        <SummaryMetric label="Paid value" value={formatCurrency(analytics.commercialLedger.paid)} note={formatNumber(analytics.commercialLedger.payingClients)+" paying client(s)"} onClick={()=>setDrilldown({title:"Clients behind all-time paid value",subtitle:"ROBAWS commercial ledger · current paid_total, no payment-date filter",initialKind:"clients",clients:paidLedgerClients})}/>
+        <SummaryMetric label="Invoiced" value={formatCurrency(analytics.commercialLedger.invoiced)} onClick={()=>setDrilldown({title:"Clients behind all-time invoiced value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:invoicedLedgerClients})}/>
+        <SummaryMetric label="Project value" value={formatCurrency(analytics.commercialLedger.projectValue)} onClick={()=>setDrilldown({title:"Clients behind all-time project value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:projectLedgerClients})}/>
+      </div>
     </section>
 
     <div className="overview-insight">
@@ -194,15 +189,18 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     </Card>
 
     <section>
-      <SectionHeader title="Business performance — calendar period" description="What happened in the company during the selected dates. This uses ROBAWS commercial dates and is not filtered by marketing attribution."/>
+      <SectionHeader title="Business this period" description="Calendar-period ROBAWS activity only. Marketing filters do not change these company totals."/>
       <Card className="business-flow-card">
+        <div className="business-period-meta"><button type="button" className="drillable" onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}><strong>{formatNumber(analytics.business.wonProjects)}</strong><span>projects won</span></button><span>{data.periodLabel}</span></div>
         <BusinessMoneyFlow analytics={analytics} onProjects={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})} onInvoices={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
       </Card>
     </section>
 
-    <section className="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
+    <section>
+      <SectionHeader title="Acquisition cohort" description="Leads created in the selected period and their current outcomes. Later commercial value stays attached to the acquisition cohort."/>
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
       <Card className="p-5">
-        <SectionHeader title="Acquisition cohort — conversion milestones" description="What eventually happened to leads acquired in the selected period. Bars are independently evidenced and scaled against unique leads."/>
+        <SectionHeader title="Conversion milestones" description="Bars are independently evidenced and scaled against unique leads; this is not forced into a narrowing funnel."/>
         <div className="milestone-list">
           {analytics.cohort.milestones.map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
         </div>
@@ -224,6 +222,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         </div>
         {analytics.economics.missingCostSources.length>0&&<div className="cost-missing-note"><AlertTriangle size={15}/><span>Cost missing for {analytics.economics.missingCostSources.join(", ")}. Cost-based metrics exclude those sources rather than treating them as €0.</span></div>}
       </Card>
+      </div>
     </section>
 
     <section>
@@ -252,6 +251,25 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     </section>
 
     <section>
+      <SectionHeader title="Cohort payback" description="Customers are grouped by acquisition month so later project, invoice and paid value stays attached to the month they were acquired."/>
+      <div className="grid gap-6 xl:grid-cols-[1.08fr_.92fr]">
+        <Card className="p-5">
+          <CohortPaybackChart data={analytics.payback.series} spendReference={analytics.payback.acquisitionSpendReference}/>
+          <div className="payment-timing-note"><AlertTriangle size={15}/><p>ROBAWS currently supplies invoice_date and paid_total, but no payment_date/payment_amount records. The line therefore shows cumulative paid value attached to invoices by months since acquisition, using invoice dates as the timing anchor. It is not labelled as actual cash collection timing.</p></div>
+        </Card>
+        <Card className="p-5">
+          <div className="table-scroll"><table><thead><tr><th>Acquisition month</th><th>Acquisition spend</th><th>Customers</th><th>Project value</th><th>Invoiced to date</th><th>Paid value to date</th></tr></thead><tbody>
+            {analytics.payback.cohorts.map(item=><tr key={item.month}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>{
+              const rows=analytics.rows.filter(row=>row.lead.date.startsWith(item.month));
+              setDrilldown({title:"Acquisition cohort · "+monthLabel(item.month),subtitle:scopeLabel,leads:rows.map(row=>row.lead),clients:clientsForRows(data,rows)});
+            }}>{monthLabel(item.month)}</button></td><td>{item.acquisitionSpend===null?"Not allocated":formatCurrency(item.acquisitionSpend)}{item.spendState==="synced-only"&&<small className="block text-[var(--muted)]">synced dated spend only</small>}</td><td>{item.customers}</td><td>{formatCurrency(item.projectValue)}</td><td>{formatCurrency(item.invoiced)}</td><td>{formatCurrency(item.paid)}</td></tr>)}
+          </tbody></table></div>
+        </Card>
+      </div>
+    </section>
+
+
+    <section>
       <SectionHeader title="Business activity over time" description="Grouped bars show calendar-month won, invoiced and paid value on invoices. The separate line below shows only marketing spend with an exact date."/>
       <Card className="p-5">
         <BusinessActivityChart data={monthly} onMonthClick={openMonth}/>
@@ -276,28 +294,27 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           <p className="chart-footnote">Yellow = covered spend. Black = lifetime paid value attributable to the acquisition source.</p>
           <button type="button" className="button-secondary" onClick={()=>setShowSourceTable(value=>!value)}>{showSourceTable?"Hide detailed table":"Show detailed table"}</button>
         </div>
-        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Customers</th><th>Project value excl. VAT</th><th>Paid value</th><th>CAC</th><th>Cohort cash ROAS</th></tr></thead><tbody>
-          {sortedSources.map(row=><tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributableClients}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>)}
+        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Customers</th><th>Project value excl. VAT</th><th>Paid value</th><th>CPL</th><th>Cost / qualified</th><th>CAC</th><th>Cohort cash ROAS</th></tr></thead><tbody>
+          {sortedSources.map(row=><tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.attributableClients}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(row.costQualified)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>)}
         </tbody></table></div>}
+      </Card>
+      <Card className="mt-4 p-5">
+        <SectionHeader title="Source decision quadrant" description="CAC on the X axis and attributable paid value on the Y axis. Median lines are descriptive references, not targets."/>
+        <SourceDecisionQuadrant data={sortedSources.map(row=>({source:row.source,cac:row.cac,paid:row.paidValue,customers:row.attributableClients}))}/>
       </Card>
     </section>
 
+
     <section>
-      <SectionHeader title="Cohort payback" description="Customers are grouped by acquisition month so later project, invoice and paid value stays attached to the month they were acquired."/>
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_.92fr]">
-        <Card className="p-5">
-          <CohortPaybackChart data={analytics.payback.series} spendReference={analytics.payback.acquisitionSpendReference}/>
-          <div className="payment-timing-note"><AlertTriangle size={15}/><p>ROBAWS currently supplies invoice_date and paid_total, but no payment_date/payment_amount records. The line therefore shows cumulative paid value attached to invoices by months since acquisition, using invoice dates as the timing anchor. It is not labelled as actual cash collection timing.</p></div>
-        </Card>
-        <Card className="p-5">
-          <div className="table-scroll"><table><thead><tr><th>Acquisition month</th><th>Acquisition spend</th><th>Customers</th><th>Project value</th><th>Invoiced to date</th><th>Paid value to date</th></tr></thead><tbody>
-            {analytics.payback.cohorts.map(item=><tr key={item.month}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>{
-              const rows=analytics.rows.filter(row=>row.lead.date.startsWith(item.month));
-              setDrilldown({title:"Acquisition cohort · "+monthLabel(item.month),subtitle:scopeLabel,leads:rows.map(row=>row.lead),clients:clientsForRows(data,rows)});
-            }}>{monthLabel(item.month)}</button></td><td>{item.acquisitionSpend===null?"Not allocated":formatCurrency(item.acquisitionSpend)}{item.spendState==="synced-only"&&<small className="block text-[var(--muted)]">synced dated spend only</small>}</td><td>{item.customers}</td><td>{formatCurrency(item.projectValue)}</td><td>{formatCurrency(item.invoiced)}</td><td>{formatCurrency(item.paid)}</td></tr>)}
-          </tbody></table></div>
-        </Card>
-      </div>
+      <SectionHeader title="Where are we losing people?" description="Conversion is shown only where the evidence supports the relationship. Independent milestones are compared with unique leads."/>
+      <Card className="p-5">
+        <div className="conversion-diagnostics-grid">
+          {analytics.conversion.leadRelative.map(item=><ConversionRate key={item.key} label={item.label} numerator={item.numerator} denominator={item.denominator} rate={item.rate}/>)}
+        </div>
+        {analytics.conversion.sequentialSupported
+          ?<div className="sequential-conversion"><div className="sequential-conversion-head"><strong>Sequential evidence available</strong><span>Record-level subset checks passed</span></div><div className="conversion-diagnostics-grid">{analytics.conversion.sequential.map(item=><ConversionRate key={item.key} label={item.label} numerator={item.numerator} denominator={item.denominator} rate={item.rate}/>)}</div></div>
+          :<div className="nonsequential-note"><AlertTriangle size={15}/><div><strong>Stage evidence is non-sequential</strong><p>Some later-stage records exist without every earlier stage being recorded. Negative or misleading stage-drop calculations are intentionally suppressed.</p></div></div>}
+      </Card>
     </section>
 
     <section>
@@ -317,7 +334,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     </section>
 
     <section>
-      <SectionHeader title="Can I trust these numbers?" description="Marketing, CRM, ROBAWS and attribution are evaluated separately. Every warning states which metric it affects."/>
+      <SectionHeader title="Data trust / coverage" description="Marketing, CRM, ROBAWS and attribution are evaluated separately. Every warning explains which business metric it affects."/>
       <div className="trust-v2-grid">
         <TrustPanel title="Marketing data" icon={<CircleDollarSign size={16}/>} items={[
           trustFromCoverage("Spend coverage",analytics.attribution.spendCoverage,String(analytics.attribution.paidSourcesWithCost)+" / "+String(analytics.attribution.paidSources)+" paid source(s) have cost. Missing cost blocks source CAC and cohort cash ROAS."),
@@ -361,7 +378,7 @@ function BusinessMoneyFlow({analytics,onProjects,onInvoices}:{analytics:ReturnTy
   return <div>
     <div className="business-flow">
       {steps.map((item,index)=><div className="business-flow-step" key={item.label}>
-        <button type="button" onClick={item.onClick} className="business-flow-value">
+        <button type="button" onClick={item.onClick} className="business-flow-value" title={item.label.startsWith("Paid")?"Uses paid totals attached to invoices dated in the selected period. This is not necessarily cash received during the selected period.":undefined}>
           <span>{item.label}</span><strong>{formatCurrency(item.value)}</strong>
           <i style={{width:String(item.value/max*100)+"%"}}/>
         </button>
@@ -376,9 +393,14 @@ function BusinessMoneyFlow({analytics,onProjects,onInvoices}:{analytics:ReturnTy
   </div>;
 }
 
-function ExecutiveMetric({label,value,note,onClick}:{label:string;value:string;note:string;onClick?:()=>void}){
-  const body=<><span>{label}</span><strong className={onClick?"drillable-value":""}>{value}</strong><small>{note}</small></>;
-  return onClick?<button type="button" className="executive-metric drillable text-left" onClick={onClick}>{body}</button>:<div className="executive-metric">{body}</div>;
+function SummaryMetric({label,value,note,onClick}:{label:string;value:string;note?:string;onClick?:()=>void}){
+  const body=<><span>{label}</span><strong className={onClick?"drillable-value":""}>{value}</strong>{note&&<small>{note}</small>}</>;
+  return onClick?<button type="button" className="summary-metric drillable text-left" onClick={onClick}>{body}</button>:<div className="summary-metric">{body}</div>;
+}
+
+function ConversionRate({label,numerator,denominator,rate}:{label:string;numerator:number;denominator:number;rate:number|null}){
+  const width=rate===null?0:Math.min(100,Math.max(0,rate));
+  return <div className="conversion-rate"><div><strong>{label}</strong><span>{formatNumber(numerator)} / {formatNumber(denominator)}</span></div><div className="conversion-rate-value"><strong>{rate===null?"—":formatPercent(rate)}</strong><i><b style={{width:String(width)+"%"}}/></i></div></div>;
 }
 
 function MilestoneBar({label,value,rate,onClick}:{label:string;value:number;rate:number;onClick:()=>void}){
@@ -420,7 +442,7 @@ function trustIntegration(label:string,integration:CompanyDataset["integrations"
   return{label,state:"Complete" as TrustState,detail:"Last successful sync: "+formatTimestamp(integration.lastSuccess)};
 }
 function reconciliationTrust(value:ReturnType<typeof buildOverviewAnalytics>["reconciliation"]){
-  const ok=(!value.spendComparable||value.coveredSpendDifference===0)&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
+  const ok=(!value.spendComparable||value.coveredSpendDifference===0)&&value.sourceCustomerDifference===0&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
   return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?(value.spendComparable?"Source spend and period project/invoice aggregates reconcile to their underlying records.":"Period project/invoice aggregates reconcile; campaign-level spend is checked against campaign evidence separately."):"One or more dashboard aggregates do not reconcile to their underlying records."};
 }
 

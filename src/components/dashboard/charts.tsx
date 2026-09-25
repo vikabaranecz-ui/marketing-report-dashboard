@@ -1,6 +1,6 @@
 "use client";
 
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import type { TrendPoint } from "@/lib/data/types";
 import { formatCurrency, formatNumber } from "@/lib/metrics/kpis";
 
@@ -41,9 +41,21 @@ export function CostOutcomeChart({data}:{data:Array<{name:string;value:number|nu
 }
 
 export function SourcePerformanceChart({data,onSourceClick}:{data:Array<{source:string;spend:number|null;paid:number;customers:number}>;onSourceClick?:(source:string)=>void}){
-  const rows=data.map(item=>({...item,spend:item.spend??0}));
+  const rows=data;
   if(!rows.length)return <div className="chart-empty">No source performance is available for this period.</div>;
-  return <div className="h-[320px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} layout="vertical" margin={{left:24,right:18,top:8,bottom:0}} onClick={(state:any)=>{const source=state?.activePayload?.[0]?.payload?.source;if(source&&onSourceClick)onSourceClick(source)}}><CartesianGrid stroke="#eeeeea" horizontal={false}/><XAxis type="number" axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:10}} tickFormatter={(v)=>formatCurrency(Number(v),true)}/><YAxis type="category" dataKey="source" width={125} axisLine={false} tickLine={false} tick={{fill:"#4e514d",fontSize:11}}/><Tooltip contentStyle={tooltipStyle} formatter={(value,name)=>[formatCurrency(Number(value)),name==="paid"?"Paid value":"Spend"]} labelFormatter={(label,payload)=>{const customers=payload?.[0]?.payload?.customers;return customers===undefined?String(label):`${label} · ${customers} customer(s)`;}}/><Bar dataKey="spend" fill={WAT_YELLOW} radius={[0,5,5,0]}/><Bar dataKey="paid" fill={WAT_BLACK} radius={[0,5,5,0]}/></BarChart></ResponsiveContainer></div>;
+  return <div className="h-[320px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} layout="vertical" margin={{left:24,right:18,top:8,bottom:0}} onClick={(state:any)=>{const source=state?.activePayload?.[0]?.payload?.source;if(source&&onSourceClick)onSourceClick(source)}}><CartesianGrid stroke="#eeeeea" horizontal={false}/><XAxis type="number" axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:10}} tickFormatter={(v)=>formatCurrency(Number(v),true)}/><YAxis type="category" dataKey="source" width={125} axisLine={false} tickLine={false} tick={{fill:"#4e514d",fontSize:11}}/><Tooltip contentStyle={tooltipStyle} formatter={(value,name)=>[value===null||value===undefined?"Cost missing":formatCurrency(Number(value)),name==="paid"?"Paid value":"Spend"]} labelFormatter={(label,payload)=>{const customers=payload?.[0]?.payload?.customers;return customers===undefined?String(label):`${label} · ${customers} customer(s)`;}}/><Bar dataKey="spend" fill={WAT_YELLOW} radius={[0,5,5,0]}/><Bar dataKey="paid" fill={WAT_BLACK} radius={[0,5,5,0]}/></BarChart></ResponsiveContainer></div>;
+}
+
+export function SourceDecisionQuadrant({data}:{data:Array<{source:string;cac:number|null;paid:number;customers:number}>}){
+  const rows=data.filter(item=>item.cac!==null&&Number.isFinite(item.cac)&&item.paid>0).map(item=>({...item,cac:Number(item.cac)}));
+  if(rows.length<2)return <div className="chart-empty">At least two sources with known CAC and paid value are required for the source quadrant.</div>;
+  const med=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;};
+  const medianCac=med(rows.map(item=>item.cac));
+  const medianPaid=med(rows.map(item=>item.paid));
+  return <div>
+    <div className="h-[330px] w-full"><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{top:18,right:24,left:0,bottom:10}}><CartesianGrid stroke="#eeeeea"/><XAxis type="number" dataKey="cac" name="Cohort CAC" axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:10}} tickFormatter={(v)=>formatCurrency(Number(v),true)} label={{value:"Cohort CAC →",position:"insideBottomRight",offset:-4,fill:"#777873",fontSize:10}}/><YAxis type="number" dataKey="paid" name="Paid value" axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:10}} tickFormatter={(v)=>formatCurrency(Number(v),true)}/><ZAxis type="number" dataKey="customers" range={[90,260]} name="Customers"/><Tooltip cursor={{strokeDasharray:"3 3"}} content={(props:any)=>{const row=props?.payload?.[0]?.payload;if(!props?.active||!row)return null;return <div className="chart-tooltip"><strong>{row.source}</strong><span>CAC {formatCurrency(row.cac)}</span><span>Paid value {formatCurrency(row.paid)}</span><span>{formatNumber(row.customers)} customer(s)</span></div>;}}/><ReferenceLine x={medianCac} stroke="#a4a49d" strokeDasharray="4 4" label={{value:"Median CAC",position:"insideTopRight",fill:"#777873",fontSize:10}}/><ReferenceLine y={medianPaid} stroke="#a4a49d" strokeDasharray="4 4" label={{value:"Median paid value",position:"insideTopLeft",fill:"#777873",fontSize:10}}/><Scatter data={rows} fill={WAT_YELLOW}>{rows.map((item,index)=><Cell key={item.source} fill={index%2===0?WAT_YELLOW:WAT_BLACK}/>)}</Scatter></ScatterChart></ResponsiveContainer></div>
+    <p className="chart-footnote">Reference lines are sample medians, not performance targets. Sources with missing cost are excluded rather than plotted at €0.</p>
+  </div>;
 }
 
 export function CohortPaybackChart({data,spendReference}:{data:Array<{monthOffset:number;label:string;cumulativePaid:number}>;spendReference:number|null}){

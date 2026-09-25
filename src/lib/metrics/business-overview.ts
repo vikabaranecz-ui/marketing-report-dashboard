@@ -196,6 +196,22 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
     ],
   };
 
+  const commercialLedger=buildCommercialLedger(data);
+  const conversion={
+    sequentialSupported,
+    leadRelative:[
+      {key:"qualified",label:"Qualified / Leads",numerator:qualified,denominator:unique,rate:percentage(qualified,unique)},
+      {key:"visits",label:"Visits / Leads",numerator:visits,denominator:unique,rate:percentage(visits,unique)},
+      {key:"offers",label:"Offers / Leads",numerator:offers,denominator:unique,rate:percentage(offers,unique)},
+      {key:"customers",label:"Customers / Leads",numerator:customers,denominator:unique,rate:percentage(customers,unique)},
+    ],
+    sequential:sequentialSupported?[
+      {key:"qualified-visits",label:"Qualified → Visit",numerator:visits,denominator:qualified,rate:percentage(visits,qualified)},
+      {key:"visits-offers",label:"Visit → Offer",numerator:offers,denominator:visits,rate:percentage(offers,visits)},
+      {key:"offers-customers",label:"Offer → Customer",numerator:customers,denominator:offers,rate:percentage(customers,offers)},
+    ]:[],
+  };
+
   const sourceRows=buildSourcePerformance(data,allRows);
   const economics=buildEconomics(data,rows,sourceRows,scope);
   const payback=buildPayback(data,rows,economics.coveredSpend,scope);
@@ -203,7 +219,20 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const attribution=buildAttributionCoverage(data,sourceRows);
   const reconciliation=buildReconciliation(sourceRows,economics,business,coverage,scope);
 
-  return {allRows,rows,business,cohort,economics,sourceRows,payback,coverage,attribution,reconciliation};
+  return {allRows,rows,business,cohort,commercialLedger,conversion,economics,sourceRows,payback,coverage,attribution,reconciliation};
+}
+
+function buildCommercialLedger(data:CompanyDataset){
+  const clients=data.commercialClients??[];
+  const payingClients=clients.filter(item=>item.paidTotal>0);
+  return {
+    clients,
+    payingClients:payingClients.length,
+    projectValue:clients.reduce((sum,item)=>sum+item.projectValueTotal,0),
+    projectValueExclVat:clients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0),
+    invoiced:clients.reduce((sum,item)=>sum+item.invoicedTotal,0),
+    paid:clients.reduce((sum,item)=>sum+item.paidTotal,0),
+  };
 }
 
 function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerformanceRow[],scope:OverviewScope){
@@ -372,11 +401,14 @@ function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType
       ? sources
       : sources.filter(item=>item.source===scope.source);
   const sourceSpend=comparableSources.filter(item=>item.costState==="known").reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const sourceCustomers=comparableSources.reduce((sum,item)=>sum+item.attributableClients,0);
+  const sourceCustomers=comparableSources
+    .filter(item=>PAID_ACQUISITION_SOURCES.has(item.source)&&item.costState==="known")
+    .reduce((sum,item)=>sum+item.attributableClients,0);
   return {
     spendComparable:scope.campaign==="all",
     coveredSpendDifference:scope.campaign==="all"?Math.abs(sourceSpend-economics.coveredSpend):0,
     sourceCustomerTotal:sourceCustomers,
+    sourceCustomerDifference:Math.abs(sourceCustomers-economics.attributableCustomers),
     periodProjectValue:business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0),
     periodProjectValueDifference:Math.abs(business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0)-business.wonValueInclVat),
     periodInvoiceValue:business.invoices.reduce((sum:number,item:CommercialInvoice)=>sum+netInvoiceIncl(item),0),

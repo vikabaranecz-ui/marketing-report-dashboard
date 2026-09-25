@@ -80,6 +80,9 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
         <div className="record-summary-grid">
           {leads.length>0&&<Summary label="Leads" value={leads.length}/>}
           {clients.length>0&&<Summary label="Clients" value={clients.length}/>}
+          {clients.length>0&&<Summary label="Project value" value={formatCurrency(clients.reduce((sum,item)=>sum+item.projectValueTotal,0))}/>}
+          {clients.length>0&&<Summary label="Invoiced" value={formatCurrency(clients.reduce((sum,item)=>sum+item.invoicedTotal,0))}/>}
+          {clients.length>0&&<Summary label="Paid value" value={formatCurrency(clients.reduce((sum,item)=>sum+item.paidTotal,0))}/>} 
           {offers.length>0&&<Summary label="Offers" value={offers.length}/>}
           {projects.length>0&&<Summary label="Projects" value={projects.length}/>}
           {invoices.length>0&&<Summary label="Invoices" value={invoices.length}/>}
@@ -147,7 +150,7 @@ export function RecordDrilldownDrawer({data,selection,onClose}:{data:CompanyData
   </div>;
 }
 
-function Summary({label,value}:{label:string;value:number}){return <div><span>{label}</span><strong>{formatNumber(value)}</strong></div>}
+function Summary({label,value}:{label:string;value:number|string}){return <div><span>{label}</span><strong>{typeof value==="number"?formatNumber(value):value}</strong></div>}
 function Section({title,icon,children}:{title:string;icon?:ReactNode;children:ReactNode}){return <section className="record-section"><h3>{icon}{title}</h3>{children}</section>}
 function date(value:string|null|undefined){if(!value)return"—";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{day:"2-digit",month:"short",year:"numeric",timeZone:"Europe/Brussels"}).format(parsed)}
 function dateTime(value:string|null|undefined){if(!value)return"—";const parsed=new Date(value);return Number.isNaN(parsed.getTime())?value:new Intl.DateTimeFormat("en-BE",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Brussels"}).format(parsed)}
