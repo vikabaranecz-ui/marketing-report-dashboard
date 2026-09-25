@@ -82,7 +82,7 @@ export function SystemPulse({ data }: { data: CompanyDataset }) {
     {!message&&healthWarnings.length>0&&<div className="system-sync-message is-warn"><TriangleAlert size={15}/><span>{healthWarnings.join(" · ")}</span></div>}
     <div className="system-change-strip">
       <div className="system-change-label"><span>WHAT CHANGED</span><strong>{changes.length?"Since recent syncs":"No recorded changes yet"}</strong></div>
-      {changes.length?changes.map(event=><ChangeChip key={event.id} event={event}/>):<div className="system-change-empty">Automatic sync changes will appear here: new leads, signed clients, offer value, paid cash and ad spend.</div>}
+      {changes.length?changes.map(event=><ChangeChip key={event.id} event={event}/>):<div className="system-change-empty">Automatic sync changes will appear here: new leads, signed clients, offer value, paid value and ad spend.</div>}
     </div>
   </Card>;
 }
