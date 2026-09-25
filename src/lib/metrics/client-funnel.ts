@@ -34,6 +34,7 @@ export type JourneyRow = {
   isSigned: boolean;
   isCommercialClient: boolean;
   isAttributableClient: boolean;
+  hasAcquisitionDateConflict: boolean;
   isNotRelevant: boolean;
   lostReason: string;
 };
@@ -271,7 +272,14 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
     );
     const signed = group.some(isSigned);
     const commercialClient = group.some(item => item.commercialStatus === "CLIENT_WON") || verifiedProject;
-    const attributableClient = commercialClient && !group.some(item => hasDateConflict(item.attributionLevel));
+    const acquisitionDateConflict = Boolean(
+      matchedCommercialClient?.clientSince
+      && lead.date
+      && matchedCommercialClient.clientSince.slice(0,10) < lead.date.slice(0,10)
+    );
+    const attributableClient = commercialClient
+      && !group.some(item => hasDateConflict(item.attributionLevel))
+      && !acquisitionDateConflict;
     const visit = leadAppointments.length > 0 || group.some(item => hasVisitEvidence(data, item));
     const accepted = leadOffers.some(offer => offer.isAccepted);
     const hasOffer = leadOffers.length > 0;
@@ -311,6 +319,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       isSigned: signed,
       isCommercialClient: commercialClient,
       isAttributableClient: attributableClient,
+      hasAcquisitionDateConflict: acquisitionDateConflict,
       isNotRelevant: lost && explicitNotRelevant,
       lostReason: lost
         ? (currentRejected ? (currentOffer?.status ?? lead.quoteStatus) : group.find(isExplicitlyNotRelevant)?.crmStatus ?? "Lost")
