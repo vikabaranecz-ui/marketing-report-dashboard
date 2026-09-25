@@ -6,6 +6,7 @@ import { ArrowRight, CalendarClock, CircleDollarSign, Pencil, RotateCcw, Search,
 import type { CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, journeyStageMeta, sourcePipelineRows, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
+import { buildOverviewAnalytics } from "@/lib/metrics/business-overview";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
@@ -236,6 +237,13 @@ export function VisitsPage({ data }: { data: CompanyDataset }) {
 }
 
 export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
+  const cohortAnalytics=buildOverviewAnalytics(data,{source:"all",campaign:"all"});
+  const cohortLeadCounts=new Map<string,number>();
+  for(const row of cohortAnalytics.rows){
+    const month=row.lead.date.slice(0,7);
+    if(month) cohortLeadCounts.set(month,(cohortLeadCounts.get(month)??0)+1);
+  }
+  const cohortRows=[...cohortAnalytics.payback.cohorts].sort((a,b)=>b.month.localeCompare(a.month));
   const offers=(data.commercialOffers??[]).filter(o=>!o.attributionStatus.includes("DATE_CONFLICT"));
   const sent=offers.filter(o=>Boolean(o.sentAt));
   const open=sent.filter(o=>o.isOpen),accepted=offers.filter(o=>o.isAccepted),rejected=offers.filter(o=>o.isRejected),cancelled=offers.filter(o=>o.isCancelled);
@@ -260,7 +268,14 @@ export function OffersPipelinePage({ data }: { data: CompanyDataset }) {
       <KpiCard label="Afgekeurd" value={formatCurrency(sum(rejected),true)} meta={String(rejected.length)+" rejected"} onClick={()=>setDrilldown({title:"Afgekeurde offers",subtitle:data.periodLabel,offers:rejected})}/>
       <KpiCard label="Cancelled" value={formatCurrency(sum(cancelled),true)} meta={String(cancelled.length)+" cancelled"} onClick={()=>setDrilldown({title:"Cancelled offers",subtitle:data.periodLabel,offers:cancelled})}/>
     </div>
-    <Card className="p-5"><SectionHeader title="Offer register" description="Offer date and sent-to-client date stay separate. Sent is shown only when ROBAWS supplies its send date."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Offer</th><th>Offer date</th><th>Sent to client</th><th>Follow-up</th><th>Excl. VAT</th><th>Incl. VAT</th><th>Status</th><th>Days open</th></tr></thead><tbody>{[...offers].sort((a,b)=>(b.sentAt??b.date).localeCompare(a.sentAt??a.date)).map(o=><tr key={o.id}><td className="font-semibold">{o.leadName}</td><td>{o.source}</td><td>{o.number}</td><td>{date(o.date)}</td><td>{o.sentAt?<StatusPill tone="good">{dateTime(o.sentAt)}</StatusPill>:<StatusPill tone="neutral">Not verified</StatusPill>}</td><td>{o.followUpAt?dateTime(o.followUpAt):"—"}</td><td>{formatCurrency(o.priceExclVat)}</td><td className="font-semibold">{formatCurrency(o.priceInclVat)}</td><td><StatusPill tone={o.isAccepted?"good":o.isRejected||o.isCancelled?"bad":"warn"}>{o.status}</StatusPill></td><td>{o.daysWaiting===null?"—":String(o.daysWaiting)+" d"}</td></tr>)}</tbody></table></div></Card>
+    <Card className="p-5">
+      <SectionHeader title="Acquisition-cohort pipeline" description="Marketing value follows the month the lead was acquired. A June lead that becomes a €1,000 client in July adds that €1,000 project value back to the June cohort; the July operational project view still shows the actual July win."/>
+      {cohortAnalytics.cohort.supplierOnly>0&&<div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><strong>{formatNumber(cohortAnalytics.cohort.supplierOnly)} supplier-only leads are not assigned to a month.</strong><p className="mt-1 text-xs">They are included in known acquired-lead totals, but the supplier file does not provide a reliable acquisition date, so monthly cohort value is not guessed.</p></div>}
+      <div className="table-scroll"><table><thead><tr><th>Lead month</th><th>CRM-tracked leads</th><th>Acquisition spend evidence</th><th>Customers won to date</th><th>Project value attributed to cohort</th><th>Invoiced to date</th><th>Paid value to date</th></tr></thead><tbody>
+        {cohortRows.map(row=><tr key={row.month}><td className="font-semibold">{monthName(row.month)}</td><td>{formatNumber(cohortLeadCounts.get(row.month)??0)}</td><td>{row.acquisitionSpend===null?"Not allocated":<>{formatCurrency(row.acquisitionSpend)}{row.spendState==="synced-only"&&<small className="block text-[var(--muted)]">synced spend only · manual YTD spend not spread monthly</small>}</>}</td><td>{formatNumber(row.customers)}</td><td className="font-semibold">{formatCurrency(row.projectValue)}</td><td>{formatCurrency(row.invoiced)}</td><td>{formatCurrency(row.paid)}</td></tr>)}
+      </tbody></table></div>
+    </Card>
+    <Card className="p-5"><SectionHeader title="Offer register" description="Operational clock: offer date and sent-to-client date stay separate. These dates do not move marketing value out of the lead-acquisition cohort."/><div className="table-scroll"><table><thead><tr><th>Client</th><th>Source</th><th>Offer</th><th>Offer date</th><th>Sent to client</th><th>Follow-up</th><th>Excl. VAT</th><th>Incl. VAT</th><th>Status</th><th>Days open</th></tr></thead><tbody>{[...offers].sort((a,b)=>(b.sentAt??b.date).localeCompare(a.sentAt??a.date)).map(o=><tr key={o.id}><td className="font-semibold">{o.leadName}</td><td>{o.source}</td><td>{o.number}</td><td>{date(o.date)}</td><td>{o.sentAt?<StatusPill tone="good">{dateTime(o.sentAt)}</StatusPill>:<StatusPill tone="neutral">Not verified</StatusPill>}</td><td>{o.followUpAt?dateTime(o.followUpAt):"—"}</td><td>{formatCurrency(o.priceExclVat)}</td><td className="font-semibold">{formatCurrency(o.priceInclVat)}</td><td><StatusPill tone={o.isAccepted?"good":o.isRejected||o.isCancelled?"bad":"warn"}>{o.status}</StatusPill></td><td>{o.daysWaiting===null?"—":String(o.daysWaiting)+" d"}</td></tr>)}</tbody></table></div></Card>
     <Card className="p-5"><SectionHeader title="Pipeline aging" description="Open value that needs sales follow-up."/><div className="grid gap-px bg-[var(--line)] md:grid-cols-4"><Age label="0–7 days" rows={open.filter(o=>(o.daysWaiting??0)<=7)}/><Age label="8–14 days" rows={open.filter(o=>(o.daysWaiting??0)>=8&&(o.daysWaiting??0)<=14)}/><Age label="15–30 days" rows={open.filter(o=>(o.daysWaiting??0)>=15&&(o.daysWaiting??0)<=30)}/><Age label="30+ days" rows={open.filter(o=>(o.daysWaiting??0)>30)}/></div></Card>
     <Card className="p-5"><SectionHeader title="Commercial result" description="Pipeline and cash stay together on the same operational page."/><div className="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4"><Mini label="Project value" value={formatCurrency(projectValue)}/><Mini label="Invoiced" value={formatCurrency(invoiced)}/><Mini label="Paid" value={formatCurrency(paid)}/><Mini label="Unpaid invoiced" value={formatCurrency(Math.max(0,invoiced-paid))}/></div></Card>
     {drilldown&&<RecordDrilldownDrawer data={data} selection={drilldown} onClose={()=>setDrilldown(null)}/>}
@@ -287,8 +302,14 @@ export function SalesProjectsPage({ data }: { data: CompanyDataset }) {
 }
 
 export function CohortsPage({ data }: { data: CompanyDataset }) {
-  const rows=buildJourneyRows(data),months=[...new Set(rows.map(r=>r.lead.date.slice(0,7)))].sort().reverse();
-  return <div className="space-y-6"><Funnel data={data}/><Card className="p-5"><SectionHeader title="Acquisition cohorts" description="Later offer and project outcomes stay attached to the month the lead was acquired."/><div className="table-scroll"><table><thead><tr><th>Cohort</th><th>Unique people</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified</th><th>Revenue</th></tr></thead><tbody>{months.map(m=>{const g=rows.filter(r=>r.lead.date.startsWith(m));return <tr key={m}><td className="font-semibold">{monthName(m)}</td><td>{g.length}</td><td>{g.filter(r=>r.hasVisit).length}</td><td>{g.filter(r=>r.offers.length>0).length}</td><td>{g.filter(r=>r.offers.some(o=>Boolean(o.sentAt))).length}</td><td>{formatCurrency(g.reduce((n,r)=>n+r.sentOfferValue,0))}</td><td>{formatCurrency(g.reduce((n,r)=>n+r.openOfferValue,0))}</td><td>{g.filter(r=>r.isSigned).length}</td><td>{g.filter(r=>r.stage==="verified").length}</td><td>{formatCurrency(g.reduce((n,r)=>n+r.projectValue,0))}</td></tr>})}</tbody></table></div></Card></div>;
+  const analytics=buildOverviewAnalytics(data,{source:"all",campaign:"all"});
+  const rows=analytics.rows;
+  const months=[...new Set(rows.map(r=>r.lead.date.slice(0,7)).filter(Boolean))].sort().reverse();
+  const paybackByMonth=new Map(analytics.payback.cohorts.map(row=>[row.month,row]));
+  return <div className="space-y-6"><Funnel data={data}/>
+    {analytics.cohort.supplierOnly>0&&<div className="callout"><CircleDollarSign size={18}/><div><strong>{formatNumber(analytics.cohort.supplierOnly)} known supplier leads have no reliable acquisition month.</strong><p>They remain in total acquired-lead reporting but are excluded from monthly cohorts until an acquisition date exists.</p></div></div>}
+    <Card className="p-5"><SectionHeader title="Acquisition cohorts" description="The cohort month is the lead-acquisition month. Later wins, project value, invoices and paid value stay attached to that original month."/><div className="table-scroll"><table><thead><tr><th>Cohort</th><th>CRM-tracked people</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>CRM signed</th><th>Customers won to date</th><th>Project value</th><th>Invoiced</th><th>Paid</th><th>Spend evidence</th></tr></thead><tbody>{months.map(m=>{const g=rows.filter(r=>r.lead.date.startsWith(m));const p=paybackByMonth.get(m);return <tr key={m}><td className="font-semibold">{monthName(m)}</td><td>{g.length}</td><td>{g.filter(r=>r.hasVisit).length}</td><td>{g.filter(r=>r.offers.length>0).length}</td><td>{g.filter(r=>r.offers.some(o=>Boolean(o.sentAt))).length}</td><td>{g.filter(r=>r.isSigned).length}</td><td>{p?.customers??0}</td><td className="font-semibold">{formatCurrency(p?.projectValue??0)}</td><td>{formatCurrency(p?.invoiced??0)}</td><td>{formatCurrency(p?.paid??0)}</td><td>{p?.acquisitionSpend===null||p?.acquisitionSpend===undefined?"Not allocated":formatCurrency(p.acquisitionSpend)+(p.spendState==="synced-only"?" · synced only":"")}</td></tr>})}</tbody></table></div></Card>
+  </div>;
 }
 
 export function SalesTeamPage({ data }: { data: CompanyDataset }) {
