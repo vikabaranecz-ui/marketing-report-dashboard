@@ -189,6 +189,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
   for(const source of sourceEvidenceSources){
     if(bySource.has(source))continue;
     const manual=sourceSpendOverride(data,source);
+    const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
     const delivered=sourceNumericOverride(data,source,"delivered_leads");
     const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
     const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
