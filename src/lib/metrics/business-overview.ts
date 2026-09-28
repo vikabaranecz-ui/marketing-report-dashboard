@@ -570,7 +570,7 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,
       return {...item,customers:item.customers.size,acquisitionSpend,spendState};
     }),
     series,
-    acquisitionSpendReference:coveredSpend>0?coveredSpend:null,
+    acquisitionSpendReference:selectedSingleMonth&&coveredSpend>0?coveredSpend:null,
     paymentTimingAvailable:false,
   };
 }
