@@ -14,6 +14,7 @@ import {
 } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, safeDivide } from "@/lib/metrics/kpis";
 import { hasOfferSentEvidence } from "@/lib/metrics/client-funnel";
+import { isWonClient } from "@/lib/metrics/commercial-truth";
 import { Card, SectionHeader, StatusPill } from "./ui";
 import {
   BusinessActivityChart, CohortPaybackChart, CostOutcomeChart, SourceDecisionQuadrant, SourcePerformanceChart,
@@ -53,20 +54,23 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const selectedOffers=(data.commercialOffers??[]).filter(item=>selectedLeadIds.has(item.leadId));
   const selectedSentOffers=selectedOffers.filter(hasOfferSentEvidence);
   const selectedClients=clientsForRows(data,analytics.rows);
-  const attributableClients=(data.commercialClients??[]).filter(client=>analytics.economics.attributableClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+  const wonClients=(data.commercialClients??[]).filter(client=>analytics.economics.wonClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+  const sourceAttributedWonClients=(data.commercialClients??[]).filter(client=>analytics.economics.sourceAttributedClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+  const paidSourceWonClients=(data.commercialClients??[]).filter(client=>analytics.economics.paidSourceWonClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
+  const datedCohortClients=(data.commercialClients??[]).filter(client=>analytics.economics.datedCohortClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const coveredSourceSet=new Set(analytics.economics.coveredSources);
   const coveredRows=campaignFilter!=="all"?analytics.rows:analytics.rows.filter(row=>coveredSourceSet.has(normalizeAcquisitionSource(row.lead.source)));
   const coveredLeadIds=new Set(coveredRows.flatMap(row=>row.leadIds));
   const coveredSentOffers=selectedSentOffers.filter(item=>coveredLeadIds.has(item.leadId));
   const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=now);
   const outstandingInvoices=analytics.business.invoices.filter(item=>netInvoice(item)>item.paidTotal);
-  const unattributedWon=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&!resolvedClientSource(data,client));
+  const unattributedWon=(data.commercialClients??[]).filter(client=>isWonClient(client)&&!resolvedClientSource(data,client));
   const undatedCohortClients=sourceRows.reduce((sum,row)=>sum+row.undatedClients,0);
   const acquisitionDateConflicts=analytics.allRows.filter(row=>row.hasAcquisitionDateConflict).length;
   const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);
   const affectedCoverageClients=coverageGapClients(data);
   const integrationIssues=data.integrations.filter(item=>item.status!=="Connected"||!item.lastSuccess);
-  const commercialLedgerClients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON");
+  const commercialLedgerClients=(data.commercialClients??[]).filter(isWonClient);
   const paidLedgerClients=commercialLedgerClients.filter(client=>client.paidTotal>0).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const invoicedLedgerClients=commercialLedgerClients.filter(client=>client.invoicedTotal>0).sort((a,b)=>b.invoicedTotal-a.invoicedTotal||a.name.localeCompare(b.name));
 
@@ -88,11 +92,13 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         isManualSpend:false,recurringSpend:0,
         leads:analytics.cohort.unique,deliveredLeads:null,supplierOnlyLeads:0,supplierMatchedPeople:null,leadCountNote:"",qualified:analytics.cohort.qualified,visits:analytics.cohort.visits,
         offers:analytics.cohort.offers,customers:analytics.cohort.customers,
-        sourceKnownClients:analytics.economics.attributableCustomers,
-        sourceClientIds:analytics.economics.attributableClientIds,
-        attributableClients:analytics.economics.attributableCustomers,
-        undatedClients:0,
-        clientIds:analytics.economics.attributableClientIds,
+        sourceKnownClients:analytics.economics.wonCustomers,
+        wonClients:analytics.economics.wonCustomers,
+        sourceClientIds:analytics.economics.wonClientIds,
+        attributableClients:analytics.economics.datedCohortCustomers,
+        datedCohortClients:analytics.economics.datedCohortCustomers,
+        undatedClients:Math.max(0,analytics.economics.wonCustomers-analytics.economics.datedCohortCustomers),
+        clientIds:analytics.economics.datedCohortClientIds,
         sourceProjectValueExclVat:analytics.economics.cohortValueExclVat,
         sourceProjectValueInclVat:analytics.cohort.projectValueInclVat,
         sourceInvoicedValue:analytics.cohort.invoicedToDate,
@@ -168,16 +174,19 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <div className="executive-group is-marketing">
           <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>Leads acquired in selected period · lifetime outcomes</small></div>
           <div className="executive-group-metrics">
-            <SummaryMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Known paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
+            <SummaryMetric label="Covered paid-source spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Bank/synced paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
             <SummaryMetric label="Known acquired leads" value={formatNumber(analytics.cohort.knownAcquired)} note={analytics.cohort.supplierOnly?formatNumber(analytics.cohort.unique)+" CRM-tracked · "+formatNumber(analytics.cohort.supplierOnly)+" supplier-only":formatNumber(analytics.cohort.unique)+" CRM-tracked"} onClick={()=>openMilestone("acquired")}/>
-            <SummaryMetric label="Attributable customers" value={formatNumber(analytics.economics.attributableCustomers)} onClick={()=>setDrilldown({title:"Attributable customers",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
-            <SummaryMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / attributable customers" onClick={()=>setDrilldown({title:"Cohort CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
-            <SummaryMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Lifetime paid value / covered spend" onClick={()=>setDrilldown({title:"Cohort cash ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+            <SummaryMetric label="Won clients" value={formatNumber(analytics.economics.wonCustomers)} note="ROBAWS project or invoice evidence" onClick={()=>setDrilldown({title:"Won clients",subtitle:scopeLabel,initialKind:"clients",clients:wonClients})}/>
+            <SummaryMetric label="Source-attributed won" value={formatNumber(analytics.economics.sourceAttributedCustomers)} note="Won clients with a known source" onClick={()=>setDrilldown({title:"Source-attributed won clients",subtitle:scopeLabel,initialKind:"clients",clients:sourceAttributedWonClients})}/>
+            <SummaryMetric label="Paid-source won" value={formatNumber(analytics.economics.paidSourceWonCustomers)} note="Denominator for paid-source CAC" onClick={()=>setDrilldown({title:"Paid-source won clients",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+            <SummaryMetric label="Dated cohort won" value={formatNumber(analytics.economics.datedCohortCustomers)} note="Won clients with a trusted acquisition month" onClick={()=>setDrilldown({title:"Dated acquisition-cohort won clients",subtitle:scopeLabel,initialKind:"clients",clients:datedCohortClients})}/>
+            <SummaryMetric label="Paid-source CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / paid-source won clients" onClick={()=>setDrilldown({title:"Paid-source CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
           </div>
         </div>
       </div>
       <div className="ledger-strip">
-        <div className="ledger-strip-label"><span>ROBAWS commercial ledger · all time</span><small>Separate from selected-period business activity</small></div>
+        <div className="ledger-strip-label"><span>ROBAWS commercial ledger · all time</span><small>{formatNumber(analytics.commercialLedger.commercialStatusClients.length)} ROBAWS commercial-status records · {formatNumber(analytics.commercialLedger.acceptedPendingClientCount)} accepted-only awaiting project/invoice evidence</small></div>
+        <SummaryMetric label="Won clients" value={formatNumber(analytics.commercialLedger.wonClientCount)} note={formatNumber(analytics.commercialLedger.projectBackedClientCount)+" project-backed"} onClick={()=>setDrilldown({title:"Realized won clients",subtitle:"ROBAWS project or invoice evidence",initialKind:"clients",clients:analytics.commercialLedger.clients})}/>
         <SummaryMetric label="Paid value" value={formatCurrency(analytics.commercialLedger.paid)} note={formatNumber(analytics.commercialLedger.payingClients)+" paying client(s)"} onClick={()=>setDrilldown({title:"Clients behind all-time paid value",subtitle:"ROBAWS commercial ledger · current paid_total, no payment-date filter",initialKind:"clients",clients:paidLedgerClients})}/>
         <SummaryMetric label="Invoiced" value={formatCurrency(analytics.commercialLedger.invoiced)} onClick={()=>setDrilldown({title:"Clients behind all-time invoiced value",subtitle:"ROBAWS commercial ledger",initialKind:"clients",clients:invoicedLedgerClients})}/>
         <SummaryMetric label="Project detail value" value={formatCurrency(analytics.commercialLedger.projectValue)} note={analytics.commercialLedger.projectValueGap>0?"Client aggregate differs by "+formatCurrency(analytics.commercialLedger.projectValueGap):"Detailed projects reconcile"} onClick={()=>setDrilldown({title:"ROBAWS project records",subtitle:"Detailed project rows · all time",projects:data.allCommercialProjects??[]})}/>
@@ -225,17 +234,17 @@ export function OverviewPage({data}:{data:CompanyDataset}){
       </Card>
 
       <Card className="p-5">
-        <SectionHeader title="Acquisition value flow" description="Marketing spend → acquired people → customers → customer value. This is cohort performance, not calendar-period company revenue."/>
+        <SectionHeader title="Acquisition truth" description="Won status, source attribution and acquisition-month attribution are separate facts. Missing a source or month never makes a real ROBAWS client disappear."/>
         <div className="acquisition-flow">
-          <FlowStep label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} tone="yellow"/>
-          <ArrowRight size={16}/>
           <FlowStep label="Known acquired" value={formatNumber(analytics.cohort.knownAcquired)} note={formatNumber(analytics.cohort.unique)+" CRM tracked"}/>
           <ArrowRight size={16}/>
-          <FlowStep label="Customers" value={formatNumber(analytics.economics.attributableCustomers)}/>
+          <FlowStep label="Won clients" value={formatNumber(analytics.economics.wonCustomers)} note="project/invoice evidence"/>
           <ArrowRight size={16}/>
-          <FlowStep label="Project value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note="excl. VAT"/>
+          <FlowStep label="Known source" value={formatNumber(analytics.economics.sourceAttributedCustomers)} note="manual source wins"/>
           <ArrowRight size={16}/>
-          <FlowStep label="Lifetime paid value" value={formatCurrency(analytics.economics.cohortPaidValue)} note="invoice paid_total"/>
+          <FlowStep label="Paid-source won" value={formatNumber(analytics.economics.paidSourceWonCustomers)} note="CAC denominator"/>
+          <ArrowRight size={16}/>
+          <FlowStep label="Dated cohort won" value={formatNumber(analytics.economics.datedCohortCustomers)} note="monthly cohort eligible"/>
         </div>
         {analytics.economics.missingCostSources.length>0&&<div className="cost-missing-note"><AlertTriangle size={15}/><span>Cost missing for {analytics.economics.missingCostSources.join(", ")}. Cost-based metrics exclude those sources rather than treating them as €0.</span></div>}
       </Card>
@@ -250,10 +259,11 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <EconomicsMetric label="Cost / qualified" value={nullableCurrency(analytics.economics.costQualified)} note={String(analytics.economics.coveredQualified)+" covered qualified"} onClick={()=>setDrilldown({title:"Covered qualified leads",subtitle:scopeLabel,leads:coveredRows.filter(item=>item.isQualified).map(item=>item.lead),spendRows:spendRows.filter(item=>item.state==="known")})}/>
         <EconomicsMetric label="Cost / visit" value={nullableCurrency(analytics.economics.costVisit)} note={String(analytics.economics.coveredVisits)+" covered visits"} onClick={()=>setDrilldown({title:"Covered visit evidence",subtitle:scopeLabel,leads:coveredRows.filter(hasCompletedVisitEvidence).map(item=>item.lead),appointments:(data.commercialAppointments??[]).filter(item=>coveredLeadIds.has(item.leadId)&&Boolean(item.completedAt)),spendRows:spendRows.filter(item=>item.state==="known")})}/>
         <EconomicsMetric label="Cost / offer" value={nullableCurrency(analytics.economics.costOffer)} note={String(analytics.economics.coveredOffers)+" covered offers"} onClick={()=>setDrilldown({title:"Covered offers",subtitle:scopeLabel,offers:coveredSentOffers,spendRows:spendRows.filter(item=>item.state==="known")})}/>
-        <EconomicsMetric label="Cohort CAC" value={nullableCurrency(analytics.economics.cac)} note={String(analytics.economics.attributableCustomers)+" attributable customers"} onClick={()=>setDrilldown({title:"Cohort CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
-        <EconomicsMetric label="Cohort value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note="Project value · excl. VAT where available" onClick={()=>setDrilldown({title:"Cohort customer value",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
-        <EconomicsMetric label="Cohort paid value" value={formatCurrency(analytics.economics.cohortPaidValue)} note="Lifetime invoice paid_total · incl. VAT" onClick={()=>setDrilldown({title:"Cohort paid value",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients})}/>
-        <EconomicsMetric label="Cohort cash ROAS to date" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Paid value / covered acquisition spend" onClick={()=>setDrilldown({title:"Cohort cash ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:attributableClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Paid-source CAC" value={nullableCurrency(analytics.economics.cac)} note={String(analytics.economics.paidSourceWonCustomers)+" won clients from covered paid sources"} onClick={()=>setDrilldown({title:"Paid-source CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Paid-source project value" value={formatCurrency(analytics.economics.paidSourceProjectValueExclVat)} note="Detailed ROBAWS project value · excl. VAT" onClick={()=>setDrilldown({title:"Paid-source won clients",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients})}/>
+        <EconomicsMetric label="Paid-source paid value" value={formatCurrency(analytics.economics.paidSourcePaidValue)} note="Lifetime paid_total for paid-source won clients" onClick={()=>setDrilldown({title:"Paid-source paid value",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients})}/>
+        <EconomicsMetric label="Paid-source paid ROAS" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Paid-source paid value / covered spend" onClick={()=>setDrilldown({title:"Paid-source ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+        <EconomicsMetric label="Dated cohort project value" value={formatCurrency(analytics.economics.cohortValueExclVat)} note={String(analytics.economics.datedCohortCustomers)+" dated cohort won client(s)"} onClick={()=>setDrilldown({title:"Dated cohort value",subtitle:scopeLabel,initialKind:"clients",clients:datedCohortClients})}/>
       </div>
       <Card className="mt-4 p-5">
         <SectionHeader title="Cost to reach each outcome" description="Bar length shows acquisition cost per increasingly valuable outcome. This is not a funnel."/>
@@ -262,7 +272,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           {name:"Qualified lead",value:analytics.economics.costQualified},
           {name:"Visit",value:analytics.economics.costVisit},
           {name:"Offer",value:analytics.economics.costOffer},
-          {name:"Customer",value:analytics.economics.cac},
+          {name:"Won client",value:analytics.economics.cac},
         ]}/>
       </Card>
     </section>
@@ -311,13 +321,13 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           <p className="chart-footnote">Yellow = covered spend. Black = full lifetime paid value for source-known clients. Monthly cohort CAC/ROAS below remains limited to clients with a trustworthy acquisition month.</p>
           <button type="button" className="button-secondary" onClick={()=>setShowSourceTable(value=>!value)}>{showSourceTable?"Hide detailed table":"Show detailed table"}</button>
         </div>
-        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Source-known clients</th><th>Dated cohort clients</th><th>Source project value excl. VAT</th><th>Source paid value</th><th>Cohort project value excl. VAT</th><th>Cohort paid value</th><th>CPL</th><th>Source CAC</th><th>Cohort CAC</th><th>Source paid ROAS</th><th>Cohort paid ROAS</th></tr></thead><tbody>
-          {sortedSources.map(row=>{const sourceCac=row.spend===null?null:safeDivide(row.spend,row.sourceKnownClients);const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;return <tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.deliveredLeads===null&&row.leads===0&&row.sourceKnownClients>0?<><StatusPill tone="warn">Lead count missing</StatusPill><small className="block text-[var(--muted)]">Source-known client exists; no CRM/supplier lead count</small></>:<>{row.deliveredLeads??row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.leads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.sourceKnownClients}</td><td>{row.attributableClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(sourceCac)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(sourceRoas)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>})}
+        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Won clients</th><th>Dated cohort won</th><th>Source project value excl. VAT</th><th>Source paid value</th><th>Cohort project value excl. VAT</th><th>Cohort paid value</th><th>CPL</th><th>Source CAC</th><th>Cohort CAC</th><th>Source paid ROAS</th><th>Cohort paid ROAS</th></tr></thead><tbody>
+          {sortedSources.map(row=>{const sourceCac=row.spend===null?null:safeDivide(row.spend,row.wonClients);const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;return <tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.deliveredLeads===null&&row.leads===0&&row.sourceKnownClients>0?<><StatusPill tone="warn">Lead count missing</StatusPill><small className="block text-[var(--muted)]">Source-known client exists; no CRM/supplier lead count</small></>:<>{row.deliveredLeads??row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.leads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.wonClients}</td><td>{row.datedCohortClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(sourceCac)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(sourceRoas)}</td><td>{nullableRatio(row.cohortCashRoas)}</td></tr>})}
         </tbody></table>{sortedSources.some(row=>row.deliveredLeads!==null)&&<p className="chart-footnote mt-3">Supplier-reported lead counts are shown when verified source evidence exists. Known acquired-lead totals add only supplier-only people that are absent from CRM; matched supplier people are not counted twice. Qualified, visit and offer counts remain CRM-backed.</p>}</div>}
       </Card>
       <Card className="mt-4 p-5">
-        <SectionHeader title="Source decision quadrant" description="CAC on the X axis and attributable paid value on the Y axis. Median lines are descriptive references, not targets."/>
-        <SourceDecisionQuadrant data={sortedSources.map(row=>({source:row.source,cac:row.cac,paid:row.paidValue,customers:row.attributableClients}))}/>
+        <SectionHeader title="Source decision quadrant" description="Full-source CAC on the X axis and source paid value on the Y axis. Median lines are descriptive references, not targets."/>
+        <SourceDecisionQuadrant data={sortedSources.map(row=>({source:row.source,cac:row.cac,paid:row.sourcePaidValue,customers:row.wonClients}))}/>
       </Card>
     </section>
 
@@ -341,7 +351,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         {analytics.business.notYetInvoicedPeriodGap>0&&<ActionButton title="Won value exceeds period invoicing" value={formatCurrency(analytics.business.notYetInvoicedPeriodGap)} detail="Aggregate calendar-period gap. It is not labelled lost because invoice timing can lag project wins." onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>}
         {analytics.business.outstanding>0&&<ActionButton title="Outstanding on period invoices" value={formatCurrency(analytics.business.outstanding)} detail="Current unpaid balance on invoices dated in the selected period." onClick={()=>setDrilldown({title:"Outstanding period invoices",subtitle:data.periodLabel,invoices:outstandingInvoices})}/>}
         {analytics.economics.missingCostSources.length>0&&<ActionButton title="Source cost missing" value={formatNumber(analytics.economics.missingCostSources.length)} detail="CAC and cohort cash ROAS cannot be calculated for these paid sources." onClick={()=>setDrilldown({title:"Sources with missing cost",subtitle:scopeLabel,initialKind:"spend",spendRows:spendRows.filter(item=>item.state==="missing")})}/>}
-        {unattributedWon.length>0&&<ActionButton title="Commercial customers without safe source" value={formatNumber(unattributedWon.length)} detail={formatCurrency(unattributedPaid)+" paid value cannot be safely assigned to acquisition."} onClick={()=>setDrilldown({title:"Customers without acquisition source",subtitle:"ROBAWS commercial customers",initialKind:"clients",clients:unattributedWon})}/>}
+        {unattributedWon.length>0&&<ActionButton title="Won clients without known source" value={formatNumber(unattributedWon.length)} detail={formatCurrency(unattributedPaid)+" paid value cannot be safely assigned to acquisition."} onClick={()=>setDrilldown({title:"Won clients without acquisition source",subtitle:"ROBAWS commercial customers",initialKind:"clients",clients:unattributedWon})}/>}
         {undatedCohortClients>0&&<ActionLink title="Source-known clients without trusted acquisition month" value={formatNumber(undatedCohortClients)} detail="They stay visible under their source but are excluded from monthly cohort CAC/ROAS until a trustworthy lead-acquisition date exists." href={scopedHref("/data-health")}/>}
         {acquisitionDateConflicts>0&&<ActionLink title="Acquisition date conflicts" value={formatNumber(acquisitionDateConflicts)} detail="Client evidence predates the linked CRM lead date. These records are excluded from cohort-month attribution." href={scopedHref("/data-health")}/>}
         {(analytics.coverage.missingInvoices>0||analytics.coverage.missingProjects>0)&&<ActionButton title="ROBAWS detail coverage incomplete" value={String(analytics.coverage.loadedInvoices)+"/"+String(analytics.coverage.expectedInvoices)+" invoices"} detail={String(analytics.coverage.missingInvoices)+" invoice row(s) and "+String(analytics.coverage.missingProjects)+" project row(s) are not represented in the detailed snapshot."} onClick={()=>setDrilldown({title:"Clients affected by ROBAWS detail gaps",subtitle:"Reconciliation coverage",initialKind:"clients",clients:affectedCoverageClients})}/>}
