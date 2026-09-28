@@ -7,6 +7,7 @@ import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
+import { isWonClient } from "@/lib/metrics/commercial-truth";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { IntegrationCenter } from "./integration-center";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
@@ -20,7 +21,8 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const appointments = rows.filter(hasAppointmentEvidence).length;
   const completedVisits = rows.filter(hasCompletedVisitEvidence).length;
   const sentOffers = rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
-  const commercialClients = rows.filter(row => row.isCommercialClient).length;
+  const crmLinkedWonClients = rows.filter(row => row.isCommercialClient).length;
+  const allWonClients = (data.commercialClients??[]).filter(isWonClient);
   const stages = [
     { label:"Known acquired leads", value:acquisition.cohort.knownAcquired, note:`${summary.uniquePeople} CRM-tracked · ${acquisition.cohort.supplierOnly} supplier-only` },
     { label:"CRM tracked", value:summary.uniquePeople, note:"Deduplicated CRM people with acquisition date" },
@@ -30,7 +32,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
     { label:"Offers sent", value:sentOffers, note:"ROBAWS status / sent date or CRM offer-stage evidence" },
     { label:"Accepted", value:summary.acceptedOffers, note:"Accepted commercial offer" },
     { label:"CRM signed", value:summary.crmSigned, note:"Monday status = signed" },
-    { label:"ROBAWS clients", value:commercialClients, note:"Commercially confirmed" },
+    { label:"CRM-linked won", value:crmLinkedWonClients, note:"ROBAWS project/invoice evidence linked to this CRM cohort" },
   ];
   const notRelevant = rows.filter(row => row.isNotRelevant).length;
   const neverContacted = rows.filter(row => normalized(row.lead.crmStatus)==="nog geen contact").length;
@@ -42,7 +44,8 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
 
   return <div className="space-y-6">
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Lead → client funnel" description="Each transition is shown separately so leakage cannot hide inside one generic conversion rate."/></div>
+      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Lead → client funnel" description="CRM stages stay separate from the full ROBAWS client count. Missing CRM attribution never removes a real won client."/></div>
+      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} realized won clients in ROBAWS</strong><span className="ml-2 text-xs">project or invoice/payment evidence · {formatNumber(crmLinkedWonClients)} linked to CRM people in this selected acquisition period</span></div>
       <div className="control-funnel">
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
@@ -64,7 +67,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
             leads:relevant.map(row=>row.lead),
             appointments:["Appointments","Visits"].includes(stage.label)?(data.commercialAppointments??[]).filter(item=>leadIds.has(item.leadId)):undefined,
             offers:["Offers sent","Accepted"].includes(stage.label)?relevant.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index):undefined,
-            clients:stage.label==="ROBAWS clients"?(data.commercialClients??[]).filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))):undefined,
+            clients:stage.label==="CRM-linked won"?(data.commercialClients??[]).filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))):undefined,
           };
           return <button type="button" className="control-funnel-stage drillable text-left" key={stage.label} onClick={()=>setDrilldown(selection)}>
             <span>{stage.label}</span>
@@ -124,20 +127,22 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
-  const sourceKnownClients=sources.reduce((sum,row)=>sum+row.commercialClients,0);
+  const wonClientsInRows=sources.reduce((sum,row)=>sum+row.commercialClients,0);
+  const sourceKnownClients=sources.filter(row=>hasSafeAcquisitionSource(row.source)).reduce((sum,row)=>sum+row.commercialClients,0);
+  const unknownSourceClients=wonClientsInRows-sourceKnownClients;
   const datedCohortClients=sources.reduce((sum,row)=>sum+row.attributedClients,0);
   const undatedSourceClients=sources.reduce((sum,row)=>sum+row.undatedClients,0);
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
 
   return <div className="space-y-6">
-    <div className="callout"><AlertTriangle size={18}/><div><strong>{sourceKnownClients} source-known commercial client(s) are visible in this acquisition scope.</strong><p>{datedCohortClients} client(s) have a trusted acquisition date and can drive cohort CAC/ROAS. {undatedSourceClients} source-known client(s) have no trustworthy acquisition month and remain visible but excluded from cohort economics.</p></div></div>
+    <div className="callout"><AlertTriangle size={18}/><div><strong>{wonClientsInRows} won client(s): {sourceKnownClients} known source · {unknownSourceClients} unknown source.</strong><p>{datedCohortClients} won client(s) have a trusted acquisition month. The other {undatedSourceClients} stay in source/year totals but are not forced into a false month.</p></div></div>
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Marketing outcomes follow the acquisition source and acquisition cohort. Supplier-delivered counts are used when verified; downstream stages remain CRM-backed. Later project value stays with the month/source that acquired the lead."/>
       <div className="table-scroll"><table className="wide-decision-table">
-        <thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>Source-known clients</th><th>Dated cohort clients</th><th>Source project € excl. VAT</th><th>Source paid value €</th><th>Cohort project € excl. VAT</th><th>Cohort paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>Source CAC</th><th>Cohort CAC</th><th>Pipeline ROAS</th><th>Source paid ROAS</th><th>Cohort paid ROAS</th></tr></thead>
+        <thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Signed</th><th>Won clients</th><th>Dated cohort won</th><th>Source project € excl. VAT</th><th>Source paid value €</th><th>Cohort project € excl. VAT</th><th>Cohort paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>Source CAC</th><th>Cohort CAC</th><th>Pipeline ROAS</th><th>Source paid ROAS</th><th>Cohort paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
-          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON"&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||(data.periodKey==="ytd"&&decisionSource(manualRobawsSource(data,client)??"")===row.source))).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
+          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>isWonClient(client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||(data.periodKey==="ytd"&&decisionSource(manualRobawsSource(data,client)??"")===row.source))).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
           <td>{row.deliveredLeads===null&&row.crmLeads===0&&row.commercialClients>0?<><StatusPill tone="warn">Lead count missing</StatusPill><small className="block text-[var(--muted)]">Source-known client exists</small></>:<>{row.leads}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{row.crmLeads} CRM-tracked · {row.supplierOnlyLeads} supplier-only</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.signed}</td><td>{row.commercialClients}</td><td>{row.attributedClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td>
@@ -228,7 +233,7 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const acquisitionDateConflictRows=rows.filter(row=>row.hasAcquisitionDateConflict);
   const signedUnconfirmed=signedUnconfirmedRows.length;
   const unmatchedClients=clients.filter(client=>!client.matchedLeadId).length;
-  const wonClients=clients.filter(client=>client.commercialStatus==="CLIENT_WON");
+  const wonClients=clients.filter(isWonClient);
   const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
   const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
   const supplierVerifiedSourceOverrides=sourceOverrides.filter(item=>item.note.toLowerCase().includes("agenciyou workbook"));
@@ -350,8 +355,8 @@ export function sourceBusinessRows(data:CompanyDataset,rows:JourneyRow[]):Source
     sentValue:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source).reduce((sum,item)=>sum+item.sentOfferValue,0),
     openValue:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source).reduce((sum,item)=>sum+item.openOfferValue,0),
     signed:rows.filter(item=>normalizeAcquisitionSource(item.lead.source)===row.source&&item.isSigned).length,
-    commercialClients:row.sourceKnownClients,
-    attributedClients:row.attributableClients,
+    commercialClients:row.wonClients,
+    attributedClients:row.datedCohortClients,
     undatedClients:row.undatedClients,
     sourceProjectValue:row.sourceProjectValueExclVat,
     sourcePaid:row.sourcePaidValue,
@@ -480,8 +485,8 @@ function ManualOverridesPanel({data}:{data:CompanyDataset}){
 }
 
 function RevenueClientTable({data}:{data:CompanyDataset}) {
-  const clients=(data.commercialClients??[]).filter(client=>client.commercialStatus==="CLIENT_WON").sort((a,b)=>b.projectValueTotal-a.projectValueTotal||b.paidTotal-a.paidTotal);
-  if(!clients.length) return <EmptyState title="No commercial clients" body="ROBAWS CLIENT_WON rows appear here after commercial sync."/>;
+  const clients=(data.commercialClients??[]).filter(isWonClient).sort((a,b)=>b.projectValueTotal-a.projectValueTotal||b.paidTotal-a.paidTotal);
+  if(!clients.length) return <EmptyState title="No won clients" body="ROBAWS clients appear here after a project, invoice or paid-value record exists."/>;
   return <div className="table-scroll"><table><thead><tr><th>Client</th><th>Reporting source</th><th>CRM link</th><th>Match</th><th>Accepted offer €</th><th>Project detail €</th><th>Client aggregate €</th><th>Gap €</th><th>Invoiced €</th><th>Paid value €</th><th>Acquisition month</th></tr></thead><tbody>
     {clients.map(client=>{
       const lead=client.matchedLeadId?data.leads.find(item=>item.id===client.matchedLeadId):undefined;
