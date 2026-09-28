@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
-import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { isWonClient } from "@/lib/metrics/commercial-truth";
@@ -15,7 +15,6 @@ import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown"
 
 export function FunnelPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
-  const summary = buildFunnelSummary(data);
   const acquisition = buildOverviewAnalytics(data,{source:"all",campaign:"all"});
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   const paidRows=rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
