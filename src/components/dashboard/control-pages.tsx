@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildFunnelSummary, buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
-import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource } from "@/lib/metrics/business-overview";
+import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { isWonClient } from "@/lib/metrics/commercial-truth";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
@@ -18,21 +18,20 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const summary = buildFunnelSummary(data);
   const acquisition = buildOverviewAnalytics(data,{source:"all",campaign:"all"});
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
-  const appointments = rows.filter(hasAppointmentEvidence).length;
-  const completedVisits = rows.filter(hasCompletedVisitEvidence).length;
-  const sentOffers = rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
-  const crmLinkedWonClients = rows.filter(row => row.isCommercialClient).length;
+  const paidRows=rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
+  const completedVisits = paidRows.filter(hasCompletedVisitEvidence).length;
+  const offersCreated = paidRows.filter(row=>row.offers.length>0).length;
+  const sentOffers = paidRows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
   const allWonClients = (data.commercialClients??[]).filter(isWonClient);
+  const paidWonClients=allWonClients.filter(client=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(manualRobawsSource(data,client)??(client.matchedLeadId?data.leads.find(lead=>lead.id===client.matchedLeadId)?.source??"":""))));
   const stages = [
-    { label:"Known acquired leads", value:acquisition.cohort.knownAcquired, note:`${summary.uniquePeople} CRM-tracked · ${acquisition.cohort.supplierOnly} supplier-only` },
-    { label:"CRM tracked", value:summary.uniquePeople, note:"Deduplicated CRM people with acquisition date" },
-    { label:"Qualified", value:summary.qualified, note:"Relevant / progressed CRM people" },
-    { label:"Appointments", value:appointments, note:"Booked appointment evidence" },
+    { label:"Known paid acquired", value:acquisition.cohort.knownPaidAcquired, note:`${acquisition.cohort.paidCrmTracked} CRM-tracked · ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads` },
+    { label:"CRM tracked", value:acquisition.cohort.paidCrmTracked, note:"Paid-source CRM people only" },
+    { label:"Qualified", value:acquisition.cohort.qualified, note:"Relevant / progressed paid-source CRM people" },
     { label:"Visits", value:completedVisits, note:"Completed / post-visit evidence" },
-    { label:"Offers sent", value:sentOffers, note:"ROBAWS status / sent date or CRM offer-stage evidence" },
-    { label:"Accepted", value:summary.acceptedOffers, note:"Accepted commercial offer" },
-    { label:"CRM signed", value:summary.crmSigned, note:"Monday status = signed" },
-    { label:"CRM-linked won", value:crmLinkedWonClients, note:"ROBAWS project/invoice evidence linked to this CRM cohort" },
+    { label:"Offer created", value:offersCreated, note:"ROBAWS offer exists" },
+    { label:"Offer sent", value:sentOffers, note:"Sent date / offer-stage evidence" },
+    { label:"Won clients", value:paidWonClients.length, note:"ROBAWS project or invoice/payment evidence" },
   ];
   const notRelevant = rows.filter(row => row.isNotRelevant).length;
   const neverContacted = rows.filter(row => normalized(row.lead.crmStatus)==="nog geen contact").length;
@@ -44,30 +43,28 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
 
   return <div className="space-y-6">
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Lead → client funnel" description="CRM stages stay separate from the full ROBAWS client count. Missing CRM attribution never removes a real won client."/></div>
-      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} realized won clients in ROBAWS</strong><span className="ml-2 text-xs">project or invoice/payment evidence · {formatNumber(crmLinkedWonClients)} linked to CRM people in this selected acquisition period</span></div>
+      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Paid lead → won client funnel" description="Paid acquisition sources only: Meta/Facebook, Google Ads, AgenciYou, LeadAngel and Solary. Supplier-only leads are included at the top. Signed is not a separate stage; ROBAWS won client is the final conversion."/></div>
+      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} company won clients in ROBAWS</strong><span className="ml-2 text-xs">{formatNumber(paidWonClients.length)} came from paid acquisition sources · Signed is not counted as a separate conversion stage</span></div>
       <div className="control-funnel">
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
           const conversion = previous===null ? null : stageConversion(stage.value,previous);
-          const relevant=["Known acquired leads","CRM tracked"].includes(stage.label)?rows
-            :stage.label==="Qualified"?rows.filter(row=>row.isQualified)
-            :stage.label==="Appointments"?rows.filter(hasAppointmentEvidence)
-            :stage.label==="Visits"?rows.filter(hasCompletedVisitEvidence)
-            :stage.label==="Offers sent"?rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead))
-            :stage.label==="Accepted"?rows.filter(row=>row.offers.some(item=>item.isAccepted))
-            :stage.label==="CRM signed"?rows.filter(row=>row.isSigned)
-            :rows.filter(row=>row.isCommercialClient);
+          const relevant=["Known paid acquired","CRM tracked"].includes(stage.label)?paidRows
+            :stage.label==="Qualified"?paidRows.filter(row=>row.isQualified)
+            :stage.label==="Visits"?paidRows.filter(hasCompletedVisitEvidence)
+            :stage.label==="Offer created"?paidRows.filter(row=>row.offers.length>0)
+            :stage.label==="Offer sent"?paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead))
+            :paidRows.filter(row=>row.isCommercialClient);
           const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
           const selection:RecordDrilldown={
             title:stage.label,
-            subtitle:stage.label==="Known acquired leads"
-              ? `${data.periodLabel} · ${summary.uniquePeople} CRM-tracked records shown here; ${acquisition.cohort.supplierOnly} supplier-only leads have no CRM record/acquisition date`
+            subtitle:stage.label==="Known paid acquired"
+              ? `${data.periodLabel} · ${acquisition.cohort.paidCrmTracked} paid-source CRM records shown here; ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads have no CRM record/acquisition date`
               : data.periodLabel,
             leads:relevant.map(row=>row.lead),
-            appointments:["Appointments","Visits"].includes(stage.label)?(data.commercialAppointments??[]).filter(item=>leadIds.has(item.leadId)):undefined,
-            offers:["Offers sent","Accepted"].includes(stage.label)?relevant.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index):undefined,
-            clients:stage.label==="CRM-linked won"?(data.commercialClients??[]).filter(client=>Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))):undefined,
+            appointments:stage.label==="Visits"?(data.commercialAppointments??[]).filter(item=>leadIds.has(item.leadId)):undefined,
+            offers:["Offer created","Offer sent"].includes(stage.label)?relevant.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index):undefined,
+            clients:stage.label==="Won clients"?paidWonClients:undefined,
           };
           return <button type="button" className="control-funnel-stage drillable text-left" key={stage.label} onClick={()=>setDrilldown(selection)}>
             <span>{stage.label}</span>
