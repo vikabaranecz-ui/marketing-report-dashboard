@@ -1,5 +1,6 @@
 import type { CompanyDataset, CommercialClient, CommercialInvoice, CommercialProject } from "@/lib/data/types";
 import { buildJourneyRows, hasLeadOfferEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { isAcceptedPendingClient, isProjectBackedClient, isWonClient } from "@/lib/metrics/commercial-truth";
 import { percentage, safeDivide } from "@/lib/metrics/kpis";
 
 export const PAID_ACQUISITION_SOURCES = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"]);
@@ -60,10 +61,6 @@ export function normalizeAcquisitionSource(source:string){
 export function hasSafeAcquisitionSource(source:string|null|undefined){
   const value=normalizeAcquisitionSource(String(source??"")).trim().toLowerCase();
   return !["","unknown","unattributed","onbekend","n/a","—"].includes(value);
-}
-
-export function isProjectWonClient(client:CommercialClient){
-  return client.projectCount>0;
 }
 
 export function resolvedClientSource(data:CompanyDataset,client:CommercialClient){
@@ -140,7 +137,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
   const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
   const manualOnlyClients=(data.commercialClients??[]).filter(client=>
     data.periodKey==="ytd"
-    && isProjectWonClient(client)
+    && isWonClient(client)
     && clientInSelectedPeriod(data,client)
     && Boolean(manualClientSource(data,client))
     && !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
@@ -313,19 +310,25 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
 }
 
 function buildCommercialLedger(data:CompanyDataset){
-  const clients=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
+  const commercialStatusClients=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
+  const clients=(data.commercialClients??[]).filter(isWonClient);
+  const projectBackedClients=clients.filter(isProjectBackedClient);
+  const acceptedPendingClients=(data.commercialClients??[]).filter(isAcceptedPendingClient);
   const payingClients=clients.filter(item=>item.paidTotal>0);
   const projects=data.allCommercialProjects??[];
   const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
   const projectValueExclVat=projects.reduce((sum,item)=>sum+Number(item.valueExclVat??0),0);
   const clientAggregateProjectValue=clients.reduce((sum,item)=>sum+item.projectValueTotal,0);
   const clientAggregateProjectValueExclVat=clients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0);
-  const projectWonClients=clients.filter(isProjectWonClient);
-  const sourceAttributedWonClients=projectWonClients.filter(client=>hasSafeAcquisitionSource(resolvedClientSource(data,client)));
+  const sourceAttributedWonClients=clients.filter(client=>hasSafeAcquisitionSource(resolvedClientSource(data,client)));
   return {
     clients,
-    projectWonClients,
-    projectWonClientCount:projectWonClients.length,
+    commercialStatusClients,
+    projectBackedClients,
+    acceptedPendingClients,
+    wonClientCount:clients.length,
+    projectBackedClientCount:projectBackedClients.length,
+    acceptedPendingClientCount:acceptedPendingClients.length,
     sourceAttributedWonClientCount:sourceAttributedWonClients.length,
     payingClients:payingClients.length,
     projectValue,
@@ -536,7 +539,7 @@ function buildCoverage(data:CompanyDataset){
 }
 
 function buildAttributionCoverage(data:CompanyDataset,sources:SourcePerformanceRow[]){
-  const won=(data.commercialClients??[]).filter(isProjectWonClient);
+  const won=(data.commercialClients??[]).filter(isWonClient);
   const resolved=won.filter(client=>{
     const manual=manualClientSource(data,client);
     if(manual!==null)return hasSafeAcquisitionSource(manual);
@@ -693,7 +696,7 @@ function clientInSelectedPeriod(data:CompanyDataset,client:CommercialClient){
 function uniqueCommercialClientsForRows(data:CompanyDataset,rows:JourneyRow[]){
   const leadIds=new Set(rows.flatMap(row=>row.leadIds));
   return [...new Map((data.commercialClients??[])
-    .filter(client=>isProjectWonClient(client)&&Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
+    .filter(client=>isWonClient(client)&&Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
     .map(client=>[client.id,client])).values()];
 }
 
