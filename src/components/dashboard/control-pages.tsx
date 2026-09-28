@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
-import { buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferCreatedEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES, resolvedClientSource } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { isWonClient } from "@/lib/metrics/commercial-truth";
@@ -18,11 +18,12 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const acquisition = buildOverviewAnalytics(data,{source:"all",campaign:"all"});
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   const paidRows=rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
-  const completedVisits = paidRows.filter(hasCompletedVisitEvidence).length;
-  const offersCreated = paidRows.filter(row=>row.offers.length>0).length;
-  const sentOffers = paidRows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length;
-  const allWonClients = (data.commercialClients??[]).filter(isWonClient);
-  const paidWonClients=allWonClients.filter(client=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(manualRobawsSource(data,client)??(client.matchedLeadId?data.leads.find(lead=>lead.id===client.matchedLeadId)?.source??"":""))));
+  const completedVisits = acquisition.cohort.visits;
+  const offersCreated = acquisition.cohort.offersCreated;
+  const sentOffers = acquisition.cohort.offers;
+  const allWonClients = acquisition.commercialLedger.clients;
+  const paidWonClientIdSet=new Set(acquisition.economics.paidSourceWonClientIds);
+  const paidWonClients=allWonClients.filter(client=>paidWonClientIdSet.has(client.id));
   const stages = [
     { label:"Known paid acquired", value:acquisition.cohort.knownPaidAcquired, note:`${acquisition.cohort.paidCrmTracked} CRM-tracked · ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads` },
     { label:"CRM tracked", value:acquisition.cohort.paidCrmTracked, note:"Paid-source CRM people only" },
@@ -32,13 +33,13 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
     { label:"Offer sent", value:sentOffers, note:"Sent date / offer-stage evidence" },
     { label:"Won clients", value:paidWonClients.length, note:"ROBAWS project or invoice/payment evidence" },
   ];
-  const notRelevant = rows.filter(row => row.isNotRelevant).length;
-  const neverContacted = rows.filter(row => normalized(row.lead.crmStatus)==="nog geen contact").length;
-  const cancelled = rows.filter(row => normalized(row.lead.crmStatus).includes("afspraak geannuleerd")).length;
-  const noShow = rows.filter(row => row.appointments.some(item => item.noShow)).length;
-  const rejected = rows.filter(row => row.latestOffer?.isRejected).length;
-  const cancelledOffers = rows.filter(row => row.latestOffer?.isCancelled).length;
-  const qualifiedNoOfferRows=rows.filter(row=>row.isQualified&&row.offers.length===0);
+  const notRelevant = paidRows.filter(row => row.isNotRelevant).length;
+  const neverContacted = paidRows.filter(row => normalized(row.lead.crmStatus)==="nog geen contact").length;
+  const cancelled = paidRows.filter(row => normalized(row.lead.crmStatus).includes("afspraak geannuleerd")).length;
+  const noShow = paidRows.filter(row => row.appointments.some(item => item.noShow)).length;
+  const rejected = paidRows.filter(row => row.latestOffer?.isRejected).length;
+  const cancelledOffers = paidRows.filter(row => row.latestOffer?.isCancelled).length;
+  const qualifiedNoOfferRows=paidRows.filter(row=>row.isQualified&&!hasOfferCreatedEvidence(row));
 
   return <div className="space-y-6">
     <Card className="overflow-hidden">
@@ -51,7 +52,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
           const relevant=["Known paid acquired","CRM tracked"].includes(stage.label)?paidRows
             :stage.label==="Qualified"?paidRows.filter(row=>row.isQualified)
             :stage.label==="Visits"?paidRows.filter(hasCompletedVisitEvidence)
-            :stage.label==="Offer created"?paidRows.filter(row=>row.offers.length>0)
+            :stage.label==="Offer created"?paidRows.filter(hasOfferCreatedEvidence)
             :stage.label==="Offer sent"?paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead))
             :paidRows.filter(row=>row.isCommercialClient);
           const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
@@ -80,18 +81,14 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
 
     <div className="grid gap-6 xl:grid-cols-[1.15fr_.85fr]">
       <Card className="p-5">
-        <SectionHeader title="Transition conversion" description="The exact stage where people are being lost."/>
+        <SectionHeader title="Paid conversion evidence" description="Each ratio uses the correct evidence base. CRM stages are not forced into a fake sequential loss funnel when earlier evidence is missing."/>
         <div className="space-y-1">
-          {stages.slice(1).map((stage,index) => {
-            const previous = stages[index];
-            const conversion = stageConversion(stage.value,previous.value);
-            const lost = Math.max(0,previous.value-stage.value);
-            return <div className="transition-row" key={stage.label}>
-              <div><strong>{previous.label} → {stage.label}</strong><span>{index===0?lost+" known leads are supplier-only / not CRM-tracked":lost+" did not progress"}</span></div>
-              <b>{formatPercent(conversion)}</b>
-            </div>;
-          })}
+          {acquisition.conversion.leadRelative.map(item=><div className="transition-row" key={item.key}>
+            <div><strong>{item.label}</strong><span>{formatNumber(item.numerator)} / {formatNumber(item.denominator)}</span></div>
+            <b>{formatPercent(item.rate)}</b>
+          </div>)}
         </div>
+        {!acquisition.conversion.sequentialSupported&&<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><strong>Non-sequential CRM evidence:</strong> a later status can exist without every earlier status being explicitly stored, so no artificial “lost between stages” count is shown.</div>}
       </Card>
 
       <Card className="p-5">
