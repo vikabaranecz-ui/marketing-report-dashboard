@@ -826,7 +826,9 @@ function metaMissingPermissions(provider:string,configuration:Record<string,unkn
 function dashboardPeriod(month: string): DashboardPeriod {
   const today = brusselsDate(new Date());
   const year = today.slice(0,4);
-  const normalized = /^\d{4}-\d{2}$/.test(month) ? month : "ytd";
+  const isMonth = /^\d{4}-\d{2}$/.test(month);
+  const isQuarter = /^\d{4}-Q[1-4]$/.test(month);
+  const normalized = isMonth || isQuarter ? month : "ytd";
 
   if (normalized === "ytd") {
     return {
@@ -835,6 +837,24 @@ function dashboardPeriod(month: string): DashboardPeriod {
       toDate: today,
       fromIso: `${year}-01-01T00:00:00.000Z`,
       toIso: `${today}T23:59:59.999Z`,
+    };
+  }
+
+  if (isQuarter) {
+    const [selectedYearText,quarterText]=normalized.split("-Q");
+    const selectedYear=Number(selectedYearText);
+    const quarter=Number(quarterText);
+    const startMonth=(quarter-1)*3+1;
+    const endMonth=startMonth+2;
+    const fromDate=`${selectedYear}-${String(startMonth).padStart(2,"0")}-01`;
+    const lastDay=new Date(Date.UTC(selectedYear,endMonth,0)).getUTCDate();
+    const quarterEnd=`${selectedYear}-${String(endMonth).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+    const toDate=quarterEnd>today?today:quarterEnd;
+    return {
+      selectedMonth:normalized,
+      fromDate,toDate,
+      fromIso:`${fromDate}T00:00:00.000Z`,
+      toIso:`${toDate}T23:59:59.999Z`,
     };
   }
 
@@ -942,6 +962,14 @@ function previousDashboardPeriod(period: DashboardPeriod): DashboardPeriod {
     };
   }
 
+  if (/^\d{4}-Q[1-4]$/.test(period.selectedMonth)) {
+    const [yearText,quarterText]=period.selectedMonth.split("-Q");
+    const year=Number(yearText),quarter=Number(quarterText);
+    const previousQuarter=quarter===1?4:quarter-1;
+    const previousYear=quarter===1?year-1:year;
+    return dashboardPeriod(`${previousYear}-Q${previousQuarter}`);
+  }
+
   const [year, month] = period.selectedMonth.split("-").map(Number);
   const previousMonthDate = new Date(Date.UTC(year, month - 2, 1));
   const previousYear = previousMonthDate.getUTCFullYear();
@@ -968,11 +996,11 @@ function availableDashboardMonths() {
   const today = brusselsDate(new Date());
   const year = Number(today.slice(0,4));
   const currentMonth = Number(today.slice(5,7));
-  const months = ["ytd"];
-  for (let month = 1; month <= currentMonth; month += 1) {
-    months.push(`${year}-${String(month).padStart(2,"0")}`);
-  }
-  return months.reverse();
+  const currentQuarter=Math.ceil(currentMonth/3);
+  const values=["ytd"];
+  for(let quarter=currentQuarter;quarter>=1;quarter-=1) values.push(`${year}-Q${quarter}`);
+  for(let month=currentMonth;month>=1;month-=1) values.push(`${year}-${String(month).padStart(2,"0")}`);
+  return values;
 }
 
 function brusselsDate(date: Date) {
