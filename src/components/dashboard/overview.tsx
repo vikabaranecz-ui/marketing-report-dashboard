@@ -479,8 +479,11 @@ function trustIntegration(label:string,integration:CompanyDataset["integrations"
   return{label,state:"Complete" as TrustState,detail:"Last successful sync: "+formatTimestamp(integration.lastSuccess)};
 }
 function reconciliationTrust(value:ReturnType<typeof buildOverviewAnalytics>["reconciliation"]){
-  const ok=(!value.spendComparable||(value.coveredSpendDifference===0&&value.sourceCustomerDifference===0))&&value.periodProjectValueDifference===0&&value.periodInvoiceValueDifference===0;
-  return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?(value.spendComparable?"Source spend and period project/invoice aggregates reconcile to their underlying records.":"Period project/invoice aggregates reconcile; campaign-level spend is checked against campaign evidence separately."):"One or more dashboard aggregates do not reconcile to their underlying records."};
+  const ok=(!value.spendComparable||(value.coveredSpendDifference===0&&value.sourceCustomerDifference===0))
+    &&value.periodProjectValueDifference===0
+    &&value.periodInvoiceValueDifference===0
+    &&value.projectValueGap<=0.01;
+  return{label:"Reconciliation checks",state:(ok?"Complete":"Needs review") as TrustState,detail:ok?(value.spendComparable?"Source spend and project/invoice aggregates reconcile to their underlying records.":"Project/invoice aggregates reconcile; campaign-level spend is checked against campaign evidence separately."):"At least one reconciliation check is open. Detailed project rows remain authoritative while the client aggregate project-value gap exists."};
 }
 
 function managementInsight(analytics:ReturnType<typeof buildOverviewAnalytics>){
