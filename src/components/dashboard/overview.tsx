@@ -48,6 +48,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     sourceFilter==="all"?"All sources":sourceFilter,
     campaignFilter==="all"?null:campaignFilter,
   ].filter(Boolean).join(" · ");
+  const hasAcquisitionFilter=sourceFilter!=="all"||campaignFilter!=="all";
 
   const spendRows=buildSpendEvidence(data,sourceRows,sourceFilter,campaignFilter);
   const selectedLeadIds=new Set(analytics.rows.flatMap(row=>row.leadIds));
@@ -64,7 +65,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const coveredSentOffers=selectedSentOffers.filter(item=>coveredLeadIds.has(item.leadId));
   const dueOffers=selectedOffers.filter(item=>item.isOpen&&item.followUpAt&&new Date(item.followUpAt).getTime()<=now);
   const outstandingInvoices=analytics.business.invoices.filter(item=>netInvoice(item)>item.paidTotal);
-  const unattributedWon=(data.commercialClients??[]).filter(client=>isWonClient(client)&&!resolvedClientSource(data,client));
+  const unattributedWon=(data.commercialClients??[]).filter(client=>isWonClient(client)&&!hasSafeAcquisitionSource(resolvedClientSource(data,client)));
   const undatedCohortClients=sourceRows.reduce((sum,row)=>sum+row.undatedClients,0);
   const acquisitionDateConflicts=analytics.allRows.filter(row=>row.hasAcquisitionDateConflict).length;
   const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);
@@ -172,14 +173,15 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           </div>
         </div>
         <div className="executive-group is-marketing">
-          <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>Leads acquired in selected period · lifetime outcomes</small></div>
+          <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>{hasAcquisitionFilter?"Filtered acquisition scope: "+scopeLabel+" · company truth remains 31-style canonical won count above":"Company acquisition view · subsets are labelled separately from won-client truth"}</small></div>
           <div className="executive-group-metrics">
             <SummaryMetric label="Covered paid-source spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Bank/synced paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
             <SummaryMetric label="Known acquired leads" value={formatNumber(analytics.cohort.knownAcquired)} note={analytics.cohort.supplierOnly?formatNumber(analytics.cohort.unique)+" CRM-tracked · "+formatNumber(analytics.cohort.supplierOnly)+" supplier-only":formatNumber(analytics.cohort.unique)+" CRM-tracked"} onClick={()=>openMilestone("acquired")}/>
-            <SummaryMetric label="Won clients" value={formatNumber(analytics.economics.wonCustomers)} note="ROBAWS project or invoice evidence" onClick={()=>setDrilldown({title:"Won clients",subtitle:scopeLabel,initialKind:"clients",clients:wonClients})}/>
-            <SummaryMetric label="Source-attributed won" value={formatNumber(analytics.economics.sourceAttributedCustomers)} note="Won clients with a known source" onClick={()=>setDrilldown({title:"Source-attributed won clients",subtitle:scopeLabel,initialKind:"clients",clients:sourceAttributedWonClients})}/>
-            <SummaryMetric label="Paid-source won" value={formatNumber(analytics.economics.paidSourceWonCustomers)} note="Denominator for paid-source CAC" onClick={()=>setDrilldown({title:"Paid-source won clients",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
-            <SummaryMetric label="Dated cohort won" value={formatNumber(analytics.economics.datedCohortCustomers)} note="Won clients with a trusted acquisition month" onClick={()=>setDrilldown({title:"Dated acquisition-cohort won clients",subtitle:scopeLabel,initialKind:"clients",clients:datedCohortClients})}/>
+            <SummaryMetric label="Company won clients" value={formatNumber(analytics.commercialLedger.wonClientCount)} note="Canonical ROBAWS truth · project/invoice evidence" onClick={()=>setDrilldown({title:"Company won clients",subtitle:"ROBAWS project or invoice evidence",initialKind:"clients",clients:analytics.commercialLedger.clients})}/>
+            {hasAcquisitionFilter&&<SummaryMetric label="Selected-scope won clients" value={formatNumber(analytics.economics.wonCustomers)} note={scopeLabel+" · subset of company won clients"} onClick={()=>setDrilldown({title:"Selected-scope won clients",subtitle:scopeLabel,initialKind:"clients",clients:wonClients})}/>}
+            <SummaryMetric label={hasAcquisitionFilter?"Selected-scope source-known won":"Source-known won clients"} value={formatNumber(analytics.economics.sourceAttributedCustomers)} note={hasAcquisitionFilter?"Known source inside "+scopeLabel:"Company won clients with a known acquisition source"} onClick={()=>setDrilldown({title:"Source-known won clients",subtitle:scopeLabel,initialKind:"clients",clients:sourceAttributedWonClients})}/>
+            <SummaryMetric label={hasAcquisitionFilter?"Selected-scope paid-source won":"Paid-source won clients"} value={formatNumber(analytics.economics.paidSourceWonCustomers)} note="Used only as the paid-source CAC denominator" onClick={()=>setDrilldown({title:"Paid-source won clients",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
+            <SummaryMetric label={hasAcquisitionFilter?"Selected-scope dated cohort won":"Dated-cohort won clients"} value={formatNumber(analytics.economics.datedCohortCustomers)} note="Used only for acquisition-month cohort analysis" onClick={()=>setDrilldown({title:"Dated acquisition-cohort won clients",subtitle:scopeLabel,initialKind:"clients",clients:datedCohortClients})}/>
             <SummaryMetric label="Paid-source CAC" value={nullableCurrency(analytics.economics.cac)} note="Covered spend / paid-source won clients" onClick={()=>setDrilldown({title:"Paid-source CAC evidence",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
           </div>
         </div>
