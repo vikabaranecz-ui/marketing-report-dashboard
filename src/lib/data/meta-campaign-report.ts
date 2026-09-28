@@ -221,7 +221,11 @@ async function loadCompany(
       const lead = leadById.get(id);
       return Boolean(lead && hasAppointmentEvidence(lead, appointmentsByLead.get(id) ?? []));
     }).length;
-    const clients = new Set(campaignProjects.map(row => row.leadId)).size;
+    const realizedLeadIds = new Set([
+      ...campaignProjects.filter(row=>!String(row.attributionStatus??"").toUpperCase().includes("DATE_CONFLICT")).map(row=>row.leadId),
+      ...campaignInvoices.filter(row=>!String(row.attributionStatus??"").toUpperCase().includes("DATE_CONFLICT")).map(row=>row.leadId),
+    ]);
+    const clients = realizedLeadIds.size;
     return {
       id: campaignId,
       name: campaign?.name ?? "Unnamed campaign",
