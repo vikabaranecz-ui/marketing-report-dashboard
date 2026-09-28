@@ -219,14 +219,17 @@ function masterLead(leads: Lead[]) {
   };
 }
 
-function applyClientOverrides(data: CompanyDataset, lead: Lead): Lead {
+function applyClientOverrides(data: CompanyDataset, lead: Lead, scopeKeys: string[] = [lead.id]): Lead {
+  const keySet = new Set(scopeKeys);
   const overrides = (data.manualOverrides ?? []).filter(item =>
-    item.scopeType === "client" && item.scopeKey === lead.id
+    item.scopeType === "client" && keySet.has(item.scopeKey)
   );
   if (!overrides.length) return lead;
 
   const textValue = (fieldKey: string) => {
-    const item = overrides.find(override => override.fieldKey === fieldKey);
+    const item = overrides
+      .filter(override => override.fieldKey === fieldKey && typeof override.value === "string" && override.value.trim())
+      .sort((a,b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     return typeof item?.value === "string" && item.value.trim() ? item.value.trim() : null;
   };
 
@@ -252,7 +255,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
 
   return groupLeadsByIdentity(data.leads).map(group => {
     const leadIds = new Set(group.map(item => item.id));
-    const baseLead = applyClientOverrides(data, masterLead(group));
+    const baseLead = applyClientOverrides(data, masterLead(group), group.map(item => item.id));
     const matchedCommercialClient = (data.commercialClients ?? []).find(client =>
       Boolean(client.matchedLeadId && leadIds.has(client.matchedLeadId))
       || group.some(item => item.robawsClientId !== "—" && item.robawsClientId === client.externalId)
@@ -271,7 +274,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       || normalized(project.status).includes("project"),
     );
     const signed = group.some(isSigned);
-    const commercialClient = group.some(item => item.commercialStatus === "CLIENT_WON") || verifiedProject;
+    const commercialClient = Boolean(matchedCommercialClient && matchedCommercialClient.projectCount > 0) || verifiedProject;
     const acquisitionDateConflict = Boolean(
       matchedCommercialClient?.clientSince
       && lead.date
