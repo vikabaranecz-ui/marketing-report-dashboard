@@ -242,13 +242,11 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <div className="acquisition-flow">
           <FlowStep label="All-source acquired" value={formatNumber(analytics.cohort.knownAcquired)} note={formatNumber(analytics.cohort.unique)+" deduped CRM people · "+formatNumber(analytics.cohort.supplierOnly)+" supplier-only"}/>
           <ArrowRight size={16}/>
-          <FlowStep label="Won clients" value={formatNumber(analytics.economics.wonCustomers)} note="project/invoice evidence"/>
+          <FlowStep label="Company won clients" value={formatNumber(analytics.commercialLedger.wonClientCount)} note="single client truth · project/invoice evidence"/>
           <ArrowRight size={16}/>
-          <FlowStep label="Known source" value={formatNumber(analytics.economics.sourceAttributedCustomers)} note="manual source wins"/>
+          <FlowStep label="Source coverage" value={formatNumber(analytics.economics.sourceAttributedCustomers)+"/"+formatNumber(analytics.commercialLedger.wonClientCount)} note="won clients with known acquisition source"/>
           <ArrowRight size={16}/>
-          <FlowStep label="Paid-source won" value={formatNumber(analytics.economics.paidSourceWonCustomers)} note="CAC denominator"/>
-          <ArrowRight size={16}/>
-          <FlowStep label="Dated cohort won" value={formatNumber(analytics.economics.datedCohortCustomers)} note="monthly cohort eligible"/>
+          <FlowStep label="Month coverage" value={formatNumber(analytics.dateCoverage.trustedCount)+"/"+formatNumber(analytics.commercialLedger.wonClientCount)} note="trusted acquisition month · cohort analysis only"/>
         </div>
         {analytics.economics.missingCostSources.length>0&&<div className="cost-missing-note"><AlertTriangle size={15}/><span>Cost missing for {analytics.economics.missingCostSources.join(", ")}. Cost-based metrics exclude those sources rather than treating them as €0.</span></div>}
       </Card>
