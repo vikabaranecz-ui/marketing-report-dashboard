@@ -3,37 +3,44 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CalendarClock, CircleDollarSign, Pencil, RotateCcw, Search, WalletCards, X } from "lucide-react";
-import type { CompanyDataset } from "@/lib/data/types";
+import type { CommercialClient, CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildFunnelSummary, buildJourneyRows, journeyStageMeta, sourcePipelineRows, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
-import { buildOverviewAnalytics } from "@/lib/metrics/business-overview";
+import { buildOverviewAnalytics, resolvedClientSource } from "@/lib/metrics/business-overview";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
+import { ClientProfileDrawer } from "./client-profile-drawer";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
+import { isWonClient } from "@/lib/metrics/commercial-truth";
 
 export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const rows = useMemo(() => buildJourneyRows(data), [data]);
   const cohortAnalytics = useMemo(() => buildOverviewAnalytics(data,{source:"all",campaign:"all"}), [data]);
-  const paybackRows = useMemo(() => rows
-    .filter(row => row.isAttributableClient && (row.isCommercialClient || row.projects.length > 0 || row.invoices.length > 0))
-    .map(buildPaybackRecord)
-    .sort((a,b) => b.acquired.localeCompare(a.acquired)), [rows]);
-  const undatedSourceClients = cohortAnalytics.sourceRows.reduce((sum,row)=>sum+row.undatedClients,0);
+  const journeyByLeadId=useMemo(()=>{
+    const map=new Map<string,JourneyRow>();
+    for(const row of rows) for(const id of row.leadIds) map.set(id,row);
+    return map;
+  },[rows]);
+  const wonClients=useMemo(()=>(data.commercialClients??[]).filter(isWonClient),[data.commercialClients]);
+  const paybackRows = useMemo(() => wonClients
+    .map(client=>buildClientPaybackRecord(data,client,client.matchedLeadId?journeyByLeadId.get(client.matchedLeadId):undefined))
+    .sort((a,b)=>(b.acquired??b.client.clientSince??"").localeCompare(a.acquired??a.client.clientSince??"")), [data,wonClients,journeyByLeadId]);
+  const datedCohortClients=paybackRows.filter(item=>Boolean(item.acquired)).length;
+  const undatedClients=paybackRows.length-datedCohortClients;
 
   const [search,setSearch]=useState("");
   const [source,setSource]=useState("all");
   const [status,setStatus]=useState("all");
   const [limit,setLimit]=useState(12);
-  const [selected,setSelected]=useState<JourneyRow|null>(null);
+  const [selected,setSelected]=useState<CommercialClient|null>(null);
 
-  const sources=[...new Set(paybackRows.map(item=>item.row.lead.source||"Unattributed"))].sort();
+  const sources=[...new Set(paybackRows.map(item=>item.source||"Unattributed"))].sort();
   const filtered=paybackRows.filter(item=>{
     const haystack=[
-      item.row.lead.name,item.row.lead.email,item.row.lead.phone,item.row.lead.source,
-      item.row.lead.service,item.row.lead.municipality,item.row.lead.crmStatus,
-      ...item.row.invoices.flatMap(invoice=>[invoice.number,invoice.status]),
+      item.client.name,item.source,item.service,item.municipality,
+      item.client.externalId,...item.invoices.flatMap(invoice=>[invoice.number,invoice.status]),
     ].join(" ").toLowerCase();
     return (!search||haystack.includes(search.toLowerCase()))
-      && (source==="all"||item.row.lead.source===source)
+      && (source==="all"||item.source===source)
       && (status==="all"||item.paybackStatus===status);
   });
 
@@ -52,7 +59,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
       const current=map.get(month.month)??{month:month.month,invoiced:0,paid:0,clients:new Set<string>()};
       current.invoiced+=month.invoiced;
       current.paid+=month.paid;
-      current.clients.add(item.row.lead.id);
+      current.clients.add(item.client.id);
       map.set(month.month,current);
     }
     return map;
@@ -66,18 +73,19 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
         <div>
           <p className="eyebrow">Acquisition cohort → later cash</p>
           <h2>Customer payback</h2>
-          <p>A customer stays attached to the month the lead was acquired, even when the project and invoices happen months later.</p>
+          <p>All won clients stay visible here. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month.</p>
         </div>
-        <div className="payback-scope"><CalendarClock size={17}/><div><span>Selected acquisition period</span><strong>{data.periodLabel}</strong></div></div>
+        <div className="payback-scope"><CalendarClock size={17}/><div><span>Won-client scope</span><strong>{formatNumber(totals.clients)} clients · {formatNumber(datedCohortClients)} dated cohorts</strong></div></div>
       </div>
       <div className="payback-truth-note">
         <strong>Timing rule:</strong> CRM gives the acquisition date. ROBAWS gives a project record date and invoice dates. The API does not currently expose reliable work-start/work-finish dates or payment timestamps, so the dashboard does not pretend invoice dates are construction dates. “Paid by month” below means paid value attached to invoices dated in that month.
       </div>
     </Card>
 
-    {(cohortAnalytics.cohort.supplierOnly>0||undatedSourceClients>0)&&<div className="payback-truth-note"><strong>Acquisition coverage:</strong> {formatNumber(cohortAnalytics.cohort.supplierOnly)} supplier-only lead(s) have no CRM acquisition date, and {formatNumber(undatedSourceClients)} source-known client(s) do not have a trustworthy acquisition month. They remain in source/business totals but are excluded from monthly payback cohorts rather than being assigned to a guessed month.</div>}
+    <div className="payback-truth-note"><strong>Customer coverage:</strong> {formatNumber(totals.clients)} won client(s) are shown. {formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; {formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being dropped or assigned to a guessed month. Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
     <div className="payback-kpis">
-      <PaybackKpi label="Customers" value={formatNumber(totals.clients)} note="Commercially evidenced customers"/>
+      <PaybackKpi label="Won clients" value={formatNumber(totals.clients)} note="Canonical ROBAWS project/invoice evidence"/>
+      <PaybackKpi label="Dated cohorts" value={formatNumber(datedCohortClients)} note={formatNumber(undatedClients)+" acquisition month unverified"}/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
       <PaybackKpi label="Invoiced" value={formatCurrency(totals.invoiced,true)} note="Net of credits"/>
       <PaybackKpi label="Paid to date" value={formatCurrency(totals.paid,true)} note="Current paid total on invoices" accent/>
@@ -86,7 +94,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     </div>
 
     <Card className="p-5">
-      <SectionHeader title="Cash realization by invoice month" description="For the selected acquisition cohort, this shows when later invoices appear and how much paid value is currently attached to those invoices."/>
+      <SectionHeader title="Invoice-month realization" description="All won clients are included here. This shows invoice timing and current paid value by invoice month; it does not require a trusted acquisition month."/>
       {monthlyCash.length?<div className="payback-month-grid">
         {monthlyCash.map(item=><div key={item.month} className="payback-month">
           <span>{monthName(item.month)}</span>
@@ -112,14 +120,14 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     </Card>
 
     <div className="payback-list">
-      {filtered.slice(0,limit).map(item=><button type="button" key={item.row.lead.id} className="payback-card drillable text-left" onClick={()=>setSelected(item.row)}>
+      {filtered.slice(0,limit).map(item=><button type="button" key={item.client.id} className="payback-card drillable text-left" onClick={()=>setSelected(item.client)}>
         <div className="payback-card-head">
-          <div><strong>{item.row.lead.name}</strong><p>{item.row.lead.source} · {item.row.lead.service} · {item.row.lead.municipality}</p></div>
+          <div><strong>{item.client.name}</strong><p>{item.source} · {item.service||"Service unknown"} · {item.municipality||"Location unknown"}</p></div>
           <StatusPill tone={item.paybackStatus==="paid"?"good":item.paybackStatus==="partial"?"warn":item.paybackStatus==="unpaid"?"bad":"neutral"}>{paybackStatusLabel(item.paybackStatus)}</StatusPill>
         </div>
 
         <div className="payback-milestones">
-          <PaybackMilestone label="Lead acquired" value={date(item.acquired)}/>
+          <PaybackMilestone label="Lead acquired" value={item.acquired?date(item.acquired):"Acquisition month unverified"}/>
           <ArrowRight size={14}/>
           <PaybackMilestone label="ROBAWS project date" value={item.projectDate?date(item.projectDate):"—"}/>
           <ArrowRight size={14}/>
@@ -147,13 +155,16 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     </div>
 
     {filtered.length>limit&&<div className="flex justify-center"><button type="button" className="button-secondary" onClick={()=>setLimit(value=>value+12)}>Show 12 more</button></div>}
-    {selected&&<ClientDrawer data={data} row={selected} onClose={()=>setSelected(null)}/>}
+    {selected&&<ClientProfileDrawer data={data} client={selected} onClose={()=>setSelected(null)}/>}
   </div>;
 }
 
 type PaybackRecord = {
-  row: JourneyRow;
-  acquired:string;
+  client:CommercialClient;
+  source:string;
+  service:string;
+  municipality:string;
+  acquired:string|null;
   projectDate:string|null;
   firstInvoice:string|null;
   lastInvoice:string|null;
@@ -163,14 +174,19 @@ type PaybackRecord = {
   open:number;
   daysToFirstInvoice:number|null;
   paybackStatus:"paid"|"partial"|"unpaid"|"project";
+  invoices:NonNullable<CompanyDataset["allCommercialInvoices"]>;
   cashMonths:Array<{month:string;invoiced:number;paid:number}>;
 };
 
-function buildPaybackRecord(row:JourneyRow):PaybackRecord {
-  const invoices=[...row.invoices].sort((a,b)=>a.date.localeCompare(b.date));
-  const projects=[...row.projects].sort((a,b)=>(a.projectDate??a.date).localeCompare(b.projectDate??b.date));
+function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,row?:JourneyRow):PaybackRecord {
+  const projects=(data.allCommercialProjects??[]).filter(project=>project.externalClientId===client.externalId).sort((a,b)=>(a.projectDate??a.date).localeCompare(b.projectDate??b.date));
+  const invoices=(data.allCommercialInvoices??[]).filter(invoice=>invoice.externalClientId===client.externalId).sort((a,b)=>a.date.localeCompare(b.date));
   const invoiced=invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0);
   const paid=invoices.reduce((sum,item)=>sum+item.paidTotal,0);
+  const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
+  const leadDate=row?.lead.date??null;
+  const clientDate=client.clientSince?.slice(0,10)??"";
+  const acquired=leadDate&&(!clientDate||clientDate>=leadDate.slice(0,10))?leadDate:null;
   const cashMonths=[...invoices.reduce((map,item)=>{
     if(!item.date)return map;
     const month=item.date.slice(0,7);
@@ -181,20 +197,24 @@ function buildPaybackRecord(row:JourneyRow):PaybackRecord {
     return map;
   },new Map<string,{month:string;invoiced:number;paid:number}>()).values()].sort((a,b)=>a.month.localeCompare(b.month));
   const firstInvoice=invoices[0]?.date??null;
-  const daysToFirstInvoice=firstInvoice?daysBetweenDates(row.lead.date,firstInvoice):null;
+  const daysToFirstInvoice=acquired&&firstInvoice?daysBetweenDates(acquired,firstInvoice):null;
   const paybackStatus:PaybackRecord["paybackStatus"]=invoiced>0&&paid>=invoiced-.01?"paid":paid>0?"partial":invoiced>0?"unpaid":"project";
   return {
-    row,
-    acquired:row.lead.date,
-    projectDate:projects[0]?.projectDate??null,
+    client,
+    source:resolvedClientSource(data,client),
+    service:row?.lead.service??"",
+    municipality:row?.lead.municipality??client.municipality??"",
+    acquired,
+    projectDate:projects[0]?.projectDate??projects[0]?.date??null,
     firstInvoice,
     lastInvoice:invoices.at(-1)?.date??null,
-    projectValue:row.projectValue,
+    projectValue,
     invoiced,
     paid,
     open:Math.max(0,invoiced-paid),
     daysToFirstInvoice,
     paybackStatus,
+    invoices,
     cashMonths,
   };
 }
