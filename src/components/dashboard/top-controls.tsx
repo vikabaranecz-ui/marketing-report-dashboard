@@ -51,6 +51,10 @@ export function TopControls({
 
 function monthLabel(value: string) {
   if (value === "ytd") return "Year to date";
+  if (/^\d{4}-Q[1-4]$/.test(value)) {
+    const [year,quarter]=value.split("-Q");
+    return `Q${quarter} ${year}`;
+  }
   const [year, month] = value.split("-").map(Number);
   return new Intl.DateTimeFormat("en-BE", { month: "long", year: "numeric" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
