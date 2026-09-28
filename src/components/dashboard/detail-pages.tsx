@@ -21,8 +21,8 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
   const leads = analytics.economics.coveredLeads;
   const notRelevant = paidJourneyRows.filter(row=>row.isNotRelevant).length;
   const visits = analytics.economics.coveredVisits;
-  const won = analytics.economics.attributableCustomers;
-  const paidValue = analytics.economics.cohortPaidValue;
+  const won = analytics.economics.paidSourceWonCustomers;
+  const paidValue = analytics.economics.paidSourcePaidValue;
   const sourceRows = sourcePipelineRows(data);
   const googleAds = data.integrations.find(item => item.provider === "google_ads");
   const googleSpendMissing = googleAds?.status === "Connected" && !googleAds.lastSuccess;
@@ -33,8 +33,8 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
       <KpiCard label="Known paid-source leads" value={formatNumber(leads)} meta={`${formatCurrency(analytics.economics.cpl)} CPL · ${formatCurrency(analytics.economics.cplCoveredSpend)} spend has lead-count coverage`}/>
       <KpiCard label="Not relevant" value={formatNumber(notRelevant)} meta={`${formatPercent(percentage(notRelevant,paidJourneyRows.length))} of paid-source CRM people`}/>
       <KpiCard label="Visited" value={formatNumber(visits)} meta={`${formatPercent(percentage(visits,paidJourneyRows.length))} of CRM-tracked paid-source people`}/>
-      <KpiCard label="Clients" value={formatNumber(won)} meta={`${formatPercent(percentage(won,paidJourneyRows.length))} CRM-tracked → client`}/>
-      <KpiCard label="CAC" value={formatCurrency(analytics.economics.cac)} meta="Covered spend / attributable clients"/>
+      <KpiCard label="Paid-source won clients" value={formatNumber(won)} meta="ROBAWS project/invoice evidence · known paid source"/>
+      <KpiCard label="Paid-source CAC" value={formatCurrency(analytics.economics.cac)} meta="Covered spend / paid-source won clients"/>
       <KpiCard label="Platform leads" value={formatNumber(platform)} meta="Directional ad-platform count"/>
       <KpiCard label="Paid value" value={formatCurrency(paidValue,true)} meta={analytics.economics.cohortCashRoas===null?"—":`${formatNumber(analytics.economics.cohortCashRoas)}× paid-value ROAS`}/> 
     </div>
@@ -50,15 +50,15 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
     <Card className="p-5">
       <SectionHeader title="Paid acquisition source detail" description="Full source-known value is separated from dated cohort value. Supplier lead totals do not inflate company-wide unique CRM people."/>
       <div className="table-scroll"><table>
-        <thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Source-known clients</th><th>Dated cohort clients</th><th>Source project value excl. VAT</th><th>Source paid value</th><th>Cohort project value excl. VAT</th><th>Cohort paid value</th><th>CPL</th><th>Source CAC</th><th>Cohort CAC</th><th>Source paid ROAS</th><th>Cohort paid ROAS</th></tr></thead>
-        <tbody>{paidSourceRows.map(row=>{const sourceCac=row.spend===null?null:safeDivide(row.spend,row.sourceKnownClients);const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;return <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.spend===null?"Cost missing":formatCurrency(row.spend)}</td><td>{row.deliveredLeads===null&&row.leads===0&&row.sourceKnownClients>0?<StatusPill tone="warn">Lead count missing</StatusPill>:<>{formatNumber(row.deliveredLeads??row.leads)}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{formatNumber(row.leads)} CRM-attributed</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.sourceKnownClients}</td><td>{row.attributableClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} month unverified</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{formatCurrency(row.cpl)}</td><td>{formatCurrency(sourceCac)}</td><td>{formatCurrency(row.cac)}</td><td>{sourceRoas===null?"—":`${formatNumber(sourceRoas)}×`}</td><td>{row.cohortCashRoas===null?"—":`${formatNumber(row.cohortCashRoas)}×`}</td></tr>})}</tbody>
+        <thead><tr><th>Source</th><th>Spend</th><th>Leads</th><th>Qualified</th><th>Visits</th><th>Offers</th><th>Won clients</th><th>Dated cohort won</th><th>Source project value excl. VAT</th><th>Source paid value</th><th>Dated cohort project value excl. VAT</th><th>Dated cohort paid value</th><th>CPL</th><th>Cost / visit</th><th>Cost / offer</th><th>Source CAC</th><th>Dated cohort CAC</th><th>Source paid ROAS</th><th>Dated cohort paid ROAS</th></tr></thead>
+        <tbody>{paidSourceRows.map(row=>{const sourceCac=row.spend===null?null:safeDivide(row.spend,row.wonClients);const cohortCac=row.spend===null?null:safeDivide(row.spend,row.datedCohortClients);const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;const cohortRoas=row.spend?row.paidValue/row.spend:null;return <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.spend===null?"Cost missing":formatCurrency(row.spend)}</td><td>{row.deliveredLeads===null&&row.leads===0&&row.wonClients>0?<StatusPill tone="warn">Lead count missing</StatusPill>:<>{formatNumber(row.deliveredLeads??row.leads)}{row.deliveredLeads!==null&&<small className="block text-[var(--muted)]">{formatNumber(row.leads)} CRM-tracked</small>}</>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.wonClients}</td><td>{row.datedCohortClients}{row.undatedClients>0&&<small className="block text-amber-700">+{row.undatedClients} acquisition month unresolved</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{formatCurrency(row.projectValueExclVat)}</td><td>{formatCurrency(row.paidValue)}</td><td>{formatCurrency(row.cpl)}</td><td>{formatCurrency(row.costVisit)}</td><td>{formatCurrency(row.costOffer)}</td><td>{formatCurrency(sourceCac)}</td><td>{formatCurrency(cohortCac)}</td><td>{sourceRoas===null?"—":`${formatNumber(sourceRoas)}×`}</td><td>{cohortRoas===null?"—":`${formatNumber(cohortRoas)}×`}</td></tr>})}</tbody>
       </table></div>
     </Card>
 
     <Card className="p-5">
       <SectionHeader title="CRM-tracked source → pipeline → revenue" description="This table is the operational CRM funnel only. Supplier-only leads are intentionally excluded because they have no CRM stage/date; source economics above includes verified supplier totals."/>
       <div className="table-scroll"><table>
-        <thead><tr><th>Reporting source</th><th>CRM-tracked people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>Verified clients</th><th>Revenue</th></tr></thead>
+        <thead><tr><th>Reporting source</th><th>CRM-tracked people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>CRM signed</th><th>CRM-linked won clients</th><th>Project value</th></tr></thead>
         <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offers}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.signed}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
       </table></div>
     </Card>
