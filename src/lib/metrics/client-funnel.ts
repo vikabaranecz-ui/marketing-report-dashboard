@@ -107,6 +107,10 @@ export function hasLeadOfferEvidence(lead: Lead) {
     ].includes(status);
 }
 
+export function hasOfferCreatedEvidence(row: Pick<JourneyRow,"offers"|"lead">) {
+  return row.offers.length > 0 || hasLeadOfferEvidence(row.lead);
+}
+
 function isExplicitlyNotRelevant(lead: Lead) {
   const status = normalized(lead.crmStatus);
   return [
@@ -340,9 +344,9 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     notRelevantPeople: rows.filter(row => row.isNotRelevant).length,
     qualified: rows.filter(row => row.isQualified).length,
     visits: rows.filter(row => row.hasVisit).length,
-    offersCreated: rows.filter(row => row.offers.length > 0).length,
+    offersCreated: rows.filter(hasOfferCreatedEvidence).length,
     offerDocuments: rows.reduce((sum,row)=>sum+row.offers.length,0),
-    qualifiedNoOffer: rows.filter(row=>row.isQualified&&row.offers.length===0).length,
+    qualifiedNoOffer: rows.filter(row=>row.isQualified&&!hasOfferCreatedEvidence(row)).length,
     rejectedOfferDocuments: rows.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isRejected).length,0),
     cancelledOfferDocuments: rows.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isCancelled).length,0),
     offersSent: rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
@@ -390,7 +394,7 @@ function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => str
       notRelevant: group.filter(row => row.isNotRelevant).length,
       qualified: group.filter(row => row.isQualified).length,
       visits: group.filter(row => row.hasVisit).length,
-      offersCreated: group.filter(row => row.offers.length > 0).length,
+      offersCreated: group.filter(hasOfferCreatedEvidence).length,
       offersSent: group.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
       sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: group.reduce((sum, row) => sum + row.openOfferValue, 0),
