@@ -10,6 +10,7 @@ import { ClientJourneyPage, CohortsPage, OffersPipelinePage, SalesProjectsPage, 
 import { AcquisitionPage, IntegrationsPage, LocationsPage, ServicesPage, SettingsPage, WebsiteSeoPage } from "./detail-pages";
 import { DataHealthPage, FunnelPage, RevenuePage, SourcesCampaignsPage } from "./control-pages";
 import { EmptyState } from "./ui";
+import { buildOverviewAnalytics } from "@/lib/metrics/business-overview";
 
 export function DashboardShell({ bootstrap, section }: { bootstrap: DashboardBootstrap; section: SectionKey }) {
   const companyId = bootstrap.selectedCompanyId;
@@ -18,11 +19,31 @@ export function DashboardShell({ bootstrap, section }: { bootstrap: DashboardBoo
   const Page = useMemo(() => ({ overview: OverviewPage, funnel: FunnelPage, campaigns: SourcesCampaignsPage, "client-journey": ClientJourneyPage, "offers-pipeline": OffersPipelinePage, revenue: RevenuePage, "website-seo": WebsiteSeoPage, "data-health": DataHealthPage, "leads-sales": LeadsSalesPage, visits: VisitsPage, "sales-projects": SalesProjectsPage, acquisition: AcquisitionPage, services: ServicesPage, locations: LocationsPage, cohorts: CohortsPage, "sales-team": SalesTeamPage, integrations: IntegrationsPage, settings: SettingsPage })[section], [section]);
   function exportCsv() {
     if (!data) return;
-    const rows = [["Channel","Spend","Leads","Qualified","Visits","Quotes","Won","Revenue"], ...data.channels.map(c => [c.channel,c.spend,c.leads,c.qualified,c.visits,c.quotes,c.won,c.revenue])];
+    const analytics=buildOverviewAnalytics(data,{source:"all",campaign:"all"});
+    const rows = [
+      ["Source","Spend","Known leads","Deduped CRM people","Supplier-only","Qualified","Visits","Offers sent","Won clients","Project value excl VAT","Invoiced","Paid value","CPL","CAC","Paid ROAS"],
+      ...analytics.sourceRows.map(row => [
+        row.source,
+        row.spend??"",
+        row.deliveredLeads??(row.leads+row.supplierOnlyLeads),
+        row.leads,
+        row.supplierOnlyLeads,
+        row.qualified,
+        row.visits,
+        row.offers,
+        row.wonClients,
+        row.sourceProjectValueExclVat,
+        row.sourceInvoicedValue,
+        row.sourcePaidValue,
+        row.cpl??"",
+        row.cac??"",
+        row.cohortCashRoas??"",
+      ]),
+    ];
     const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"','""')}"`).join(",")).join("\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    link.download = `${data.company.name.toLowerCase().replaceAll(" ","-")}-channel-performance.csv`;
+    link.download = `${data.company.name.toLowerCase().replaceAll(" ","-")}-canonical-source-performance.csv`;
     link.click(); URL.revokeObjectURL(link.href);
   }
   const liveOnly = ["funnel","campaigns","client-journey","leads-sales","visits","offers-pipeline","revenue","data-health","sales-projects","cohorts","sales-team"].includes(section);
