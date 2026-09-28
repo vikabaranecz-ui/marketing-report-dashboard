@@ -59,7 +59,7 @@ export function AcquisitionPage({ data }: { data: CompanyDataset }) {
       <SectionHeader title="CRM-tracked source → pipeline → revenue" description="This table is the operational CRM funnel only. Supplier-only leads are intentionally excluded because they have no CRM stage/date; source economics above includes verified supplier totals."/>
       <div className="table-scroll"><table>
         <thead><tr><th>Reporting source</th><th>CRM-tracked people</th><th>Not relevant</th><th>Qualified</th><th>Visits</th><th>Offers created</th><th>Sent</th><th>Sent €</th><th>Open sent €</th><th>Won clients</th><th>Project value</th></tr></thead>
-        <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offers}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.signed}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
+        <tbody>{sourceRows.map(row => <tr key={row.source}><td className="font-semibold">{row.source}</td><td>{row.leads}</td><td>{row.notRelevant}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offersCreated}</td><td>{row.offers}</td><td>{formatCurrency(row.sentQuotedValue)}</td><td>{formatCurrency(row.openPipeline)}</td><td>{row.verified}</td><td className="font-semibold">{formatCurrency(row.revenue)}</td></tr>)}</tbody>
       </table></div>
     </Card>
   </div>;
