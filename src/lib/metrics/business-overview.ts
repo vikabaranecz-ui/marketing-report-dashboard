@@ -293,12 +293,12 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
       {key:"qualified",label:"Qualified / CRM tracked",numerator:qualified,denominator:unique,rate:percentage(qualified,unique)},
       {key:"visits",label:"Visits / CRM tracked",numerator:visits,denominator:unique,rate:percentage(visits,unique)},
       {key:"offers",label:"Offers / CRM tracked",numerator:offers,denominator:unique,rate:percentage(offers,unique)},
-      {key:"customers",label:"Customers / CRM tracked",numerator:customers,denominator:unique,rate:percentage(customers,unique)},
+      {key:"customers",label:"Project clients / CRM tracked",numerator:customers,denominator:unique,rate:percentage(customers,unique)},
     ],
     sequential:sequentialSupported?[
       {key:"qualified-visits",label:"Qualified → Visit",numerator:visits,denominator:qualified,rate:percentage(visits,qualified)},
       {key:"visits-offers",label:"Visit → Offer",numerator:offers,denominator:visits,rate:percentage(offers,visits)},
-      {key:"offers-customers",label:"Offer → Customer",numerator:customers,denominator:offers,rate:percentage(customers,offers)},
+      {key:"offers-customers",label:"Offer → Project client",numerator:customers,denominator:offers,rate:percentage(customers,offers)},
     ]:[],
   };
 
@@ -569,12 +569,12 @@ function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType
   const sourceSpend=comparableSources.filter(item=>item.costState==="known").reduce((sum,item)=>sum+Number(item.spend??0),0);
   const sourceCustomers=[...new Set(comparableSources
     .filter(item=>PAID_ACQUISITION_SOURCES.has(item.source)&&item.costState==="known")
-    .flatMap(item=>item.clientIds))].length;
+    .flatMap(item=>item.sourceClientIds))].length;
   return {
     spendComparable:scope.campaign==="all",
     coveredSpendDifference:scope.campaign==="all"?Math.abs(sourceSpend-economics.coveredSpend):0,
     sourceCustomerTotal:sourceCustomers,
-    sourceCustomerDifference:Math.abs(sourceCustomers-economics.attributableCustomers),
+    sourceCustomerDifference:Math.abs(sourceCustomers-economics.paidSourceWonCustomers),
     periodProjectValue:business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0),
     periodProjectValueDifference:Math.abs(business.projects.reduce((sum:number,item:CommercialProject)=>sum+Number(item.valueInclVat??0),0)-business.wonValueInclVat),
     periodInvoiceValue:business.invoices.reduce((sum:number,item:CommercialInvoice)=>sum+netInvoiceIncl(item),0),
