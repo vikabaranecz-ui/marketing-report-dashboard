@@ -73,6 +73,41 @@ export function resolvedClientSource(data:CompanyDataset,client:CommercialClient
   return "Unattributed";
 }
 
+export function buildWonClientDateCoverage(data:CompanyDataset){
+  const won=(data.commercialClients??[]).filter(isWonClient);
+  const leadById=new Map(data.leads.map(lead=>[lead.id,lead]));
+  const trusted:CommercialClient[]=[];
+  const dateConflict:CommercialClient[]=[];
+  const noLinkedKnownSource:CommercialClient[]=[];
+  const noLinkedUnknownSource:CommercialClient[]=[];
+  const linkedDateUnavailable:CommercialClient[]=[];
+
+  for(const client of won){
+    const lead=client.matchedLeadId?leadById.get(client.matchedLeadId):undefined;
+    const sourceKnown=hasSafeAcquisitionSource(resolvedClientSource(data,client));
+    const leadDate=lead?.date?.slice(0,10)??"";
+    const clientDate=client.clientSince?.slice(0,10)??"";
+    if(leadDate&&(!clientDate||clientDate>=leadDate)) trusted.push(client);
+    else if(leadDate&&clientDate&&clientDate<leadDate) dateConflict.push(client);
+    else if(!lead){
+      if(sourceKnown) noLinkedKnownSource.push(client);
+      else noLinkedUnknownSource.push(client);
+    } else linkedDateUnavailable.push(client);
+  }
+
+  return {
+    wonClients:won,
+    trusted,
+    dateConflict,
+    noLinkedKnownSource,
+    noLinkedUnknownSource,
+    linkedDateUnavailable,
+    trustedCount:trusted.length,
+    withoutTrustedMonth:won.length-trusted.length,
+    sourceKnownWithoutTrustedMonth:dateConflict.length+noLinkedKnownSource.length+linkedDateUnavailable.filter(client=>hasSafeAcquisitionSource(resolvedClientSource(data,client))).length,
+  };
+}
+
 export function hasCompletedVisitEvidence(row:JourneyRow){
   const status=normalized(row.lead.crmStatus);
   const stage=normalized(row.lead.stage);
@@ -327,9 +362,10 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const payback=buildPayback(data,rows,economics.coveredSpend,scope);
   const coverage=buildCoverage(data);
   const attribution=buildAttributionCoverage(data,sourceRows);
+  const dateCoverage=buildWonClientDateCoverage(data);
   const reconciliation=buildReconciliation(sourceRows,economics,business,coverage,scope);
 
-  return {allRows,rows,business,cohort,commercialLedger,conversion,economics,sourceRows,payback,coverage,attribution,reconciliation};
+  return {allRows,rows,business,cohort,commercialLedger,conversion,economics,sourceRows,payback,coverage,attribution,dateCoverage,reconciliation};
 }
 
 function buildCommercialLedger(data:CompanyDataset){
