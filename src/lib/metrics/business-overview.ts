@@ -251,16 +251,35 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
     ? supplierOnlyLeadCount(data,scope.source)
     : 0;
   const knownAcquired=unique+supplierOnly;
-  const qualified=rows.filter(row=>row.isQualified).length;
-  const visits=rows.filter(hasCompletedVisitEvidence).length;
-  const offers=rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).length;
-  const signed=rows.filter(row=>row.isSigned).length;
-  const customers=rows.filter(row=>row.isCommercialClient).length;
+  const paidRows=rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
+  const paidSupplierOnly=scope.campaign!=="all"
+    ? 0
+    : scope.source==="all"
+      ? [...PAID_ACQUISITION_SOURCES].reduce((sum,source)=>sum+supplierOnlyLeadCount(data,source),0)
+      : PAID_ACQUISITION_SOURCES.has(scope.source)
+        ? supplierOnlyLeadCount(data,scope.source)
+        : 0;
+  const paidCrmTracked=paidRows.length;
+  const knownPaidAcquired=paidCrmTracked+paidSupplierOnly;
+  const qualified=paidRows.filter(row=>row.isQualified).length;
+  const visits=paidRows.filter(hasCompletedVisitEvidence).length;
+  const offersCreated=paidRows.filter(row=>row.offers.length>0).length;
+  const offers=paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).length;
+  const scopedLeadIds=new Set(rows.flatMap(row=>row.leadIds));
+  const paidWonClients=(data.commercialClients??[]).filter(client=>{
+    if(!isWonClient(client))return false;
+    const source=resolvedClientSource(data,client);
+    if(!PAID_ACQUISITION_SOURCES.has(source))return false;
+    if(scope.source!=="all"&&source!==scope.source)return false;
+    if(scope.campaign!=="all"&&(!client.matchedLeadId||!scopedLeadIds.has(client.matchedLeadId)))return false;
+    return true;
+  });
+  const customers=paidWonClients.length;
   const strictSets={
-    qualified:new Set(rows.filter(row=>row.isQualified).map(row=>row.lead.id)),
-    visits:new Set(rows.filter(hasCompletedVisitEvidence).map(row=>row.lead.id)),
-    offers:new Set(rows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).map(row=>row.lead.id)),
-    customers:new Set(rows.filter(row=>row.isCommercialClient).map(row=>row.lead.id)),
+    qualified:new Set(paidRows.filter(row=>row.isQualified).map(row=>row.lead.id)),
+    visits:new Set(paidRows.filter(hasCompletedVisitEvidence).map(row=>row.lead.id)),
+    offers:new Set(paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).map(row=>row.lead.id)),
+    customers:new Set(paidRows.filter(row=>row.isCommercialClient).map(row=>row.lead.id)),
   };
   const sequentialSupported=
     isSubset(strictSets.visits,strictSets.qualified)
@@ -269,20 +288,20 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const cohortClients=uniqueCommercialClientsForRows(data,rows);
   const cohort={
     rows,clients:cohortClients,
-    unique,knownAcquired,supplierOnly,qualified,visits,offers,signed,customers,
+    unique,knownAcquired,supplierOnly,knownPaidAcquired,paidCrmTracked,paidSupplierOnly,qualified,visits,offersCreated,offers,customers,
     projectValueExclVat:[...new Map(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.projects).map(project=>[project.id,project])).values()].reduce((sum,project)=>sum+Number(project.valueExclVat??0),0),
     projectValueInclVat:[...new Map(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.projects).map(project=>[project.id,project])).values()].reduce((sum,project)=>sum+Number(project.valueInclVat??0),0),
     invoicedToDate:uniqueInvoices(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+netInvoiceIncl(invoice),0),
     paidToDate:uniqueInvoices(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.invoices)).reduce((sum,invoice)=>sum+invoice.paidTotal,0),
     sequentialSupported,
     milestones:[
-      {key:"acquired",label:"Known acquired leads",value:knownAcquired,rate:knownAcquired?100:0},
-      {key:"tracked",label:"CRM-tracked people",value:unique,rate:percentage(unique,knownAcquired)??0},
-      {key:"qualified",label:"Qualified",value:qualified,rate:percentage(qualified,unique)??0},
-      {key:"visits",label:"Completed visits",value:visits,rate:percentage(visits,unique)??0},
-      {key:"offers",label:"Offers sent",value:offers,rate:percentage(offers,unique)??0},
-      {key:"signed",label:"Signed CRM",value:signed,rate:percentage(signed,unique)??0},
-      {key:"customers",label:"Commercial customers",value:customers,rate:percentage(customers,unique)??0},
+      {key:"acquired",label:"Known paid acquired",value:knownPaidAcquired,rate:knownPaidAcquired?100:0},
+      {key:"tracked",label:"CRM tracked",value:paidCrmTracked,rate:percentage(paidCrmTracked,knownPaidAcquired)??0},
+      {key:"qualified",label:"Qualified",value:qualified,rate:percentage(qualified,paidCrmTracked)??0},
+      {key:"visits",label:"Completed visits",value:visits,rate:percentage(visits,paidCrmTracked)??0},
+      {key:"offers-created",label:"Offer created",value:offersCreated,rate:percentage(offersCreated,paidCrmTracked)??0},
+      {key:"offers",label:"Offer sent",value:offers,rate:percentage(offers,paidCrmTracked)??0},
+      {key:"customers",label:"Won clients",value:customers,rate:percentage(customers,knownPaidAcquired)??0},
     ],
   };
 
@@ -290,10 +309,11 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const conversion={
     sequentialSupported,
     leadRelative:[
-      {key:"qualified",label:"Qualified / CRM tracked",numerator:qualified,denominator:unique,rate:percentage(qualified,unique)},
-      {key:"visits",label:"Visits / CRM tracked",numerator:visits,denominator:unique,rate:percentage(visits,unique)},
-      {key:"offers",label:"Offers / CRM tracked",numerator:offers,denominator:unique,rate:percentage(offers,unique)},
-      {key:"customers",label:"Project clients / CRM tracked",numerator:customers,denominator:unique,rate:percentage(customers,unique)},
+      {key:"qualified",label:"Qualified / paid CRM tracked",numerator:qualified,denominator:paidCrmTracked,rate:percentage(qualified,paidCrmTracked)},
+      {key:"visits",label:"Visits / paid CRM tracked",numerator:visits,denominator:paidCrmTracked,rate:percentage(visits,paidCrmTracked)},
+      {key:"offers-created",label:"Offer created / paid CRM tracked",numerator:offersCreated,denominator:paidCrmTracked,rate:percentage(offersCreated,paidCrmTracked)},
+      {key:"offers",label:"Offer sent / paid CRM tracked",numerator:offers,denominator:paidCrmTracked,rate:percentage(offers,paidCrmTracked)},
+      {key:"customers",label:"Won / known paid acquired",numerator:customers,denominator:knownPaidAcquired,rate:percentage(customers,knownPaidAcquired)},
     ],
     sequential:sequentialSupported?[
       {key:"qualified-visits",label:"Qualified → Visit",numerator:visits,denominator:qualified,rate:percentage(visits,qualified)},
