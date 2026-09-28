@@ -92,6 +92,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
 
   const result=[...groups.entries()].map(([source,group])=>{
     const manual=sourceSpendOverride(data,source);
+    const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
     const delivered=sourceNumericOverride(data,source,"delivered_leads");
     const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
     const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
@@ -122,7 +123,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const attributableClients=attributableClientRows.length;
     return withCostMetrics({
       source,spend:Number.isFinite(spend as number)?spend:null,costState,
-      spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
+      spendNote:[manual?.note??"",recurring.note,ytdSpend?`YTD bank spend ${Number(ytdSpend.value).toFixed(2)} is known but not allocated to this selected period.`:""].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
@@ -148,6 +149,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     let row=bySource.get(source);
     if(!row){
       const manual=sourceSpendOverride(data,source);
+      const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
       const delivered=sourceNumericOverride(data,source,"delivered_leads");
       const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
       const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
@@ -158,7 +160,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       row=withCostMetrics({
         source,spend:Number.isFinite(spend as number)?spend:null,
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-        spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
+        spendNote:[manual?.note??"",recurring.note,ytdSpend?`YTD bank spend ${Number(ytdSpend.value).toFixed(2)} is known but not allocated to this selected period.`:""].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
         leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,
         sourceKnownClients:0,wonClients:0,sourceClientIds:[],attributableClients:0,datedCohortClients:0,undatedClients:0,clientIds:[],
@@ -197,7 +199,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const row=withCostMetrics({
       source,spend:Number.isFinite(spend as number)?spend:null,
       costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-      spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
+      spendNote:[manual?.note??"",recurring.note,ytdSpend?`YTD bank spend ${Number(ytdSpend.value).toFixed(2)} is known but not allocated to this selected period.`:""].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",
       qualified:0,visits:0,offers:0,customers:0,sourceKnownClients:0,wonClients:0,sourceClientIds:[],
@@ -632,6 +634,13 @@ function sourceNumericOverride(data:CompanyDataset,source:string,fieldKey:string
   return matches.find(item=>item.periodKey===data.periodKey)
     ??matches.find(item=>item.periodKey==="all")
     ??null;
+}
+
+function sourceYtdNumericOverride(data:CompanyDataset,source:string,fieldKey:string){
+  return (data.manualOverrides??[]).find(item=>
+    item.scopeType==="source"&&item.scopeKey===source&&item.fieldKey===fieldKey
+    && item.periodKey==="ytd"&&typeof item.value==="number"
+  )??null;
 }
 
 function sourceSpendOverride(data:CompanyDataset,source:string){
