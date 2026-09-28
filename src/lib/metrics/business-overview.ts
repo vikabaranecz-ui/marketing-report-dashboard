@@ -1,5 +1,5 @@
 import type { CompanyDataset, CommercialClient, CommercialInvoice, CommercialProject } from "@/lib/data/types";
-import { buildJourneyRows, hasLeadOfferEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, hasLeadOfferEvidence, hasOfferCreatedEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { isAcceptedPendingClient, isProjectBackedClient, isWonClient } from "@/lib/metrics/commercial-truth";
 import { percentage, safeDivide } from "@/lib/metrics/kpis";
 
@@ -263,7 +263,7 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const knownPaidAcquired=paidCrmTracked+paidSupplierOnly;
   const qualified=paidRows.filter(row=>row.isQualified).length;
   const visits=paidRows.filter(hasCompletedVisitEvidence).length;
-  const offersCreated=paidRows.filter(row=>row.offers.length>0).length;
+  const offersCreated=paidRows.filter(hasOfferCreatedEvidence).length;
   const offers=paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).length;
   const scopedLeadIds=new Set(rows.flatMap(row=>row.leadIds));
   const paidWonClients=(data.commercialClients??[]).filter(client=>{
@@ -428,9 +428,14 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const known=paidRelevant.filter(item=>item.costState==="known"&&item.spend!==null);
   const missing=paidRelevant.filter(item=>item.costState==="missing");
   const coveredSpend=known.reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const leadCountCovered=known.filter(item=>item.deliveredLeads!==null||item.leads>0);
+  const leadCountCovered=known.filter(item=>item.deliveredLeads!==null||item.leads>0||item.supplierOnlyLeads>0);
   const cplCoveredSpend=leadCountCovered.reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const coveredLeads=leadCountCovered.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
+  const leadCoveredSources=new Set(leadCountCovered.map(item=>item.source));
+  const coveredCrmUnique=rows.filter(row=>leadCoveredSources.has(normalizeAcquisitionSource(row.lead.source))).length;
+  const coveredSupplierOnly=leadCountCovered.reduce((sum,item)=>sum+item.supplierOnlyLeads,0);
+  const coveredLeads=scope.source==="all"
+    ? coveredCrmUnique+coveredSupplierOnly
+    : (leadCountCovered[0]?.deliveredLeads??((leadCountCovered[0]?.leads??0)+(leadCountCovered[0]?.supplierOnlyLeads??0)));
   const crmStageCovered=known.filter(item=>item.leads>0);
   const stageCoveredSpend=crmStageCovered.reduce((sum,item)=>sum+Number(item.spend??0),0);
   const coveredQualified=crmStageCovered.reduce((sum,item)=>sum+item.qualified,0);
@@ -535,7 +540,7 @@ function buildPayback(data:CompanyDataset,rows:JourneyRow[],coveredSpend:number,
 }
 
 function buildCoverage(data:CompanyDataset){
-  const clients=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
+  const clients=(data.commercialClients??[]).filter(isWonClient);
   const allInvoices=data.allCommercialInvoices??[];
   const allProjects=data.allCommercialProjects??[];
   const expectedInvoices=clients.reduce((sum,item)=>sum+item.invoiceCount,0);
@@ -607,6 +612,7 @@ function buildReconciliation(sources:SourcePerformanceRow[],economics:ReturnType
     periodInvoiceValueDifference:Math.abs(business.invoices.reduce((sum:number,item:CommercialInvoice)=>sum+netInvoiceIncl(item),0)-business.invoicedInclVat),
     invoiceDetailGap:coverage.missingInvoices,
     projectDetailGap:coverage.missingProjects,
+    projectValueGap:coverage.projectValueGap,
   };
 }
 
