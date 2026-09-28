@@ -10,7 +10,7 @@ import { EmptyState, StatusPill } from "./ui";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
 
 type OfferTab = "open" | "accepted" | "rejected" | "cancelled" | "all";
-type SourceRow = { source: string; leads: number; crmLeads: number; deliveredLeads: number | null; matched: number; offers: number; openValue: number; rejectedValue: number; acceptedValue: number; clients: number; datedClients: number; undatedClients: number; invoiced: number; paid: number; cost: number | null; cac: number | null; cohortCac: number | null; roas: number | null; cohortRoas: number | null };
+type SourceRow = { source: string; leads: number; crmLeads: number; deliveredLeads: number | null; supplierMatchedPeople:number|null; matched: number; offers: number; openValue: number; rejectedValue: number; acceptedValue: number; clients: number; datedClients: number; undatedClients: number; invoiced: number; paid: number; cost: number | null; cac: number | null; cohortCac: number | null; roas: number | null; cohortRoas: number | null };
 const verifiedMethods = new Set(["EMAIL+PHONE", "EMAIL", "PHONE", "NAME"]);
 const emptyOffers: CommercialOffer[] = [];
 const emptyProjects: CommercialProject[] = [];
@@ -143,6 +143,7 @@ function buildSourceRows(data: CompanyDataset, offers: CommercialOffer[], projec
       leads: effectiveLeads,
       crmLeads,
       deliveredLeads,
+      supplierMatchedPeople: row?.supplierMatchedPeople ?? null,
       matched: sourceLeads.filter(lead => verifiedMethods.has(lead.robawsMatchMethod)).length,
       offers: sourceOffers.length,
       openValue: sum(sourceOffers.filter(offer => offer.isOpen), "priceInclVat"),
