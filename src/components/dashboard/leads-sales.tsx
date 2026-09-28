@@ -121,6 +121,7 @@ export function LeadsSalesPage({ data }: { data: CompanyDataset }) {
 }
 
 function buildSourceRows(data: CompanyDataset, offers: CommercialOffer[], projects: CommercialProject[], invoices: CommercialInvoice[]) {
+  const realizedLeadIds = new Set((data.commercialClients??[]).filter(isWonClient).flatMap(client=>client.matchedLeadId?[client.matchedLeadId]:[]));
   const performance = buildSourcePerformance(data);
   const performanceBySource = new Map(performance.map(row => [row.source, row]));
   const sources = [...new Set([
