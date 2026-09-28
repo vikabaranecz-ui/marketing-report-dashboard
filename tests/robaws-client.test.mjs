@@ -88,3 +88,11 @@ test("ROBAWS single-project fallback never uses rejected-only offer value", () =
   assert.deepEqual(selectRobawsProjectValueOffers("1", projects, offers), []);
   assert.deepEqual(selectRobawsClientProjectValueOffers(projects, offers), []);
 });
+
+
+test("ROBAWS accepted-only client does not create project value before a project exists", () => {
+  const projects = [];
+  const offers = [{ id: "accepted", projectId: null, status: "goedgekeurd", totalInclVat: 50000 }];
+
+  assert.deepEqual(selectRobawsClientProjectValueOffers(projects, offers), []);
+});
