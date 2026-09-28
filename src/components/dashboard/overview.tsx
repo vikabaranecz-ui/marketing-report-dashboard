@@ -144,13 +144,15 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   };
 
   const openMilestone=(key:string)=>{
-    if(key==="acquired") return setDrilldown({title:"Known acquired leads",subtitle:`${scopeLabel} · ${analytics.cohort.unique} CRM-tracked + ${analytics.cohort.supplierOnly} supplier-only without CRM record`,leads:analytics.rows.map(row=>row.lead)});
-    if(key==="tracked") return setDrilldown({title:"CRM-tracked acquired people",subtitle:scopeLabel,leads:analytics.rows.map(row=>row.lead)});
-    if(key==="qualified") return setDrilldown({title:"Qualified acquired leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isQualified).map(row=>row.lead)});
-    if(key==="visits") return setDrilldown({title:"Completed visit evidence",subtitle:scopeLabel,leads:analytics.rows.filter(hasCompletedVisitEvidence).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>selectedLeadIds.has(item.leadId)&&Boolean(item.completedAt))});
-    if(key==="offers") return setDrilldown({title:"Offers sent for acquired leads",subtitle:scopeLabel,offers:selectedSentOffers});
-    if(key==="signed") return setDrilldown({title:"Signed CRM leads",subtitle:scopeLabel,leads:analytics.rows.filter(row=>row.isSigned).map(row=>row.lead)});
-    return setDrilldown({title:"Confirmed commercial customers",subtitle:scopeLabel,initialKind:"clients",clients:selectedClients});
+    const paidRows=analytics.rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
+    const paidLeadIds=new Set(paidRows.flatMap(row=>row.leadIds));
+    if(key==="acquired") return setDrilldown({title:"Known paid acquired leads",subtitle:`${scopeLabel} · ${analytics.cohort.paidCrmTracked} CRM-tracked + ${analytics.cohort.paidSupplierOnly} supplier-only paid leads`,leads:paidRows.map(row=>row.lead)});
+    if(key==="tracked") return setDrilldown({title:"Paid-source CRM tracked",subtitle:scopeLabel,leads:paidRows.map(row=>row.lead)});
+    if(key==="qualified") return setDrilldown({title:"Qualified paid-source leads",subtitle:scopeLabel,leads:paidRows.filter(row=>row.isQualified).map(row=>row.lead)});
+    if(key==="visits") return setDrilldown({title:"Completed visits · paid-source leads",subtitle:scopeLabel,leads:paidRows.filter(hasCompletedVisitEvidence).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>paidLeadIds.has(item.leadId)&&Boolean(item.completedAt))});
+    if(key==="offers-created") return setDrilldown({title:"Offers created · paid-source leads",subtitle:scopeLabel,offers:paidRows.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index)});
+    if(key==="offers") return setDrilldown({title:"Offers sent · paid-source leads",subtitle:scopeLabel,offers:paidRows.flatMap(row=>row.offers).filter(hasOfferSentEvidence).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index)});
+    return setDrilldown({title:"Won clients from paid acquisition",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients});
   };
 
   return <div className="overview-v2 space-y-6">
@@ -176,7 +178,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>{hasAcquisitionFilter?"Filtered acquisition scope: "+scopeLabel+" · company truth remains 31-style canonical won count above":"Company acquisition view · subsets are labelled separately from won-client truth"}</small></div>
           <div className="executive-group-metrics">
             <SummaryMetric label="Covered paid-source spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Bank/synced paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
-            <SummaryMetric label="Known acquired leads" value={formatNumber(analytics.cohort.knownAcquired)} note={analytics.cohort.supplierOnly?formatNumber(analytics.cohort.unique)+" CRM-tracked · "+formatNumber(analytics.cohort.supplierOnly)+" supplier-only":formatNumber(analytics.cohort.unique)+" CRM-tracked"} onClick={()=>openMilestone("acquired")}/>
+            <SummaryMetric label="Known paid acquired" value={formatNumber(analytics.cohort.knownPaidAcquired)} note={formatNumber(analytics.cohort.paidCrmTracked)+" CRM-tracked · "+formatNumber(analytics.cohort.paidSupplierOnly)+" supplier-only paid leads"} onClick={()=>openMilestone("acquired")}/>
             <SummaryMetric label="Company won clients" value={formatNumber(analytics.commercialLedger.wonClientCount)} note="Canonical ROBAWS truth · project/invoice evidence" onClick={()=>setDrilldown({title:"Company won clients",subtitle:"ROBAWS project or invoice evidence",initialKind:"clients",clients:analytics.commercialLedger.clients})}/>
             {hasAcquisitionFilter&&<SummaryMetric label="Selected-scope won clients" value={formatNumber(analytics.economics.wonCustomers)} note={scopeLabel+" · subset of company won clients"} onClick={()=>setDrilldown({title:"Selected-scope won clients",subtitle:scopeLabel,initialKind:"clients",clients:wonClients})}/>}
             <SummaryMetric label={hasAcquisitionFilter?"Selected-scope source-known won":"Source-known won clients"} value={formatNumber(analytics.economics.sourceAttributedCustomers)} note={hasAcquisitionFilter?"Known source inside "+scopeLabel:"Company won clients with a known acquisition source"} onClick={()=>setDrilldown({title:"Source-known won clients",subtitle:scopeLabel,initialKind:"clients",clients:sourceAttributedWonClients})}/>
@@ -228,7 +230,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
       <SectionHeader title="Acquisition cohort" description="Marketing value follows the month the lead was acquired. Later wins, invoices and paid value stay attached to that acquisition cohort; supplier-only leads without a reliable date remain unassigned to a month."/>
       <div className="grid gap-6 xl:grid-cols-[1.05fr_.95fr]">
       <Card className="p-5">
-        <SectionHeader title="Conversion milestones" description="Known acquired leads include verified supplier-only records. Downstream qualification, visit and offer stages use CRM-tracked people only; this is not forced into a false narrowing funnel."/>
+        <SectionHeader title="Conversion milestones" description="Paid acquisition only: Meta/Facebook, Google Ads, AgenciYou, LeadAngel and Solary. The first stage includes verified supplier-only paid leads; later stages use CRM/ROBAWS evidence. Signed is not a separate stage: won client is the final conversion."/>
         <div className="milestone-list">
           {analytics.cohort.milestones.map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
         </div>
