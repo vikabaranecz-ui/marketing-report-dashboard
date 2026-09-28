@@ -49,6 +49,7 @@ export function selectRobawsClientProjectValueOffers<T extends RobawsOfferRef>(
   clientProjects:RobawsProjectRef[],
   clientOffers:T[],
 ):T[]{
+  if(clientProjects.length===0)return [];
   const selected=clientProjects.flatMap(project=>selectRobawsProjectValueOffers(project.id,clientProjects,clientOffers));
   const selectedIds=new Set(selected.map(offer=>offer.id));
   const unallocatedAccepted=clientOffers.filter(
