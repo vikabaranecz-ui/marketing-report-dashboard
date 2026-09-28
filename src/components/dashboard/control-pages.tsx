@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
 import { buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
-import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES } from "@/lib/metrics/business-overview";
+import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES, resolvedClientSource } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { isWonClient } from "@/lib/metrics/commercial-truth";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
@@ -220,18 +220,20 @@ export function RevenuePage({ data }: { data: CompanyDataset }) {
 
 export function DataHealthPage({ data }: { data: CompanyDataset }) {
   const rows=buildJourneyRows(data);
+  const analytics=buildOverviewAnalytics(data,{source:"all",campaign:"all"});
   const clients=data.commercialClients??[];
-  const sourcePerformance=buildSourcePerformance(data,rows);
+  const sourcePerformance=analytics.sourceRows;
   const supplierOnly=sourcePerformance.reduce((sum,row)=>sum+row.supplierOnlyLeads,0);
   const supplierMatchedPeople=sourcePerformance.reduce((sum,row)=>sum+Number(row.supplierMatchedPeople??0),0);
-  const sourceKnownWithoutTrustedMonth=sourcePerformance.reduce((sum,row)=>sum+row.undatedClients,0);
-  const knownAcquired=rows.length+supplierOnly;
+  const sourceKnownWithoutTrustedMonth=analytics.dateCoverage.sourceKnownWithoutTrustedMonth;
+  const wonWithoutTrustedMonth=analytics.dateCoverage.withoutTrustedMonth;
+  const knownAcquired=analytics.cohort.knownAcquired;
   const googleSpendPresent=sourcePerformance.some(row=>row.source==="Google Ads"&&row.costState==="known"&&Number(row.spend??0)>0);
   const signedUnconfirmedRows=rows.filter(row=>row.isSigned&&!row.isCommercialClient);
-  const acquisitionDateConflictRows=rows.filter(row=>row.hasAcquisitionDateConflict);
+  const acquisitionDateConflictRows=analytics.dateCoverage.dateConflict;
   const signedUnconfirmed=signedUnconfirmedRows.length;
   const unmatchedClients=clients.filter(client=>!client.matchedLeadId).length;
-  const wonClients=clients.filter(isWonClient);
+  const wonClients=analytics.commercialLedger.clients;
   const unmatchedWon=wonClients.filter(client=>!client.matchedLeadId).sort((a,b)=>b.paidTotal-a.paidTotal||b.invoicedTotal-a.invoicedTotal);
   const sourceOverrides=(data.manualOverrides??[]).filter(item=>item.scopeType==="client"&&item.fieldKey==="source"&&typeof item.value==="string");
   const supplierVerifiedSourceOverrides=sourceOverrides.filter(item=>item.note.toLowerCase().includes("agenciyou workbook"));
@@ -242,18 +244,14 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
     const preferred=matches.find(item=>item.periodKey===data.periodKey)??matches.find(item=>item.periodKey==="all")??matches[0];
     return typeof preferred?.value==="string"&&preferred.value.trim()?preferred.value.trim():null;
   };
-  const safelyAttributed=rows.filter(row=>row.isAttributableClient&&hasSafeAcquisitionSource(row.lead.source));
-  const safeLeadIds=new Set(safelyAttributed.flatMap(row=>row.leadIds));
-  const safelyAttributedClientIds=new Set(wonClients.filter(client=>client.matchedLeadId&&safeLeadIds.has(client.matchedLeadId)).map(client=>client.id));
-  const manuallyAttributedClientIds=new Set(wonClients.filter(client=>hasSafeAcquisitionSource(manualSourceForClient(client))).map(client=>client.id));
-  const attributedClientIds=new Set([...safelyAttributedClientIds,...manuallyAttributedClientIds]);
-  const attributionCoverage=percentage(attributedClientIds.size,wonClients.length)??0;
-  const businessPaid=wonClients.reduce((sum,client)=>sum+client.paidTotal,0);
-  const attributedPaid=wonClients.filter(client=>attributedClientIds.has(client.id)).reduce((sum,client)=>sum+client.paidTotal,0);
-  const paidCoverage=percentage(attributedPaid,businessPaid)??0;
-  const projectDetailValue=(data.allCommercialProjects??[]).reduce((sum,project)=>sum+Number(project.valueInclVat??0),0);
-  const projectAggregateValue=wonClients.reduce((sum,client)=>sum+client.projectValueTotal,0);
-  const projectValueGap=Math.abs(projectAggregateValue-projectDetailValue);
+  const attributedClientIds=new Set(wonClients.filter(client=>hasSafeAcquisitionSource(resolvedClientSource(data,client))).map(client=>client.id));
+  const attributionCoverage=analytics.attribution.sourceCoverage;
+  const businessPaid=analytics.attribution.paidTotal;
+  const attributedPaid=analytics.attribution.attributedPaid;
+  const paidCoverage=analytics.attribution.paidValueCoverage;
+  const projectDetailValue=analytics.coverage.loadedProjectValue;
+  const projectAggregateValue=analytics.coverage.clientAggregateProjectValue;
+  const projectValueGap=analytics.coverage.projectValueGap;
   const checks=[
     {label:"CRM source completeness",ok:data.dataHealth.missingSource===0,detail:data.dataHealth.missingSource+" leads missing source"},
     {label:"Duplicate control",ok:data.dataHealth.duplicates===0,detail:data.dataHealth.duplicates+" potential duplicate CRM rows"},
@@ -265,8 +263,8 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
     {label:"Signed → commercial match",ok:signedUnconfirmed===0,detail:signedUnconfirmed+" signed leads not confirmed as ROBAWS clients"},
     {label:"Google Ads spend",ok:googleSpendPresent,detail:googleSpendPresent?"Verified spend available":"No verified spend"},
     {label:"Supplier → CRM identity coverage",ok:supplierOnly===0,detail:supplierMatchedPeople+" supplier people matched to CRM · "+supplierOnly+" supplier-only without CRM/acquisition date"},
-    {label:"Acquisition-date consistency",ok:acquisitionDateConflictRows.length===0,detail:acquisitionDateConflictRows.length+" linked won client(s) have client evidence dated before the CRM lead creation date and are excluded from monthly cohort attribution"},
-    {label:"Cohort-month client coverage",ok:sourceKnownWithoutTrustedMonth===0,detail:sourceKnownWithoutTrustedMonth+" source-known won client(s) do not have a trustworthy acquisition month and are excluded from cohort CAC/ROAS"},
+    {label:"Won-client acquisition-date consistency",ok:acquisitionDateConflictRows.length===0,detail:acquisitionDateConflictRows.length+" won client(s) have ROBAWS evidence dated before the linked CRM lead creation date and are excluded from monthly cohort attribution"},
+    {label:"Cohort-month client coverage",ok:wonWithoutTrustedMonth===0,detail:analytics.dateCoverage.trustedCount+" / "+wonClients.length+" won clients have a trusted acquisition month · "+sourceKnownWithoutTrustedMonth+" source-known won clients remain undated"},
   ];
   const passed=checks.filter(item=>item.ok).length;
 
@@ -288,8 +286,9 @@ export function DataHealthPage({ data }: { data: CompanyDataset }) {
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Signed, not ROBAWS client" value={signedUnconfirmed}/>
           <HealthMetric icon={<Database size={15}/>} label="Known acquired people" value={knownAcquired}/>
           <HealthMetric icon={<AlertTriangle size={15}/>} label="Supplier-only / undated" value={supplierOnly}/>
-          <HealthMetric icon={<AlertTriangle size={15}/>} label="Acquisition date conflicts" value={acquisitionDateConflictRows.length}/>
-          <HealthMetric icon={<AlertTriangle size={15}/>} label="Source-known clients without month" value={sourceKnownWithoutTrustedMonth}/>
+          <HealthMetric icon={<AlertTriangle size={15}/>} label="Won-client date conflicts" value={acquisitionDateConflictRows.length}/>
+          <HealthMetric icon={<AlertTriangle size={15}/>} label="Won clients without trusted month" value={wonWithoutTrustedMonth}/>
+          <HealthMetric icon={<AlertTriangle size={15}/>} label="Source-known won without month" value={sourceKnownWithoutTrustedMonth}/>
           <HealthMetric icon={<CircleDollarSign size={15}/>} label="Project value gap" value={projectValueGap} money/>
         </div>
       </Card>
