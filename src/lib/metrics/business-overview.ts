@@ -1,5 +1,6 @@
 import type { CompanyDataset, CommercialClient, CommercialInvoice, CommercialProject } from "@/lib/data/types";
-import { buildJourneyRows, hasLeadOfferEvidence, hasOfferCreatedEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, hasCompletedVisitEvidence, hasLeadOfferEvidence, hasOfferCreatedEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
+export { hasCompletedVisitEvidence } from "@/lib/metrics/client-funnel";
 import { isAcceptedPendingClient, isProjectBackedClient, isWonClient } from "@/lib/metrics/commercial-truth";
 import { percentage, safeDivide } from "@/lib/metrics/kpis";
 
@@ -108,15 +109,6 @@ export function buildWonClientDateCoverage(data:CompanyDataset){
   };
 }
 
-export function hasCompletedVisitEvidence(row:JourneyRow){
-  const status=normalized(row.lead.crmStatus);
-  const stage=normalized(row.lead.stage);
-  return row.appointments.some(item=>Boolean(item.completedAt))
-    || stage.includes("visit completed")
-    || stage.includes("quote")
-    || stage.includes("won")
-    || ["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
-}
 
 export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=buildJourneyRows(data)):SourcePerformanceRow[]{
   const groups=new Map<string,JourneyRow[]>();
