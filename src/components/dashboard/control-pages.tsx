@@ -127,16 +127,18 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
   const rows = buildJourneyRows(data);
   const sources = sourceBusinessRows(data,rows);
   const campaignRows = campaignBusinessRows(data,rows);
+  const companyWonClients=(data.commercialClients??[]).filter(isWonClient);
   const wonClientsInRows=sources.reduce((sum,row)=>sum+row.commercialClients,0);
   const sourceKnownClients=sources.filter(row=>hasSafeAcquisitionSource(row.source)).reduce((sum,row)=>sum+row.commercialClients,0);
-  const unknownSourceClients=wonClientsInRows-sourceKnownClients;
+  const unknownSourceClients=Math.max(0,companyWonClients.length-sourceKnownClients);
   const datedCohortClients=sources.reduce((sum,row)=>sum+row.attributedClients,0);
+  const sourcePartitionMatches=wonClientsInRows===companyWonClients.length;
   const undatedSourceClients=sources.reduce((sum,row)=>sum+row.undatedClients,0);
   const [editingSource,setEditingSource]=useState<SourceBusinessRow|null>(null);
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
 
   return <div className="space-y-6">
-    <div className="callout"><AlertTriangle size={18}/><div><strong>{wonClientsInRows} won client(s): {sourceKnownClients} known source · {unknownSourceClients} unknown source.</strong><p>{datedCohortClients} won client(s) have a trusted acquisition month. The other {undatedSourceClients} stay in source/year totals but are not forced into a false month.</p></div></div>
+    <div className="callout"><AlertTriangle size={18}/><div><strong>Company truth: {companyWonClients.length} won client(s) · {sourceKnownClients} source-known · {unknownSourceClients} unknown source · {datedCohortClients} dated-cohort.</strong><p>{sourcePartitionMatches?"Source rows reconcile to the canonical ROBAWS won-client total.":`RECONCILIATION WARNING: source rows currently total ${wonClientsInRows}, but canonical ROBAWS won clients total ${companyWonClients.length}.`} Dated-cohort is only for acquisition-month analysis and is never the company client count.</p></div></div>
     <Card className="p-5">
       <SectionHeader title="Source → business result" description="Marketing outcomes follow the acquisition source and acquisition cohort. Supplier-delivered counts are used when verified; downstream stages remain CRM-backed. Later project value stays with the month/source that acquired the lead."/>
       <div className="table-scroll"><table className="wide-decision-table">
