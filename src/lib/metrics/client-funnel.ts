@@ -1,4 +1,5 @@
 import type { CommercialAppointment, CommercialInvoice, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
+import { isWonClient } from "@/lib/metrics/commercial-truth";
 
 export type JourneyStage = "new" | "qualified" | "visit" | "offer" | "accepted" | "signed" | "verified" | "lost";
 
@@ -274,7 +275,7 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
       || normalized(project.status).includes("project"),
     );
     const signed = group.some(isSigned);
-    const commercialClient = Boolean(matchedCommercialClient && matchedCommercialClient.projectCount > 0) || verifiedProject;
+    const commercialClient = Boolean(matchedCommercialClient && isWonClient(matchedCommercialClient)) || verifiedProject;
     const acquisitionDateConflict = Boolean(
       matchedCommercialClient?.clientSince
       && lead.date
