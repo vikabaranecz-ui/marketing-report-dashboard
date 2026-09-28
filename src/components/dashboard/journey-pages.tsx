@@ -75,7 +75,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
           <h2>Customer payback</h2>
           <p>All won clients stay visible here. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month.</p>
         </div>
-        <div className="payback-scope"><CalendarClock size={17}/><div><span>Won-client scope</span><strong>{formatNumber(totals.clients)} clients · {formatNumber(datedCohortClients)} dated cohorts</strong></div></div>
+        <div className="payback-scope"><CalendarClock size={17}/><div><span>Won-client scope</span><strong>{formatNumber(totals.clients)} won clients</strong></div></div>
       </div>
       <div className="payback-truth-note">
         <strong>Timing rule:</strong> CRM gives the acquisition date. ROBAWS gives a project record date and invoice dates. The API does not currently expose reliable work-start/work-finish dates or payment timestamps, so the dashboard does not pretend invoice dates are construction dates. “Paid by month” below means paid value attached to invoices dated in that month.
@@ -85,7 +85,6 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     <div className="payback-truth-note"><strong>Customer coverage:</strong> {formatNumber(totals.clients)} won client(s) are shown. {formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; {formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being dropped or assigned to a guessed month. Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
     <div className="payback-kpis">
       <PaybackKpi label="Won clients" value={formatNumber(totals.clients)} note="Canonical ROBAWS project/invoice evidence"/>
-      <PaybackKpi label="Dated cohorts" value={formatNumber(datedCohortClients)} note={formatNumber(undatedClients)+" acquisition month unverified"}/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
       <PaybackKpi label="Invoiced" value={formatCurrency(totals.invoiced,true)} note="Net of credits"/>
       <PaybackKpi label="Paid to date" value={formatCurrency(totals.paid,true)} note="Current paid total on invoices" accent/>
