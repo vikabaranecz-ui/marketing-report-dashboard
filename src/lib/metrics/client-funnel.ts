@@ -395,7 +395,7 @@ function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => str
       sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: group.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: group.filter(row => row.isSigned).length,
-      verified: group.filter(row => row.isAttributableClient).length,
+      verified: group.filter(row => row.isCommercialClient).length,
       revenue: group.reduce((sum, row) => sum + row.projectValue, 0),
     };
   }).sort((a,b) => b.revenue - a.revenue || b.openPipeline - a.openPipeline || b.leads - a.leads);
@@ -448,7 +448,7 @@ export function sourcePipelineRows(data: CompanyDataset) {
       sentQuotedValue: sourceRows.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: sourceRows.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: sourceRows.filter(row => row.isSigned).length,
-      verified: sourceRows.filter(row => row.isAttributableClient).length,
+      verified: sourceRows.filter(row => row.isCommercialClient).length,
       revenue: sourceRows.reduce((sum, row) => sum + row.projectValue, 0),
       notRelevant: sourceRows.filter(row => row.isNotRelevant).length,
     };
