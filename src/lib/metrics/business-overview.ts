@@ -363,24 +363,34 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
     const campaignInvoices=uniqueInvoices(campaignAttributableRows.flatMap(row=>row.invoices));
     const campaignProjectValueExclVat=campaignProjects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
     const campaignPaidValue=campaignInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
+    const wonClientIds=clients.map(item=>item.id);
+    const datedCohortClientIds=attributableClientIds;
+    const paidSourceWonClientIds=paidSource&&spend!==null?wonClientIds:[];
     return {
       costState:paidSource?(spend===null?"missing":"known"):"not-applicable" as const,
       coveredSpend:spend===null?0:Number(coveredSpend),
+      stageCoveredSpend:spend===null||counts.leads===0?0:Number(coveredSpend),
       cplCoveredSpend,
       cplCoveredSources:spend===null||counts.leads===0?[]:[scope.campaign],
       coveredLeads:spend===null?0:counts.leads,
       coveredQualified:spend===null?0:counts.qualified,
       coveredVisits:spend===null?0:counts.visits,
       coveredOffers:spend===null?0:counts.offers,
-      attributableCustomers:spend===null?0:counts.customers,
-      attributableClientIds:spend===null?[]:attributableClientIds,
+      wonCustomers:wonClientIds.length,wonClientIds,
+      sourceAttributedCustomers:wonClientIds.length,sourceAttributedClientIds:wonClientIds,
+      paidSourceWonCustomers:paidSourceWonClientIds.length,paidSourceWonClientIds,
+      datedCohortCustomers:datedCohortClientIds.length,datedCohortClientIds,
+      attributableCustomers:paidSourceWonClientIds.length,
+      attributableClientIds:paidSourceWonClientIds,
+      paidSourceProjectValueExclVat:campaignProjectValueExclVat,
+      paidSourcePaidValue:campaignPaidValue,
       cohortValueExclVat:campaignProjectValueExclVat,
       cohortPaidValue:campaignPaidValue,
       cpl:spend===null?null:safeDivide(cplCoveredSpend,counts.leads),
       costQualified:spend===null?null:safeDivide(spend,counts.qualified),
       costVisit:spend===null?null:safeDivide(spend,counts.visits),
       costOffer:spend===null?null:safeDivide(spend,counts.offers),
-      cac:spend===null?null:safeDivide(spend,counts.customers),
+      cac:spend===null?null:safeDivide(spend,paidSourceWonClientIds.length),
       cohortCashRoas:spend===null||spend===0?null:campaignPaidValue/spend,
       missingCostSources:spend===null?[scope.campaign]:[],
       coveredSources:spend===null?[]:[scope.campaign],
@@ -392,26 +402,47 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
   const known=paidRelevant.filter(item=>item.costState==="known"&&item.spend!==null);
   const missing=paidRelevant.filter(item=>item.costState==="missing");
   const coveredSpend=known.reduce((sum,item)=>sum+Number(item.spend??0),0);
-  const leadCountCovered=known.filter(item=>!(item.deliveredLeads===null&&item.leads===0&&item.customers>0));
+  const leadCountCovered=known.filter(item=>item.deliveredLeads!==null||item.leads>0);
   const cplCoveredSpend=leadCountCovered.reduce((sum,item)=>sum+Number(item.spend??0),0);
   const coveredLeads=leadCountCovered.reduce((sum,item)=>sum+(item.deliveredLeads??item.leads),0);
-  const coveredQualified=known.reduce((sum,item)=>sum+item.qualified,0);
-  const coveredVisits=known.reduce((sum,item)=>sum+item.visits,0);
-  const coveredOffers=known.reduce((sum,item)=>sum+item.offers,0);
-  const attributableClientIds=[...new Set(known.flatMap(item=>item.clientIds))];
-  const attributableCustomers=attributableClientIds.length;
+  const crmStageCovered=known.filter(item=>item.leads>0);
+  const stageCoveredSpend=crmStageCovered.reduce((sum,item)=>sum+Number(item.spend??0),0);
+  const coveredQualified=crmStageCovered.reduce((sum,item)=>sum+item.qualified,0);
+  const coveredVisits=crmStageCovered.reduce((sum,item)=>sum+item.visits,0);
+  const coveredOffers=crmStageCovered.reduce((sum,item)=>sum+item.offers,0);
+
+  const wonClientIds=[...new Set(relevant.flatMap(item=>item.sourceClientIds))];
+  const safeRelevant=relevant.filter(item=>hasSafeAcquisitionSource(item.source));
+  const sourceAttributedClientIds=[...new Set(safeRelevant.flatMap(item=>item.sourceClientIds))];
+  const paidSourceWonClientIds=[...new Set(known.flatMap(item=>item.sourceClientIds))];
+  const datedCohortClientIds=[...new Set(relevant.flatMap(item=>item.clientIds))];
+
+  const wonCustomers=wonClientIds.length;
+  const sourceAttributedCustomers=sourceAttributedClientIds.length;
+  const paidSourceWonCustomers=paidSourceWonClientIds.length;
+  const datedCohortCustomers=datedCohortClientIds.length;
+
+  const paidSourceProjectValueExclVat=known.reduce((sum,item)=>sum+item.sourceProjectValueExclVat,0);
+  const paidSourcePaidValue=known.reduce((sum,item)=>sum+item.sourcePaidValue,0);
   const cohortValueExclVat=relevant.reduce((sum,item)=>sum+item.projectValueExclVat,0);
   const cohortPaidValue=relevant.reduce((sum,item)=>sum+item.paidValue,0);
+
   return {
     costState:missing.length?"partial":known.length?"known":"missing" as "partial"|"known"|"missing",
-    coveredSpend,cplCoveredSpend,cplCoveredSources:leadCountCovered.map(item=>item.source),coveredLeads,coveredQualified,coveredVisits,coveredOffers,attributableCustomers,attributableClientIds,
+    coveredSpend,stageCoveredSpend,cplCoveredSpend,cplCoveredSources:leadCountCovered.map(item=>item.source),coveredLeads,coveredQualified,coveredVisits,coveredOffers,
+    wonCustomers,wonClientIds,
+    sourceAttributedCustomers,sourceAttributedClientIds,
+    paidSourceWonCustomers,paidSourceWonClientIds,
+    datedCohortCustomers,datedCohortClientIds,
+    attributableCustomers:paidSourceWonCustomers,attributableClientIds:paidSourceWonClientIds,
+    paidSourceProjectValueExclVat,paidSourcePaidValue,
     cohortValueExclVat,cohortPaidValue,
     cpl:safeDivide(cplCoveredSpend,coveredLeads),
-    costQualified:safeDivide(coveredSpend,coveredQualified),
-    costVisit:safeDivide(coveredSpend,coveredVisits),
-    costOffer:safeDivide(coveredSpend,coveredOffers),
-    cac:safeDivide(coveredSpend,attributableCustomers),
-    cohortCashRoas:coveredSpend?cohortPaidValue/coveredSpend:null,
+    costQualified:safeDivide(stageCoveredSpend,coveredQualified),
+    costVisit:safeDivide(stageCoveredSpend,coveredVisits),
+    costOffer:safeDivide(stageCoveredSpend,coveredOffers),
+    cac:safeDivide(coveredSpend,paidSourceWonCustomers),
+    cohortCashRoas:coveredSpend?paidSourcePaidValue/coveredSpend:null,
     missingCostSources:missing.map(item=>item.source),
     coveredSources:known.map(item=>item.source),
   };
@@ -568,8 +599,8 @@ function refreshCostMetrics(row:SourcePerformanceRow){
   row.costQualified=safeDivide(row.spend,row.qualified);
   row.costVisit=safeDivide(row.spend,row.visits);
   row.costOffer=safeDivide(row.spend,row.offers);
-  row.cac=safeDivide(row.spend,row.attributableClients);
-  row.cohortCashRoas=row.spend?row.paidValue/row.spend:null;
+  row.cac=safeDivide(row.spend,row.sourceKnownClients);
+  row.cohortCashRoas=row.spend?row.sourcePaidValue/row.spend:null;
 }
 
 export function supplierOnlyLeadCount(data:CompanyDataset,source:string="all"){
