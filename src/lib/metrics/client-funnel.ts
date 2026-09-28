@@ -336,6 +336,16 @@ export function buildJourneyRows(data: CompanyDataset): JourneyRow[] {
   });
 }
 
+export function hasCompletedVisitEvidence(row: JourneyRow) {
+  const status=normalized(row.lead.crmStatus);
+  const stage=normalized(row.lead.stage);
+  return row.appointments.some(item=>Boolean(item.completedAt))
+    || stage.includes("visit completed")
+    || stage.includes("quote")
+    || stage.includes("won")
+    || ["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
+}
+
 export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
   const rows = buildJourneyRows(data);
   return {
@@ -343,7 +353,7 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     uniquePeople: rows.length,
     notRelevantPeople: rows.filter(row => row.isNotRelevant).length,
     qualified: rows.filter(row => row.isQualified).length,
-    visits: rows.filter(row => row.hasVisit).length,
+    visits: rows.filter(hasCompletedVisitEvidence).length,
     offersCreated: rows.filter(hasOfferCreatedEvidence).length,
     offerDocuments: rows.reduce((sum,row)=>sum+row.offers.length,0),
     qualifiedNoOffer: rows.filter(row=>row.isQualified&&!hasOfferCreatedEvidence(row)).length,
@@ -393,7 +403,7 @@ function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => str
       leads: group.length,
       notRelevant: group.filter(row => row.isNotRelevant).length,
       qualified: group.filter(row => row.isQualified).length,
-      visits: group.filter(row => row.hasVisit).length,
+      visits: group.filter(hasCompletedVisitEvidence).length,
       offersCreated: group.filter(hasOfferCreatedEvidence).length,
       offersSent: group.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
       sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
@@ -445,8 +455,8 @@ export function sourcePipelineRows(data: CompanyDataset) {
       cost,
       leads: sourceRows.length,
       qualified: sourceRows.filter(row => row.isQualified).length,
-      visits: sourceRows.filter(row => row.hasVisit).length,
-      offersCreated: sourceRows.filter(row => row.offers.length > 0).length,
+      visits: sourceRows.filter(hasCompletedVisitEvidence).length,
+      offersCreated: sourceRows.filter(hasOfferCreatedEvidence).length,
       offers: sourceRows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
       quotedValue: sourceRows.reduce((sum, row) => sum + row.offerValue, 0),
       sentQuotedValue: sourceRows.reduce((sum, row) => sum + row.sentOfferValue, 0),
