@@ -21,8 +21,10 @@ export type SourcePerformanceRow = {
   offers:number;
   customers:number;
   sourceKnownClients:number;
+  wonClients:number;
   sourceClientIds:string[];
   attributableClients:number;
+  datedCohortClients:number;
   undatedClients:number;
   clientIds:string[];
   sourceProjectValueExclVat:number;
@@ -58,6 +60,20 @@ export function normalizeAcquisitionSource(source:string){
 export function hasSafeAcquisitionSource(source:string|null|undefined){
   const value=normalizeAcquisitionSource(String(source??"")).trim().toLowerCase();
   return !["","unknown","unattributed","onbekend","n/a","—"].includes(value);
+}
+
+export function isProjectWonClient(client:CommercialClient){
+  return client.projectCount>0;
+}
+
+export function resolvedClientSource(data:CompanyDataset,client:CommercialClient){
+  const manual=manualClientSource(data,client);
+  if(manual!==null)return normalizeAcquisitionSource(manual);
+  if(client.matchedLeadId){
+    const lead=data.leads.find(item=>item.id===client.matchedLeadId);
+    if(lead?.source)return normalizeAcquisitionSource(lead.source);
+  }
+  return "Unattributed";
 }
 
 export function hasCompletedVisitEvidence(row:JourneyRow){
@@ -113,8 +129,8 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
-      sourceKnownClients:clients.length,sourceClientIds:clients.map(item=>item.id),
-      attributableClients,undatedClients:Math.max(0,clients.length-attributableClientRows.length),clientIds:attributableClientRows.map(item=>item.id),
+      sourceKnownClients:clients.length,wonClients:clients.length,sourceClientIds:clients.map(item=>item.id),
+      attributableClients,datedCohortClients:attributableClients,undatedClients:Math.max(0,clients.length-attributableClientRows.length),clientIds:attributableClientRows.map(item=>item.id),
       sourceProjectValueExclVat,sourceProjectValueInclVat,sourceInvoicedValue,sourcePaidValue,
       projectValueExclVat,projectValueInclVat,invoicedValue,paidValue,
     });
@@ -124,7 +140,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
   const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
   const manualOnlyClients=(data.commercialClients??[]).filter(client=>
     data.periodKey==="ytd"
-    && client.commercialStatus==="CLIENT_WON"
+    && isProjectWonClient(client)
     && clientInSelectedPeriod(data,client)
     && Boolean(manualClientSource(data,client))
     && !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
@@ -148,7 +164,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
         spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
         leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,
-        sourceKnownClients:0,sourceClientIds:[],attributableClients:0,undatedClients:0,clientIds:[],
+        sourceKnownClients:0,wonClients:0,sourceClientIds:[],attributableClients:0,datedCohortClients:0,undatedClients:0,clientIds:[],
         sourceProjectValueExclVat:0,sourceProjectValueInclVat:0,sourceInvoicedValue:0,sourcePaidValue:0,
         projectValueExclVat:0,projectValueInclVat:0,invoicedValue:0,paidValue:0,
       });
@@ -157,6 +173,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     }
     row.customers+=1;
     row.sourceKnownClients+=1;
+    row.wonClients+=1;
     row.sourceClientIds.push(client.id);
     const clientProjects=(data.allCommercialProjects??[]).filter(project=>project.externalClientId===client.externalId);
     row.sourceProjectValueExclVat+=clientProjects.reduce((sum,project)=>sum+Number(project.valueExclVat??0),0);
@@ -167,7 +184,35 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     refreshCostMetrics(row);
   }
 
-  return result.sort((a,b)=>b.paidValue-a.paidValue||b.projectValueExclVat-a.projectValueExclVat||b.customers-a.customers||b.leads-a.leads);
+  const sourceEvidenceSources=[...new Set((data.manualOverrides??[])
+    .filter(item=>item.scopeType==="source")
+    .map(item=>normalizeAcquisitionSource(item.scopeKey)))];
+  for(const source of sourceEvidenceSources){
+    if(bySource.has(source))continue;
+    const manual=sourceSpendOverride(data,source);
+    const delivered=sourceNumericOverride(data,source,"delivered_leads");
+    const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
+    const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
+    const recurring=recurringSourceSpend(data,source);
+    const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,[]);
+    const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+    const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
+    const row=withCostMetrics({
+      source,spend:Number.isFinite(spend as number)?spend:null,
+      costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
+      spendNote:[manual?.note??"",recurring.note].filter(Boolean).join(" · "),
+      isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
+      leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",
+      qualified:0,visits:0,offers:0,customers:0,sourceKnownClients:0,wonClients:0,sourceClientIds:[],
+      attributableClients:0,datedCohortClients:0,undatedClients:0,clientIds:[],
+      sourceProjectValueExclVat:0,sourceProjectValueInclVat:0,sourceInvoicedValue:0,sourcePaidValue:0,
+      projectValueExclVat:0,projectValueInclVat:0,invoicedValue:0,paidValue:0,
+    });
+    bySource.set(source,row);
+    result.push(row);
+  }
+
+  return result.sort((a,b)=>b.sourcePaidValue-a.sourcePaidValue||b.sourceProjectValueExclVat-a.sourceProjectValueExclVat||b.wonClients-a.wonClients||b.leads-a.leads);
 }
 
 export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
@@ -275,8 +320,13 @@ function buildCommercialLedger(data:CompanyDataset){
   const projectValueExclVat=projects.reduce((sum,item)=>sum+Number(item.valueExclVat??0),0);
   const clientAggregateProjectValue=clients.reduce((sum,item)=>sum+item.projectValueTotal,0);
   const clientAggregateProjectValueExclVat=clients.reduce((sum,item)=>sum+item.projectValueTotalExclVat,0);
+  const projectWonClients=clients.filter(isProjectWonClient);
+  const sourceAttributedWonClients=projectWonClients.filter(client=>hasSafeAcquisitionSource(resolvedClientSource(data,client)));
   return {
     clients,
+    projectWonClients,
+    projectWonClientCount:projectWonClients.length,
+    sourceAttributedWonClientCount:sourceAttributedWonClients.length,
     payingClients:payingClients.length,
     projectValue,
     projectValueExclVat,
@@ -455,7 +505,7 @@ function buildCoverage(data:CompanyDataset){
 }
 
 function buildAttributionCoverage(data:CompanyDataset,sources:SourcePerformanceRow[]){
-  const won=(data.commercialClients??[]).filter(item=>item.commercialStatus==="CLIENT_WON");
+  const won=(data.commercialClients??[]).filter(isProjectWonClient);
   const resolved=won.filter(client=>{
     const manual=manualClientSource(data,client);
     if(manual!==null)return hasSafeAcquisitionSource(manual);
@@ -612,7 +662,7 @@ function clientInSelectedPeriod(data:CompanyDataset,client:CommercialClient){
 function uniqueCommercialClientsForRows(data:CompanyDataset,rows:JourneyRow[]){
   const leadIds=new Set(rows.flatMap(row=>row.leadIds));
   return [...new Map((data.commercialClients??[])
-    .filter(client=>client.commercialStatus==="CLIENT_WON"&&Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
+    .filter(client=>isProjectWonClient(client)&&Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId)))
     .map(client=>[client.id,client])).values()];
 }
 
