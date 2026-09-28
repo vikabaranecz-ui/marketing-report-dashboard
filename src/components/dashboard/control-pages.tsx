@@ -48,7 +48,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
       <div className="control-funnel">
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
-          const conversion = previous===null ? null : stageConversion(stage.value,previous);
+          const conversion = acquisition.conversion.sequentialSupported&&previous!==null ? stageConversion(stage.value,previous) : null;
           const relevant=["Known paid acquired","CRM tracked"].includes(stage.label)?paidRows
             :stage.label==="Qualified"?paidRows.filter(row=>row.isQualified)
             :stage.label==="Visits"?paidRows.filter(hasCompletedVisitEvidence)
