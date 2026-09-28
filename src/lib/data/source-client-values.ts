@@ -22,6 +22,8 @@ type ClientRow = {
   client_since: string | null;
   matched_lead_id: string | null;
   commercial_status: string;
+  project_count: number | string | null;
+  invoice_count: number | string | null;
   invoiced_total: number | string | null;
   paid_total: number | string | null;
 };
@@ -54,7 +56,7 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
       .lte("created_at", period.toIso),
     supabase
       .from("commercial_clients")
-      .select("id,external_id,name,client_since,matched_lead_id,commercial_status,invoiced_total,paid_total")
+      .select("id,external_id,name,client_since,matched_lead_id,commercial_status,project_count,invoice_count,invoiced_total,paid_total")
       .eq("company_id", companyId),
     supabase
       .from("campaigns")
@@ -98,7 +100,11 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
   const projectsByClient = groupBy(projects, row => row.external_client_id ?? "");
 
   return clients.flatMap(client => {
-    if (client.commercial_status !== "CLIENT_WON") return [];
+    const realized = numeric(client.project_count) > 0
+      || numeric(client.invoice_count) > 0
+      || numeric(client.invoiced_total) > 0
+      || numeric(client.paid_total) > 0;
+    if (!realized) return [];
 
     const lead = client.matched_lead_id ? leadById.get(client.matched_lead_id) : undefined;
     const manualSource =
