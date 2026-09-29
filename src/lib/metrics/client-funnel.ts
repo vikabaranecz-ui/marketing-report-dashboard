@@ -108,7 +108,13 @@ export function hasLeadOfferEvidence(lead: Lead) {
 }
 
 export function hasOfferCreatedEvidence(row: Pick<JourneyRow,"offers"|"lead">) {
-  return row.offers.length > 0 || hasLeadOfferEvidence(row.lead);
+  // Management reporting uses the ROBAWS offer ledger as the document truth.
+  // A CRM status alone must not create an offer that does not exist in ROBAWS.
+  return row.offers.length > 0;
+}
+
+export function hasVerifiedSentOfferEvidence(row: Pick<JourneyRow,"offers">) {
+  return row.offers.some(hasOfferSentEvidence);
 }
 
 function isExplicitlyNotRelevant(lead: Lead) {
@@ -139,9 +145,7 @@ function hasVisitEvidence(data: CompanyDataset, lead: Lead) {
 function isQualified(lead: Lead) {
   const stage = normalized(lead.stage);
   return !isExplicitlyNotRelevant(lead) && (
-    lead.quality === "A"
-    || lead.quality === "B"
-    || stage.includes("qualified")
+    stage.includes("qualified")
     || stage.includes("visit")
     || stage.includes("quote")
     || stage.includes("won")
@@ -341,9 +345,7 @@ export function hasCompletedVisitEvidence(row: JourneyRow) {
   const stage=normalized(row.lead.stage);
   return row.appointments.some(item=>Boolean(item.completedAt))
     || stage.includes("visit completed")
-    || stage.includes("quote")
-    || stage.includes("won")
-    || ["visited offerte to be done","offer sent","email offerte","signed","offerte afgekeurd"].includes(status);
+    || status === "visited offerte to be done";
 }
 
 export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
@@ -359,7 +361,7 @@ export function buildFunnelSummary(data: CompanyDataset): FunnelSummary {
     qualifiedNoOffer: rows.filter(row=>row.isQualified&&!hasOfferCreatedEvidence(row)).length,
     rejectedOfferDocuments: rows.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isRejected).length,0),
     cancelledOfferDocuments: rows.reduce((sum,row)=>sum+row.offers.filter(offer=>offer.isCancelled).length,0),
-    offersSent: rows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
+    offersSent: rows.filter(hasVerifiedSentOfferEvidence).length,
     quotedValue: rows.reduce((sum, row) => sum + row.offerValue, 0),
     sentQuotedValue: rows.reduce((sum, row) => sum + row.sentOfferValue, 0),
     openOffers: rows.filter(row => row.openOfferValue > 0).length,
@@ -405,7 +407,7 @@ function pipelineRowsBy(data: CompanyDataset, selector: (row: JourneyRow) => str
       qualified: group.filter(row => row.isQualified).length,
       visits: group.filter(hasCompletedVisitEvidence).length,
       offersCreated: group.filter(hasOfferCreatedEvidence).length,
-      offersSent: group.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
+      offersSent: group.filter(hasVerifiedSentOfferEvidence).length,
       sentQuotedValue: group.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: group.reduce((sum, row) => sum + row.openOfferValue, 0),
       signed: group.filter(row => row.isSigned).length,
@@ -429,7 +431,8 @@ export function campaignPipelineRows(data: CompanyDataset) {
 
 function normalizedReportingSource(source:string){
   const lower=String(source??"").trim().toLowerCase();
-  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")||lower.includes("facade ad")) return "Meta Ads / Facebook";
+  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")) return "Meta Ads / Facebook";
+  if(lower.includes("facade ad")) return "Facade advertising";
   if(lower.includes("google ads")) return "Google Ads";
   if(lower.includes("leadangel")) return "LeadAngel";
   if(lower.includes("agenciyou")) return "AgenciYou";
@@ -457,7 +460,7 @@ export function sourcePipelineRows(data: CompanyDataset) {
       qualified: sourceRows.filter(row => row.isQualified).length,
       visits: sourceRows.filter(hasCompletedVisitEvidence).length,
       offersCreated: sourceRows.filter(hasOfferCreatedEvidence).length,
-      offers: sourceRows.filter(row => row.offers.some(hasOfferSentEvidence) || hasLeadOfferEvidence(row.lead)).length,
+      offers: sourceRows.filter(hasVerifiedSentOfferEvidence).length,
       quotedValue: sourceRows.reduce((sum, row) => sum + row.offerValue, 0),
       sentQuotedValue: sourceRows.reduce((sum, row) => sum + row.sentOfferValue, 0),
       openPipeline: sourceRows.reduce((sum, row) => sum + row.openOfferValue, 0),

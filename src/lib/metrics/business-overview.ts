@@ -1,10 +1,10 @@
 import type { CompanyDataset, CommercialClient, CommercialInvoice, CommercialProject } from "@/lib/data/types";
-import { buildJourneyRows, hasCompletedVisitEvidence, hasLeadOfferEvidence, hasOfferCreatedEvidence, hasOfferSentEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, hasCompletedVisitEvidence, hasOfferCreatedEvidence, hasVerifiedSentOfferEvidence, type JourneyRow } from "@/lib/metrics/client-funnel";
 export { hasCompletedVisitEvidence } from "@/lib/metrics/client-funnel";
 import { isAcceptedPendingClient, isProjectBackedClient, isWonClient } from "@/lib/metrics/commercial-truth";
 import { percentage, safeDivide } from "@/lib/metrics/kpis";
 
-export const PAID_ACQUISITION_SOURCES = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary"]);
+export const PAID_ACQUISITION_SOURCES = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary","Facade advertising"]);
 
 export type SourcePerformanceRow = {
   source:string;
@@ -49,7 +49,8 @@ export type OverviewScope = { source:string; campaign:string };
 
 export function normalizeAcquisitionSource(source:string){
   const lower=String(source??"").trim().toLowerCase();
-  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")||lower.includes("facade ad")) return "Meta Ads / Facebook";
+  if(lower.includes("facebook")||lower.includes("meta")||lower.includes("instagram")) return "Meta Ads / Facebook";
+  if(lower.includes("facade ad")) return "Facade advertising";
   if(lower.includes("google ads")) return "Google Ads";
   if(lower.includes("leadangel")) return "LeadAngel";
   if(lower.includes("agenciyou")) return "AgenciYou";
@@ -146,7 +147,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const paidValue=cohortInvoices.reduce((sum,invoice)=>sum+invoice.paidTotal,0);
     const qualified=group.filter(item=>item.isQualified).length;
     const visits=group.filter(hasCompletedVisitEvidence).length;
-    const offers=group.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length;
+    const offers=group.filter(hasVerifiedSentOfferEvidence).length;
     const attributableClients=attributableClientRows.length;
     return withCostMetrics({
       source,spend:Number.isFinite(spend as number)?spend:null,costState,
@@ -212,7 +213,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
 
   const sourceEvidenceSources=[...new Set((data.manualOverrides??[])
     .filter(item=>item.scopeType==="source")
-    .map(item=>normalizeAcquisitionSource(item.scopeKey)))];
+    .map(manualOverrideSource))];
   for(const source of sourceEvidenceSources){
     if(bySource.has(source))continue;
     const manual=sourceSpendOverride(data,source);
@@ -291,10 +292,15 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const qualified=paidRows.filter(row=>row.isQualified).length;
   const visits=paidRows.filter(hasCompletedVisitEvidence).length;
   const offersCreated=paidRows.filter(hasOfferCreatedEvidence).length;
-  const offers=paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).length;
+  const offers=paidRows.filter(hasVerifiedSentOfferEvidence).length;
   const scopedLeadIds=new Set(rows.flatMap(row=>row.leadIds));
+  const cohortClientIds=new Set(uniqueCommercialClientsForRows(data,rows).map(client=>client.id));
   const paidWonClients=(data.commercialClients??[]).filter(client=>{
     if(!isWonClient(client))return false;
+    // Funnel stages must use one population from lead through client. Source-only
+    // or manual ROBAWS clients remain in company/source truth, but cannot enter a
+    // lead cohort until they are linked to a CRM person with an acquisition date.
+    if(!cohortClientIds.has(client.id))return false;
     const source=resolvedClientSource(data,client);
     if(!PAID_ACQUISITION_SOURCES.has(source))return false;
     if(scope.source!=="all"&&source!==scope.source)return false;
@@ -305,7 +311,7 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const strictSets={
     qualified:new Set(paidRows.filter(row=>row.isQualified).map(row=>row.lead.id)),
     visits:new Set(paidRows.filter(hasCompletedVisitEvidence).map(row=>row.lead.id)),
-    offers:new Set(paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead)).map(row=>row.lead.id)),
+    offers:new Set(paidRows.filter(hasVerifiedSentOfferEvidence).map(row=>row.lead.id)),
     customers:new Set(paidRows.filter(row=>row.isCommercialClient).map(row=>row.lead.id)),
   };
   const sequentialSupported=
@@ -407,7 +413,7 @@ function buildEconomics(data:CompanyDataset,rows:JourneyRow[],sources:SourcePerf
       leads:rows.length,
       qualified:rows.filter(item=>item.isQualified).length,
       visits:rows.filter(hasCompletedVisitEvidence).length,
-      offers:rows.filter(item=>item.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(item.lead)).length,
+      offers:rows.filter(hasVerifiedSentOfferEvidence).length,
       customers:attributableClientIds.length,
     };
     const coveredSpend=paidSource?spend:0;
@@ -709,7 +715,7 @@ function recurringSourceSpend(data:CompanyDataset,source:string){
   let amount=0;
   const notes:string[]=[];
   for(const item of data.manualOverrides??[]){
-    if(item.scopeType!=="source"||item.scopeKey!==source||item.fieldKey!=="recurring_spend")continue;
+    if(item.scopeType!=="source"||item.fieldKey!=="recurring_spend"||manualOverrideSource(item)!==source)continue;
     if(!item.value||typeof item.value!=="object"||Array.isArray(item.value))continue;
     const value=item.value as Record<string,unknown>;
     const monthly=Number(value.monthly??0);
@@ -728,6 +734,14 @@ function recurringSourceSpend(data:CompanyDataset,source:string){
     notes.push(`${label}: ${months} month(s)`);
   }
   return{amount,note:notes.join(" · ")};
+}
+
+function manualOverrideSource(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
+  if(item.fieldKey==="recurring_spend"&&item.value&&typeof item.value==="object"&&!Array.isArray(item.value)){
+    const label=String((item.value as Record<string,unknown>).label??"");
+    if(label.toLowerCase().includes("facade ad"))return "Facade advertising";
+  }
+  return normalizeAcquisitionSource(item.scopeKey);
 }
 
 function syncedSpendForSource(data:CompanyDataset,source:string,rows:JourneyRow[]){

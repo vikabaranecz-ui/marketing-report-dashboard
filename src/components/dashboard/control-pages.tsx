@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, CircleDollarSign, Database, FilterX, Pencil, RotateCcw, X } from "lucide-react";
 import type { CompanyDataset } from "@/lib/data/types";
-import { buildJourneyRows, campaignPipelineRows, hasLeadOfferEvidence, hasOfferCreatedEvidence, hasOfferSentEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
+import { buildJourneyRows, campaignPipelineRows, hasOfferCreatedEvidence, hasVerifiedSentOfferEvidence, stageConversion, type JourneyRow } from "@/lib/metrics/client-funnel";
 import { buildOverviewAnalytics, buildSourcePerformance, hasCompletedVisitEvidence, hasSafeAcquisitionSource, normalizeAcquisitionSource, PAID_ACQUISITION_SOURCES, resolvedClientSource } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent, percentage, safeDivide } from "@/lib/metrics/kpis";
 import { isWonClient } from "@/lib/metrics/commercial-truth";
@@ -22,8 +22,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const offersCreated = acquisition.cohort.offersCreated;
   const sentOffers = acquisition.cohort.offers;
   const allWonClients = acquisition.commercialLedger.clients;
-  const paidWonClientIdSet=new Set(acquisition.economics.paidSourceWonClientIds);
-  const paidWonClients=allWonClients.filter(client=>paidWonClientIdSet.has(client.id));
+  const paidWonClients=acquisition.cohort.clients.filter(client=>PAID_ACQUISITION_SOURCES.has(resolvedClientSource(data,client)));
   const stages = [
     { label:"Known paid acquired", value:acquisition.cohort.knownPaidAcquired, note:`${acquisition.cohort.paidCrmTracked} CRM-tracked · ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads` },
     { label:"CRM tracked", value:acquisition.cohort.paidCrmTracked, note:"Paid-source CRM people only" },
@@ -44,7 +43,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   return <div className="space-y-6">
     <Card className="overflow-hidden">
       <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Paid lead → won client funnel" description="Paid acquisition sources only: Meta/Facebook, Google Ads, AgenciYou, LeadAngel and Solary. Supplier-only leads are included at the top. Signed is not a separate stage; ROBAWS won client is the final conversion."/></div>
-      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} company won clients in ROBAWS</strong><span className="ml-2 text-xs">{formatNumber(paidWonClients.length)} came from paid acquisition sources · Signed is not counted as a separate conversion stage</span></div>
+      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} company won clients in ROBAWS</strong><span className="ml-2 text-xs">{formatNumber(paidWonClients.length)} are linked to the selected paid-lead cohort · unlinked ROBAWS clients stay outside the funnel</span></div>
       <div className="control-funnel">
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
@@ -53,7 +52,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
             :stage.label==="Qualified"?paidRows.filter(row=>row.isQualified)
             :stage.label==="Visits"?paidRows.filter(hasCompletedVisitEvidence)
             :stage.label==="Offer created"?paidRows.filter(hasOfferCreatedEvidence)
-            :stage.label==="Offer sent"?paidRows.filter(row=>row.offers.some(hasOfferSentEvidence)||hasLeadOfferEvidence(row.lead))
+            :stage.label==="Offer sent"?paidRows.filter(hasVerifiedSentOfferEvidence)
             :paidRows.filter(row=>row.isCommercialClient);
           const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
           const selection:RecordDrilldown={
@@ -137,7 +136,7 @@ export function SourcesCampaignsPage({ data }: { data: CompanyDataset }) {
       <div className="table-scroll"><table className="wide-decision-table">
         <thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>CRM tracked</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Sent €</th><th>Open €</th><th>Won clients</th><th>Month coverage</th><th>Project € excl. VAT</th><th>Paid value €</th><th>CPL</th><th>Cost / qual.</th><th>Cost / visit</th><th>Cost / offer</th><th>CAC</th><th>Paid ROAS</th></tr></thead>
         <tbody>{sources.map(row => <tr key={row.source}>
-          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>isWonClient(client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||(data.periodKey==="ytd"&&decisionSource(manualRobawsSource(data,client)??"")===row.source))).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.periodCommercialProjects??[]).filter(item=>decisionSource(item.source)===row.source),invoices:(data.periodCommercialInvoices??[]).filter(item=>decisionSource(item.source)===row.source)})}}>{row.source}</button></td>
+          <td className="font-semibold"><button type="button" className="underline decoration-transparent underline-offset-4 hover:decoration-current" onClick={()=>{const sourceRows=rows.filter(item=>decisionSource(item.lead.source)===row.source);const leadIds=new Set(sourceRows.flatMap(item=>item.leadIds));setDrilldown({title:row.source+" source details",subtitle:data.periodLabel,initialKind:"clients",leads:sourceRows.map(item=>item.lead),clients:(data.commercialClients??[]).filter(client=>isWonClient(client)&&(Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId))||(data.periodKey==="ytd"&&decisionSource(manualRobawsSource(data,client)??"")===row.source))).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name)),offers:(data.commercialOffers??[]).filter(item=>decisionSource(item.source)===row.source),projects:(data.commercialProjects??[]).filter(item=>Boolean(item.leadId&&leadIds.has(item.leadId))),invoices:(data.commercialInvoices??[]).filter(item=>Boolean(item.leadId&&leadIds.has(item.leadId)))})}}>{row.source}</button></td>
           <td><button type="button" onClick={()=>setEditingSource(row)} className="inline-flex items-center gap-2 font-semibold underline decoration-transparent underline-offset-4 hover:decoration-current">{row.costState==="missing"?<StatusPill tone="warn">Add spend</StatusPill>:row.spend===null?"—":formatCurrency(row.spend)}{row.isManualSpend&&<StatusPill tone="accent">Manual</StatusPill>}{row.recurringSpend>0&&<StatusPill tone="accent">+ recurring</StatusPill>}<Pencil size={12}/></button></td>
           <td>{row.deliveredLeads===null&&row.crmLeads===0&&row.commercialClients>0?<><StatusPill tone="warn">Lead count missing</StatusPill><small className="block text-[var(--muted)]">Source-known client exists</small></>:row.leads}</td><td>{row.crmLeads}{row.supplierOnlyLeads>0&&<small className="block text-[var(--muted)]">+{row.supplierOnlyLeads} supplier-only</small>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td>
           <td>{formatCurrency(row.sentValue)}</td><td>{formatCurrency(row.openValue)}</td><td>{row.commercialClients}</td><td>{row.attributedClients}/{row.commercialClients}{row.undatedClients>0&&<small className="block text-amber-700">{row.undatedClients} month unresolved</small>}</td>
