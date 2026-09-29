@@ -103,22 +103,24 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const selectedYearStart = `${fromDate.slice(0,4)}-01-01`;
   const decisionFromDate = comparison.fromDate < selectedYearStart ? comparison.fromDate : selectedYearStart;
   const decisionFromIso = `${decisionFromDate}T00:00:00.000Z`;
+  const leadCandidateToDate = brusselsDate(new Date());
+  const leadCandidateToIso = `${leadCandidateToDate}T23:59:59.999Z`;
   const emptyRows = Promise.resolve({ data: [], error: null });
   const emptyOne = Promise.resolve({ data: null, error: null });
   const leadSelect = "id,created_at,name,email,phone,source,channel_id,campaign_id,ad_id,service_id,municipality,lead_quality,sales_stage,crm_status,commercial_status,commercial_attribution_status,robaws_match_method,robaws_client_id,attributed_acquisition_cost,attribution_level,assigned_to,utm_source,utm_medium,utm_campaign,utm_content,utm_term,notes,campaigns(name),services(name),ads(name),users!leads_assigned_to_fkey(full_name)";
   const leadsRes = needsLeads
-    ? await supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",fromIso).lte("created_at",toIso)
+    ? await supabase.from("leads").select(leadSelect).eq("company_id",company.id).gte("created_at",decisionFromIso).lte("created_at",leadCandidateToIso)
     : { data: [], error: null };
-  if (leadsRes.error) throw new Error(`Unable to load lead cohort: ${leadsRes.error.message}`);
-  const rawLeads = (leadsRes.data ?? []) as unknown as RawLead[];
-  const currentLeadIds = rawLeads.length ? rawLeads.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
+  if (leadsRes.error) throw new Error(`Unable to load lead cohort candidates: ${leadsRes.error.message}`);
+  const rawLeadCandidates = (leadsRes.data ?? []) as unknown as RawLead[];
+  const candidateLeadIds = rawLeadCandidates.length ? rawLeadCandidates.map(row => row.id) : ["00000000-0000-0000-0000-000000000000"];
 
   const [metricsRes, appointmentsRes, quotesRes, projectsRes, invoicesRes, commercialClientsRes, crmDealsRes, servicesRes, campaignsRes, websiteRes, seoRes, gbpRes, integrationsRes, changeEventsRes, overridesRes, automationRes, decisionMetricsRes, decisionInvoicesRes, decisionLeadsRes, decisionProjectsRes, periodProjectsRes, periodInvoicesRes, allProjectsRes, allInvoicesRes] = await Promise.all([
     needsMarketing ? supabase.from("daily_marketing_metrics").select("date,spend,impressions,clicks,platform_conversions,channel_id,campaign_id,service_id,marketing_channels(name),campaigns(name),services(name)").eq("company_id",company.id).gte("date",fromDate).lte("date",toDate) : emptyRows,
-    needsAppointments ? supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", currentLeadIds) : emptyRows,
-    needsCommercial ? supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", currentLeadIds) : emptyRows,
-    needsCommercial ? supabase.from("projects").select("id,company_id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,project_date,crm_source,crm_external_id,external_client_id,external_status,attribution_status").eq("company_id",company.id).in("lead_id", currentLeadIds) : emptyRows,
-    needsCommercial ? supabase.from("commercial_invoices").select("id,lead_id,external_client_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id).in("lead_id", currentLeadIds) : emptyRows,
+    needsAppointments ? supabase.from("appointments").select("lead_id,scheduled_at,completed_at,status,no_show").in("lead_id", candidateLeadIds) : emptyRows,
+    needsCommercial ? supabase.from("quotes").select("id,lead_id,quote_number,quote_value,quote_value_incl_vat,created_at,sent_at,follow_up_at,status,accepted_at,external_source,project_external_id,attribution_status").in("lead_id", candidateLeadIds) : emptyRows,
+    needsCommercial ? supabase.from("projects").select("id,company_id,lead_id,service_id,project_value,project_value_excl_vat,gross_margin,status,won_at,project_date,crm_source,crm_external_id,external_client_id,external_status,attribution_status").eq("company_id",company.id).in("lead_id", candidateLeadIds) : emptyRows,
+    needsCommercial ? supabase.from("commercial_invoices").select("id,lead_id,external_client_id,invoice_number,invoice_date,status,document_id,total_excl_vat,total_incl_vat,paid_total,credited_total,attribution_status").eq("company_id",company.id).in("lead_id", candidateLeadIds) : emptyRows,
     needsClients ? supabase.from("commercial_clients").select("id,external_source,external_id,name,email,phone,municipality,client_since,matched_lead_id,match_method,commercial_status,offer_count,project_count,invoice_count,accepted_offer_total,accepted_offer_total_excl_vat,project_value_total,project_value_total_excl_vat,invoiced_total,paid_total").eq("company_id",company.id) : emptyRows,
     profile === "full" ? supabase.from("crm_deals").select("id,name,stage,pipeline_group,deal_value,offer_status,offer_number,lost_reason,linked_lead_id,created_at_external").eq("company_id",company.id).gte("created_at_external",fromIso).lte("created_at_external",toIso) : emptyRows,
     needsCatalog ? supabase.from("services").select("id,name,default_gross_margin").eq("company_id",company.id).eq("is_active",true) : emptyRows,
@@ -147,10 +149,10 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   if (firstError) throw new Error(`Unable to load reporting facts: ${firstError.message}`);
 
   const rawMetrics = (metricsRes.data ?? []) as unknown as RawMetric[];
-  const rawAppointments = (appointmentsRes.data ?? []) as unknown as RawAppointment[];
-  const rawQuotes = (quotesRes.data ?? []) as unknown as RawQuote[];
-  const rawProjects = (projectsRes.data ?? []) as unknown as RawProject[];
-  const rawInvoices = (invoicesRes.data ?? []) as unknown as RawCommercialInvoice[];
+  const rawAppointmentCandidates = (appointmentsRes.data ?? []) as unknown as RawAppointment[];
+  const rawQuoteCandidates = (quotesRes.data ?? []) as unknown as RawQuote[];
+  const rawProjectCandidates = (projectsRes.data ?? []) as unknown as RawProject[];
+  const rawInvoiceCandidates = (invoicesRes.data ?? []) as unknown as RawCommercialInvoice[];
   const rawPeriodProjects = (periodProjectsRes.data ?? []) as unknown as RawProject[];
   const rawPeriodInvoices = (periodInvoicesRes.data ?? []) as unknown as RawCommercialInvoice[];
   const rawAllProjects = (allProjectsRes.data ?? []) as unknown as RawProject[];
@@ -163,11 +165,55 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? {impressions:0,clicks:0,position_sum:0,branded_clicks:0,classified_clicks:0}) as unknown as RawSeoSummary;
   const rawGbp = (gbpRes.data ?? []) as unknown as RawGbp[];
+
+  // Acquisition month is the earliest trustworthy known date for the person.
+  // If a CRM row was imported later than an already-existing ROBAWS client/contact,
+  // the earlier ROBAWS client_since date wins. This prevents old March/July/August
+  // people imported into CRM in September from being reported as September leads.
+  const rawClientByLeadId = new Map(rawCommercialClients.filter(client=>client.matched_lead_id).map(client=>[client.matched_lead_id as string,client]));
+  const rawClientByExternalId = new Map(rawCommercialClients.map(client=>[client.external_id,client]));
+  const effectiveAcquisitionDateFor = (lead:RawLead) => {
+    const crmDate=lead.created_at.slice(0,10);
+    const client=rawClientByLeadId.get(lead.id) ?? (lead.robaws_client_id ? rawClientByExternalId.get(lead.robaws_client_id) : undefined);
+    const robawsDate=client?.client_since?.slice(0,10)??"";
+    return robawsDate && robawsDate < crmDate ? robawsDate : crmDate;
+  };
+  const rebasedLeadIds=new Set<string>();
+  const adjustedLeadCandidates=rawLeadCandidates.map(lead=>{
+    const effectiveDate=effectiveAcquisitionDateFor(lead);
+    const crmDate=lead.created_at.slice(0,10);
+    if(effectiveDate>=crmDate)return lead;
+    rebasedLeadIds.add(lead.id);
+    return {
+      ...lead,
+      created_at: effectiveDate+lead.created_at.slice(10),
+      commercial_attribution_status: isDateConflict(lead.commercial_attribution_status)
+        ? "VERIFIED_REBASED_ACQUISITION_DATE"
+        : lead.commercial_attribution_status,
+    };
+  });
+  const rawLeads=adjustedLeadCandidates.filter(lead=>{
+    const date=lead.created_at.slice(0,10);
+    return date>=fromDate&&date<=toDate;
+  });
+  const selectedLeadIds=new Set(rawLeads.map(lead=>lead.id));
+  const rawAppointments=rawAppointmentCandidates.filter(row=>selectedLeadIds.has(row.lead_id));
+  const rawQuotes=rawQuoteCandidates
+    .filter(row=>selectedLeadIds.has(row.lead_id))
+    .map(row=>rebasedLeadIds.has(row.lead_id)&&isDateConflict(row.attribution_status)?{...row,attribution_status:"VERIFIED_REBASED_ACQUISITION_DATE"}:row);
+  const rawProjects=rawProjectCandidates
+    .filter(row=>Boolean(row.lead_id&&selectedLeadIds.has(row.lead_id)))
+    .map(row=>row.lead_id&&rebasedLeadIds.has(row.lead_id)&&isDateConflict(row.attribution_status)?{...row,attribution_status:"VERIFIED_REBASED_ACQUISITION_DATE"}:row);
+  const rawInvoices=rawInvoiceCandidates
+    .filter(row=>Boolean(row.lead_id&&selectedLeadIds.has(row.lead_id)))
+    .map(row=>row.lead_id&&rebasedLeadIds.has(row.lead_id)&&isDateConflict(row.attribution_status)?{...row,attribution_status:"VERIFIED_REBASED_ACQUISITION_DATE"}:row);
+  const adjustedDecisionLeads=adjustedLeadCandidates.map(row=>({id:row.id,created_at:row.created_at}));
+
   const businessDecision = needsDecision
     ? buildBusinessDecision(
         (decisionMetricsRes.data ?? []) as unknown as Array<{date:string;spend:number|string}>,
         (decisionInvoicesRes.data ?? []) as unknown as Array<{invoice_date:string|null;total_incl_vat:number|string|null;paid_total:number|string|null;credited_total:number|string|null}>,
-        (decisionLeadsRes.data ?? []) as unknown as Array<{id:string;created_at:string}>,
+        adjustedDecisionLeads,
         (decisionProjectsRes.data ?? []) as unknown as Array<{won_at:string|null;project_value:number|string|null;status:string}>,
         period,
         comparison,
