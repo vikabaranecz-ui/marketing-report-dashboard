@@ -2,6 +2,7 @@ import "server-only";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 import { aggregateGa4WebsiteMetrics } from "@/lib/metrics/website";
+import { effectiveAcquisitionDate } from "@/lib/metrics/acquisition-date";
 import { demoCompanies, demoDatasets } from "./demo";
 import type { BusinessDecisionData, CampaignMetric, ChannelMetric, Company, CompanyDataset, Integration, Lead, LocationMetric, ServiceMetric, TrendPoint } from "./types";
 
@@ -173,10 +174,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawClientByLeadId = new Map(rawCommercialClients.filter(client=>client.matched_lead_id).map(client=>[client.matched_lead_id as string,client]));
   const rawClientByExternalId = new Map(rawCommercialClients.map(client=>[client.external_id,client]));
   const effectiveAcquisitionDateFor = (lead:RawLead) => {
-    const crmDate=lead.created_at.slice(0,10);
     const client=rawClientByLeadId.get(lead.id) ?? (lead.robaws_client_id ? rawClientByExternalId.get(lead.robaws_client_id) : undefined);
-    const robawsDate=client?.client_since?.slice(0,10)??"";
-    return robawsDate && robawsDate < crmDate ? robawsDate : crmDate;
+    return effectiveAcquisitionDate(lead.created_at,client?.client_since);
   };
   const rebasedLeadIds=new Set<string>();
   const adjustedLeadCandidates=rawLeadCandidates.map(lead=>{
