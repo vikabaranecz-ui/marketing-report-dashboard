@@ -7,6 +7,7 @@ import {
   selectRobawsProjectValueOffers,
   validateRobawsApi,
 } from "../src/lib/integrations/robaws-client-core.ts";
+import { acquisitionDateWasRebased, effectiveAcquisitionDate } from "../src/lib/metrics/acquisition-date.ts";
 
 const credentials = { key: "test-key", secret: "test-secret" };
 
@@ -95,4 +96,15 @@ test("ROBAWS accepted-only client does not create project value before a project
   const offers = [{ id: "accepted", projectId: null, status: "goedgekeurd", totalInclVat: 50000 }];
 
   assert.deepEqual(selectRobawsClientProjectValueOffers(projects, offers), []);
+});
+
+
+test("acquisition month rebases a late CRM import to the earlier ROBAWS client date", () => {
+  assert.equal(effectiveAcquisitionDate("2026-09-22T12:00:00Z", "2026-03-12T00:00:00Z"), "2026-03-12");
+  assert.equal(acquisitionDateWasRebased("2026-09-22T12:00:00Z", "2026-03-12T00:00:00Z"), true);
+});
+
+test("acquisition month keeps the CRM date when ROBAWS was created later", () => {
+  assert.equal(effectiveAcquisitionDate("2026-09-03T12:00:00Z", "2026-09-28T00:00:00Z"), "2026-09-03");
+  assert.equal(acquisitionDateWasRebased("2026-09-03T12:00:00Z", "2026-09-28T00:00:00Z"), false);
 });
