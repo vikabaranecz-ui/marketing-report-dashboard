@@ -2,6 +2,10 @@
 
 Production-oriented marketing and sales performance dashboard for WAT Agency clients. The first two company workspaces are ISOPROTECH and RENO RANGERS; companies, channels, services, and memberships are database records so the platform can expand without changing reporting logic.
 
+The authoritative KPI/date contract and latest live reconciliation are in
+[`docs/metric-dictionary.md`](docs/metric-dictionary.md) and
+[`docs/data-integrity-audit-2026-10-01.md`](docs/data-integrity-audit-2026-10-01.md).
+
 ## Architecture
 
 - Next.js 16 App Router, strict TypeScript, Tailwind CSS 4, Recharts

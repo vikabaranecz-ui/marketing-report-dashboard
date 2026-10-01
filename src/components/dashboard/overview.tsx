@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { CommercialClient, CommercialInvoice, CompanyDataset } from "@/lib/data/types";
 import {
-  buildOverviewAnalytics, hasCompletedVisitEvidence, hasSafeAcquisitionSource, manualClientSource, normalizeAcquisitionSource,
+  buildOverviewAnalytics, hasSafeAcquisitionSource, manualClientSource, normalizeAcquisitionSource,
   PAID_ACQUISITION_SOURCES, type SourcePerformanceRow,
 } from "@/lib/metrics/business-overview";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/metrics/kpis";
@@ -60,7 +60,6 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const paidSourceWonClients=(data.commercialClients??[]).filter(client=>analytics.economics.paidSourceWonClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const cohortPaidWonClients=[...analytics.cohort.sourceAttributedPaidClients]
     .sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
-  const datedCohortClients=(data.commercialClients??[]).filter(client=>analytics.economics.datedCohortClientIds.includes(client.id)).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const coveredSourceSet=new Set(analytics.economics.coveredSources);
   const coveredRows=campaignFilter!=="all"?analytics.rows:analytics.rows.filter(row=>coveredSourceSet.has(normalizeAcquisitionSource(row.lead.source)));
   const coveredLeadIds=new Set(coveredRows.flatMap(row=>row.leadIds));
@@ -149,8 +148,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     const leadIds=new Set(monthRows.flatMap(item=>item.leadIds));
     const clients=(data.commercialClients??[]).filter(client=>{
       if(!isWonClient(client))return false;
-      if(client.matchedLeadId)return leadIds.has(client.matchedLeadId);
-      return client.clientSince?.slice(0,7)===selectedMonth;
+      return Boolean(client.matchedLeadId&&leadIds.has(client.matchedLeadId));
     }).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
     const projects=(data.allCommercialProjects??data.periodCommercialProjects??[]).filter(item=>item.date.slice(0,7)===selectedMonth);
     const invoices=(data.allCommercialInvoices??data.periodCommercialInvoices??[]).filter(item=>item.date.slice(0,7)===selectedMonth);
@@ -166,18 +164,16 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     const offers=(data.commercialOffers??[]).filter(item=>leadIds.has(item.leadId));
     setDrilldown({
       title:"Monthly records · "+monthLabel(selectedMonth),
-      subtitle:"Deduplicated acquired people and their won-client outcomes use acquisition month; projects, invoices and platform spend use calendar activity month.",
+      subtitle:"Deduplicated acquired people and their linked won-client outcomes use acquisition month; unmatched ROBAWS clients are not assigned to a guessed month. Projects, invoices and platform spend use calendar activity month.",
       leads,clients,offers,projects,invoices,spendRows,
     });
   };
 
   const openMilestone=(key:string)=>{
     const paidRows=analytics.rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
-    const paidLeadIds=new Set(paidRows.flatMap(row=>row.leadIds));
     if(key==="acquired") return setDrilldown({title:"Known paid acquired leads",subtitle:`${scopeLabel} · ${analytics.cohort.paidCrmTracked} CRM-tracked + ${analytics.cohort.paidSupplierOnly} supplier-only paid leads`,leads:paidRows.map(row=>row.lead)});
     if(key==="tracked") return setDrilldown({title:"Paid-source CRM tracked",subtitle:scopeLabel,leads:paidRows.map(row=>row.lead)});
     if(key==="qualified") return setDrilldown({title:"Qualified paid-source leads",subtitle:scopeLabel,leads:paidRows.filter(row=>row.isQualified).map(row=>row.lead)});
-    if(key==="visits") return setDrilldown({title:"Completed visits · paid-source leads",subtitle:scopeLabel,leads:paidRows.filter(hasCompletedVisitEvidence).map(row=>row.lead),appointments:(data.commercialAppointments??[]).filter(item=>paidLeadIds.has(item.leadId)&&Boolean(item.completedAt))});
     if(key==="offers-created") return setDrilldown({title:"Offer-created evidence · paid-source leads",subtitle:scopeLabel,leads:paidRows.filter(hasOfferCreatedEvidence).map(row=>row.lead),offers:paidRows.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index)});
     if(key==="offers") return setDrilldown({title:"Offers sent · paid-source leads",subtitle:scopeLabel,offers:paidRows.flatMap(row=>row.offers).filter(hasOfferSentEvidence).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index)});
     return setDrilldown({title:"Source-attributed won clients",subtitle:scopeLabel+" · includes user-verified manual sources without a CRM match",initialKind:"clients",clients:cohortPaidWonClients});
@@ -196,6 +192,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <div className="executive-group">
           <div className="executive-group-head"><span>Business this period</span><small>Calendar-period ROBAWS activity · incl. VAT</small></div>
           <div className="executive-group-metrics">
+            <SummaryMetric label="Offers created" value={formatNumber(analytics.business.offersCreated)} note="Exact ROBAWS creation date" onClick={()=>setDrilldown({title:"Offers created in selected period",subtitle:data.periodLabel,offers:analytics.business.offers.filter(item=>item.date>=data.periodLabel.slice(0,10)&&item.date<=data.periodLabel.slice(-10))})}/>
             <SummaryMetric label="Won project value" value={formatCurrency(analytics.business.wonValueInclVat)} onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}/>
             <SummaryMetric label="Invoiced" value={formatCurrency(analytics.business.invoicedInclVat)} onClick={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
             <SummaryMetric label="Paid value on period invoices" value={formatCurrency(analytics.business.paidValueOnPeriodInvoices)} note="Not payment-date cash" onClick={()=>setDrilldown({title:"Period invoices with paid value",subtitle:data.periodLabel,invoices:analytics.business.invoices.filter(item=>item.paidTotal>0)})}/>
@@ -203,7 +200,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           </div>
         </div>
         <div className="executive-group is-marketing">
-          <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>{hasAcquisitionFilter?"Filtered acquisition scope: "+scopeLabel+" · company truth remains 31-style canonical won count above":"Company acquisition view · subsets are labelled separately from won-client truth"}</small></div>
+          <div className="executive-group-head"><span>Marketing acquisition cohort</span><small>{hasAcquisitionFilter?"Filtered acquisition scope: "+scopeLabel+" · all-time company ledger remains separate":"Acquired people in the selected period and their later outcomes"}</small></div>
           <div className="executive-group-metrics">
             <SummaryMetric label="Covered paid-source spend" value={formatCurrency(analytics.economics.coveredSpend)} note={analytics.economics.missingCostSources.length?"Partial cost coverage":"Bank/synced paid-source cost"} onClick={()=>setDrilldown({title:"Acquisition spend evidence",subtitle:scopeLabel,initialKind:"spend",spendRows})}/>
             <SummaryMetric label="Known paid acquired" value={formatNumber(analytics.cohort.knownPaidAcquired)} note={formatNumber(analytics.cohort.paidCrmTracked)+" CRM-tracked · "+formatNumber(analytics.cohort.paidSupplierOnly)+" supplier-only paid leads"} onClick={()=>openMilestone("acquired")}/>
@@ -247,7 +244,8 @@ export function OverviewPage({data}:{data:CompanyDataset}){
     <section>
       <SectionHeader title="Business this period" description="Calendar-period ROBAWS activity only. Marketing filters do not change these company totals."/>
       <Card className="business-flow-card">
-        <div className="business-period-meta"><button type="button" className="drillable" onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}><strong>{formatNumber(analytics.business.wonProjects)}</strong><span>projects won</span></button><span>{data.periodLabel}</span></div>
+        <div className="business-period-meta"><button type="button" className="drillable" onClick={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})}><strong>{formatNumber(analytics.business.wonProjects)}</strong><span>projects won during this calendar period</span></button><span>{data.periodLabel}</span></div>
+        <p className="chart-footnote mb-4">This is calendar activity. The acquisition milestones below answer a different question: how many people first acquired in the selected period eventually became clients. A September project can therefore belong to an earlier or acquisition-date-unverified client.</p>
         <BusinessMoneyFlow analytics={analytics} onProjects={()=>setDrilldown({title:"Projects won in selected period",subtitle:data.periodLabel,projects:analytics.business.projects})} onInvoices={()=>setDrilldown({title:"Invoices in selected period",subtitle:data.periodLabel,invoices:analytics.business.invoices})}/>
       </Card>
     </section>
@@ -258,7 +256,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
       <Card className="p-5">
         <SectionHeader title="Conversion milestones" description="Paid acquisition only. CRM stages use recorded CRM/ROBAWS links; the final source-attributed won-client total also includes user-verified manual source assignments without a CRM match."/>
         <div className="milestone-list">
-          {analytics.cohort.milestones.map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
+          {analytics.cohort.milestones.filter(item=>item.key!=="visits").map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
         </div>
         {!analytics.cohort.sequentialSupported&&<div className="nonsequential-note"><AlertTriangle size={15}/><div><strong>Non-sequential CRM evidence</strong><p>Some later stages exist without every earlier stage being recorded. Stage-to-stage funnel loss is therefore not shown as if the CRM were perfectly sequential.</p></div></div>}
       </Card>
@@ -285,7 +283,6 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <EconomicsMetric label="Covered spend" value={formatCurrency(analytics.economics.coveredSpend)} note={String(analytics.economics.coveredSources.length)+" covered source(s)"} onClick={()=>setDrilldown({title:"Covered acquisition spend",subtitle:scopeLabel,initialKind:"spend",spendRows:spendRows.filter(item=>item.state==="known")})}/>
         <EconomicsMetric label="CPL" value={nullableCurrency(analytics.economics.cpl)} note={String(analytics.economics.coveredLeads)+" known leads · "+formatCurrency(analytics.economics.cplCoveredSpend)+" spend has lead-count coverage"} onClick={()=>setDrilldown({title:"Evidence behind CPL",subtitle:scopeLabel,leads:coveredRows.map(item=>item.lead),spendRows:spendRows.filter(item=>item.state==="known"&&analytics.economics.cplCoveredSources.includes(item.source))})}/>
         <EconomicsMetric label="Cost / qualified" value={nullableCurrency(analytics.economics.costQualified)} note={String(analytics.economics.coveredQualified)+" covered qualified"} onClick={()=>setDrilldown({title:"Covered qualified leads",subtitle:scopeLabel,leads:coveredRows.filter(item=>item.isQualified).map(item=>item.lead),spendRows:spendRows.filter(item=>item.state==="known")})}/>
-        <EconomicsMetric label="Cost / recorded visit" value={nullableCurrency(analytics.economics.costVisit)} note={String(analytics.economics.coveredVisits)+" completed / post-visit records in this cohort"} onClick={()=>setDrilldown({title:"Covered recorded-visit evidence",subtitle:scopeLabel,leads:coveredRows.filter(hasCompletedVisitEvidence).map(item=>item.lead),appointments:(data.commercialAppointments??[]).filter(item=>coveredLeadIds.has(item.leadId)&&Boolean(item.completedAt)),spendRows:spendRows.filter(item=>item.state==="known")})}/>
         <EconomicsMetric label="Cost / offer" value={nullableCurrency(analytics.economics.costOffer)} note={String(analytics.economics.coveredOffers)+" covered offers"} onClick={()=>setDrilldown({title:"Covered offers",subtitle:scopeLabel,offers:coveredSentOffers,spendRows:spendRows.filter(item=>item.state==="known")})}/>
         <EconomicsMetric label="Source CAC" value={nullableCurrency(analytics.economics.cac)} note={String(analytics.economics.paidSourceWonCustomers)+" source-attributed won clients · manual assignments included"} onClick={()=>setDrilldown({title:"Source CAC evidence",subtitle:scopeLabel+" · manual source assignments included",initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
         <EconomicsMetric label="Paid-source project value" value={formatCurrency(analytics.economics.paidSourceProjectValueExclVat)} note="Detailed ROBAWS project value · excl. VAT" onClick={()=>setDrilldown({title:"Paid-source won clients",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients})}/>
@@ -293,11 +290,10 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         <EconomicsMetric label="Paid-source paid ROAS" value={nullableRatio(analytics.economics.cohortCashRoas)} note="Paid-source paid value / covered spend" onClick={()=>setDrilldown({title:"Paid-source ROAS evidence",subtitle:scopeLabel,initialKind:"clients",clients:paidSourceWonClients,spendRows:spendRows.filter(item=>item.state==="known")})}/>
       </div>
       <Card className="mt-4 p-5">
-        <SectionHeader title="Cost per independently recorded outcome" description="Every bar uses the same covered acquisition cohort. A recorded visit can cost more than a client when ROBAWS proves the client but the CRM has no completed-visit record; that is a visit-data gap, not a cheaper sales step."/>
+        <SectionHeader title="Cost per independently recorded outcome" description="Every bar uses the same covered acquisition cohort and only outcomes backed by reliable CRM or ROBAWS evidence."/>
         <CostOutcomeChart data={[
           {name:"Lead",value:analytics.economics.cpl},
           {name:"Qualified lead",value:analytics.economics.costQualified},
-          {name:"Recorded visit",value:analytics.economics.costVisit},
           {name:"Offer",value:analytics.economics.costOffer},
           {name:"Won client",value:analytics.economics.cac},
         ]}/>
@@ -348,8 +344,8 @@ export function OverviewPage({data}:{data:CompanyDataset}){
           <p className="chart-footnote">Yellow = verified source spend. Black = full lifetime paid value for source-known won clients. Acquisition-month coverage is shown in the table only as coverage.</p>
           <button type="button" className="button-secondary" onClick={()=>setShowSourceTable(value=>!value)}>{showSourceTable?"Hide detailed table":"Show detailed table"}</button>
         </div>
-        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>CRM tracked</th><th>Qualified</th><th>Visits</th><th>Offers sent</th><th>Won clients</th><th>Month coverage</th><th>Project value excl. VAT</th><th>Paid value</th><th>CPL</th><th>CAC</th><th>Paid ROAS</th></tr></thead><tbody>
-          {sortedSources.map(row=>{const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;const knownLeads=row.deliveredLeads??(row.leads+row.supplierOnlyLeads);return <tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads===0&&row.supplierOnlyLeads===0&&row.sourceKnownClients>0?<StatusPill tone="warn">Lead count missing</StatusPill>:formatNumber(knownLeads)}</td><td>{formatNumber(row.leads)}{row.supplierOnlyLeads>0&&<small className="block text-[var(--muted)]">+{row.supplierOnlyLeads} supplier-only</small>}</td><td>{row.qualified}</td><td>{row.visits}</td><td>{row.offers}</td><td>{row.wonClients}</td><td>{row.datedCohortClients}/{row.wonClients}{row.undatedClients>0&&<small className="block text-amber-700">{row.undatedClients} month unresolved</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(sourceRoas)}</td></tr>})}
+        {showSourceTable&&<div className="table-scroll mt-4"><table><thead><tr><th>Source</th><th>Spend</th><th>Known leads</th><th>CRM tracked</th><th>Qualified</th><th>Offers sent</th><th>Won clients</th><th>Month coverage</th><th>Project value excl. VAT</th><th>Paid value</th><th>CPL</th><th>CAC</th><th>Paid ROAS</th></tr></thead><tbody>
+          {sortedSources.map(row=>{const sourceRoas=row.spend?row.sourcePaidValue/row.spend:null;const knownLeads=row.deliveredLeads??(row.leads+row.supplierOnlyLeads);return <tr key={row.source}><td className="font-semibold"><button type="button" className="client-link" onClick={()=>campaignFilter==="all"?openSource(row.source):setDrilldown({title:"Campaign records · "+campaignFilter,subtitle:scopeLabel,leads:analytics.rows.map(item=>item.lead),offers:selectedSentOffers,clients:selectedClients,spendRows})}>{row.source}</button></td><td>{row.costState==="missing"?"Cost missing":row.spend===null?"—":formatCurrency(row.spend)}</td><td>{row.leads===0&&row.supplierOnlyLeads===0&&row.sourceKnownClients>0?<StatusPill tone="warn">Lead count missing</StatusPill>:formatNumber(knownLeads)}</td><td>{formatNumber(row.leads)}{row.supplierOnlyLeads>0&&<small className="block text-[var(--muted)]">+{row.supplierOnlyLeads} supplier-only</small>}</td><td>{row.qualified}</td><td>{row.offers}</td><td>{row.wonClients}</td><td>{row.datedCohortClients}/{row.wonClients}{row.undatedClients>0&&<small className="block text-amber-700">{row.undatedClients} month unresolved</small>}</td><td>{formatCurrency(row.sourceProjectValueExclVat)}</td><td className="font-semibold">{formatCurrency(row.sourcePaidValue)}</td><td>{nullableCurrency(row.cpl)}</td><td>{nullableCurrency(row.cac)}</td><td>{nullableRatio(sourceRoas)}</td></tr>})}
         </tbody></table>{sortedSources.some(row=>row.deliveredLeads!==null)&&<p className="chart-footnote mt-3">Supplier lead evidence is shown at source level. Company totals count matched supplier identities only once and add only supplier-only people absent from CRM.</p>}</div>}
       </Card>
       <Card className="mt-4 p-5">
@@ -448,7 +444,6 @@ function BusinessMoneyFlow({analytics,onProjects,onInvoices}:{analytics:ReturnTy
     <div className="business-flow-secondary">
       <div><span>Outstanding invoiced value</span><strong>{formatCurrency(business.outstanding)}</strong><small>Current unpaid balance on period invoices</small></div>
       <div title="This is an aggregate selected-period comparison. Period invoices can relate to projects won earlier, so it is not a project-level reconciliation."><span>Won value not yet invoiced · period gap</span><strong>{formatCurrency(business.notYetInvoicedPeriodGap)}</strong><small>Never labelled lost</small></div>
-      <div><span>Paid / won value</span><strong>{business.paidToWon===null?"—":formatPercent(business.paidToWon)}</strong><small>Selected-period aggregate ratio</small></div>
     </div>
   </div>;
 }

@@ -1,5 +1,6 @@
 import type { CommercialAppointment, CommercialInvoice, CommercialOffer, CommercialProject, CompanyDataset, Lead } from "@/lib/data/types";
 import { isWonClient } from "@/lib/metrics/commercial-truth";
+import { groupByStableLeadIdentity } from "@/lib/metrics/lead-identity";
 
 export type JourneyStage = "new" | "qualified" | "visit" | "offer" | "accepted" | "signed" | "verified" | "lost";
 
@@ -156,57 +157,9 @@ function latestOffer(offers: CommercialOffer[]) {
   return [...offers].sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
 }
 
-function identityParts(lead: Lead) {
-  const email = lead.email.trim().toLowerCase();
-  const phoneDigits = lead.phone.replace(/\D/g, "");
-  const phone = phoneDigits.length >= 8 ? phoneDigits : "";
-  const normalizedName = lead.name
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-  const name = normalizedName.split(" ").filter(Boolean).length >= 2 && normalizedName.length >= 6
-    ? normalizedName
-    : "";
-  return { email, phone, name };
-}
-
 function groupLeadsByIdentity(leads: Lead[]) {
-  type Group = { leads: Lead[]; emails: Set<string>; phones: Set<string>; names: Set<string> };
-  const groups: Group[] = [];
-
-  for (const lead of [...leads].sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
-    const keys = identityParts(lead);
-    const matches = groups.filter(group =>
-      Boolean(
-        (keys.email && group.emails.has(keys.email))
-        || (keys.phone && group.phones.has(keys.phone))
-        || (keys.name && group.names.has(keys.name))
-      ),
-    );
-
-    const target = matches[0] ?? { leads: [], emails: new Set<string>(), phones: new Set<string>(), names: new Set<string>() };
-    if (matches.length === 0) groups.push(target);
-
-    if (matches.length > 1) {
-      for (const duplicateGroup of matches.slice(1)) {
-        target.leads.push(...duplicateGroup.leads);
-        duplicateGroup.emails.forEach(value => target.emails.add(value));
-        duplicateGroup.phones.forEach(value => target.phones.add(value));
-        duplicateGroup.names.forEach(value => target.names.add(value));
-        groups.splice(groups.indexOf(duplicateGroup), 1);
-      }
-    }
-
-    target.leads.push(lead);
-    if (keys.email) target.emails.add(keys.email);
-    if (keys.phone) target.phones.add(keys.phone);
-    if (keys.name) target.names.add(keys.name);
-  }
-
-  return groups.map(group => group.leads.sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)));
+  return groupByStableLeadIdentity([...leads].sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)))
+    .map(group => group.sort((a,b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)));
 }
 
 function masterLead(leads: Lead[]) {

@@ -4,6 +4,7 @@ export { hasCompletedVisitEvidence } from "@/lib/metrics/client-funnel";
 import { isAcceptedPendingClient, isProjectBackedClient, isWonClient } from "@/lib/metrics/commercial-truth";
 import { percentage, safeDivide } from "@/lib/metrics/kpis";
 import { allocateSpendAcrossActiveWindow } from "@/lib/metrics/spend-allocation";
+import { buildCalendarActivity } from "@/lib/metrics/calendar-activity";
 
 export const PAID_ACQUISITION_SOURCES = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary","Facade advertising"]);
 
@@ -257,16 +258,23 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
 
   const periodProjects=(data.periodCommercialProjects??[]).filter(item=>Boolean(item.date));
   const periodInvoices=(data.periodCommercialInvoices??[]).filter(item=>Boolean(item.date));
-  const wonValueInclVat=periodProjects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
+  const periodOffers=data.periodCommercialOffers??[];
+  const [periodFrom,periodTo]=data.periodLabel.split(" — ");
+  const activity=buildCalendarActivity({offers:periodOffers,projects:periodProjects,invoices:periodInvoices},periodFrom,periodTo);
+  const wonValueInclVat=activity.wonProjectValue;
   const wonValueExclVat=periodProjects.reduce((sum,item)=>sum+Number(item.valueExclVat??0),0);
-  const invoicedInclVat=periodInvoices.reduce((sum,item)=>sum+netInvoiceIncl(item),0);
-  const invoicedExclVat=periodInvoices.reduce((sum,item)=>sum+Math.max(0,item.totalExclVat),0);
-  const paidValueOnPeriodInvoices=periodInvoices.reduce((sum,item)=>sum+item.paidTotal,0);
+  const invoicedInclVat=activity.invoicedInclVat;
+  const invoicedExclVat=activity.invoicedExclVat;
+  const paidValueOnPeriodInvoices=activity.paidSnapshotOnPeriodInvoices;
   const outstanding=periodInvoices.reduce((sum,item)=>sum+Math.max(0,netInvoiceIncl(item)-item.paidTotal),0);
   const business={
-    projects:periodProjects,
-    invoices:periodInvoices,
-    wonProjects:periodProjects.length,
+    offers:periodOffers,
+    offersCreated:activity.offersCreated.length,
+    offersSent:activity.offersSent.length,
+    offersAccepted:activity.offersAccepted.length,
+    projects:activity.projectsWon,
+    invoices:activity.invoices,
+    wonProjects:activity.projectsWon.length,
     wonValueInclVat,
     wonValueExclVat,
     invoicedInclVat,
@@ -344,7 +352,7 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
       {key:"visits",label:"Completed visits",value:visits,rate:percentage(visits,paidCrmTracked)??0},
       {key:"offers-created",label:"Offer created",value:offersCreated,rate:percentage(offersCreated,paidCrmTracked)??0},
       {key:"offers",label:"Offer sent",value:offers,rate:percentage(offers,paidCrmTracked)??0},
-      {key:"customers",label:"Won clients",value:customers,rate:percentage(customers,knownPaidAcquired)??0},
+      {key:"customers",label:"Won clients from this acquisition cohort",value:customers,rate:percentage(customers,knownPaidAcquired)??0},
     ],
   };
 
@@ -795,6 +803,10 @@ export function manualClientSource(data:CompanyDataset,client:CommercialClient){
 }
 
 function clientInSelectedPeriod(data:CompanyDataset,client:CommercialClient){
+  // client_since is commercial-system evidence, not a safe replacement for a
+  // missing lead acquisition date. Unmatched, manually attributed clients stay
+  // in YTD source totals but are never guessed into a calendar-month cohort.
+  if(!client.matchedLeadId)return data.periodKey==="ytd";
   const [from,to]=data.periodLabel.split(" — ");
   const date=client.clientSince?.slice(0,10)??"";
   return Boolean(date&&from&&to&&date>=from&&date<=to);
@@ -824,8 +836,4 @@ function monthDistance(from:string,to:string){
   const [ty,tm]=to.split("-").map(Number);
   if(!fy||!fm||!ty||!tm)return -1;
   return(ty-fy)*12+(tm-fm);
-}
-
-function normalized(value:string){
-  return String(value??"").trim().toLowerCase().replace(/\s+/g," ");
 }
