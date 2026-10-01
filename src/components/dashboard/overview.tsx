@@ -256,7 +256,7 @@ export function OverviewPage({data}:{data:CompanyDataset}){
       <Card className="p-5">
         <SectionHeader title="Conversion milestones" description="Paid acquisition only. CRM stages use recorded CRM/ROBAWS links; the final source-attributed won-client total also includes user-verified manual source assignments without a CRM match."/>
         <div className="milestone-list">
-          {analytics.cohort.milestones.filter(item=>item.key!=="visits").map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
+          {analytics.cohort.milestones.map(item=><MilestoneBar key={item.key} label={item.label} value={item.value} rate={item.rate} onClick={()=>openMilestone(item.key)}/>)}
         </div>
         {!analytics.cohort.sequentialSupported&&<div className="nonsequential-note"><AlertTriangle size={15}/><div><strong>Non-sequential CRM evidence</strong><p>Some later stages exist without every earlier stage being recorded. Stage-to-stage funnel loss is therefore not shown as if the CRM were perfectly sequential.</p></div></div>}
       </Card>

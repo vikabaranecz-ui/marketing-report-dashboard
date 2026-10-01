@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { effectiveAcquisitionDate } from "../src/lib/metrics/acquisition-date.ts";
@@ -59,4 +60,13 @@ test("calendar activity counts documents, not clients, and keeps dates separate"
 test("metric dictionary never labels invoice paid_total as payment-date revenue",()=>{
   assert.equal(metricDefinitions.receivedRevenue.dateField,"payment_received_at");
   assert.match(metricDefinitions.receivedRevenue.definition,/Unavailable/);
+});
+
+test("paid acquisition reporting does not expose the unsupported completed-visit milestone",async()=>{
+  const [analyticsSource,funnelSource]=await Promise.all([
+    readFile(new URL("../src/lib/metrics/business-overview.ts",import.meta.url),"utf8"),
+    readFile(new URL("../src/components/dashboard/control-pages.tsx",import.meta.url),"utf8"),
+  ]);
+  assert.doesNotMatch(analyticsSource,/key:\s*"visits"/);
+  assert.doesNotMatch(funnelSource,/label:\s*"Visits"/);
 });

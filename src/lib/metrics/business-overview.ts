@@ -327,14 +327,12 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const manualSourceOnlyCustomers=paidWonClients.filter(client=>!linkedCohortClientIds.has(client.id)).length;
   const strictSets={
     qualified:new Set(paidRows.filter(row=>row.isQualified).map(row=>row.lead.id)),
-    visits:new Set(paidRows.filter(hasCompletedVisitEvidence).map(row=>row.lead.id)),
     offers:new Set(paidRows.filter(hasVerifiedSentOfferEvidence).map(row=>row.lead.id)),
     customers:new Set(paidRows.filter(row=>row.isCommercialClient).map(row=>row.lead.id)),
   };
   const sequentialSupported=manualSourceOnlyCustomers===0
     &&
-    isSubset(strictSets.visits,strictSets.qualified)
-    && isSubset(strictSets.offers,strictSets.visits)
+    isSubset(strictSets.offers,strictSets.qualified)
     && isSubset(strictSets.customers,strictSets.offers);
   const cohortClients=uniqueCommercialClientsForRows(data,rows);
   const cohort={
@@ -349,7 +347,6 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
       {key:"acquired",label:"Known paid acquired",value:knownPaidAcquired,rate:knownPaidAcquired?100:0},
       {key:"tracked",label:"CRM tracked",value:paidCrmTracked,rate:percentage(paidCrmTracked,knownPaidAcquired)??0},
       {key:"qualified",label:"Qualified",value:qualified,rate:percentage(qualified,paidCrmTracked)??0},
-      {key:"visits",label:"Completed visits",value:visits,rate:percentage(visits,paidCrmTracked)??0},
       {key:"offers-created",label:"Offer created",value:offersCreated,rate:percentage(offersCreated,paidCrmTracked)??0},
       {key:"offers",label:"Offer sent",value:offers,rate:percentage(offers,paidCrmTracked)??0},
       {key:"customers",label:"Won clients from this acquisition cohort",value:customers,rate:percentage(customers,knownPaidAcquired)??0},
@@ -361,14 +358,12 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
     sequentialSupported,
     leadRelative:[
       {key:"qualified",label:"Qualified / paid CRM tracked",numerator:qualified,denominator:paidCrmTracked,rate:percentage(qualified,paidCrmTracked)},
-      {key:"visits",label:"Visits / paid CRM tracked",numerator:visits,denominator:paidCrmTracked,rate:percentage(visits,paidCrmTracked)},
       {key:"offers-created",label:"Offer created / paid CRM tracked",numerator:offersCreated,denominator:paidCrmTracked,rate:percentage(offersCreated,paidCrmTracked)},
       {key:"offers",label:"Offer sent / paid CRM tracked",numerator:offers,denominator:paidCrmTracked,rate:percentage(offers,paidCrmTracked)},
       {key:"customers",label:"Won / known paid acquired",numerator:customers,denominator:knownPaidAcquired,rate:percentage(customers,knownPaidAcquired)},
     ],
     sequential:sequentialSupported?[
-      {key:"qualified-visits",label:"Qualified → Visit",numerator:visits,denominator:qualified,rate:percentage(visits,qualified)},
-      {key:"visits-offers",label:"Visit → Offer",numerator:offers,denominator:visits,rate:percentage(offers,visits)},
+      {key:"qualified-offers",label:"Qualified → Offer",numerator:offers,denominator:qualified,rate:percentage(offers,qualified)},
       {key:"offers-customers",label:"Offer → Project client",numerator:customers,denominator:offers,rate:percentage(customers,offers)},
     ]:[],
   };

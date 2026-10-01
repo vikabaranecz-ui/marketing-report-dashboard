@@ -18,7 +18,6 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const acquisition = buildOverviewAnalytics(data,{source:"all",campaign:"all"});
   const [drilldown,setDrilldown]=useState<RecordDrilldown|null>(null);
   const paidRows=rows.filter(row=>PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source)));
-  const completedVisits = acquisition.cohort.visits;
   const offersCreated = acquisition.cohort.offersCreated;
   const sentOffers = acquisition.cohort.offers;
   const allWonClients = acquisition.commercialLedger.clients;
@@ -28,7 +27,6 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
     { label:"Known paid acquired", value:acquisition.cohort.knownPaidAcquired, note:`${acquisition.cohort.paidCrmTracked} CRM-tracked · ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads` },
     { label:"CRM tracked", value:acquisition.cohort.paidCrmTracked, note:"Paid-source CRM people only" },
     { label:"Qualified", value:acquisition.cohort.qualified, note:"Relevant / progressed paid-source CRM people" },
-    { label:"Visits", value:completedVisits, note:"Completed / post-visit evidence" },
     { label:"Offer created", value:offersCreated, note:"ROBAWS offer exists" },
     { label:"Offer sent", value:sentOffers, note:"Sent date / offer-stage evidence" },
     { label:"Won clients", value:paidWonClients.length, note:`ROBAWS evidence · ${acquisition.cohort.manualSourceOnlyCustomers} manual-source without CRM match` },
@@ -51,11 +49,9 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
           const conversion = acquisition.conversion.sequentialSupported&&previous!==null ? stageConversion(stage.value,previous) : null;
           const relevant=["Known paid acquired","CRM tracked"].includes(stage.label)?paidRows
             :stage.label==="Qualified"?paidRows.filter(row=>row.isQualified)
-            :stage.label==="Visits"?paidRows.filter(hasCompletedVisitEvidence)
             :stage.label==="Offer created"?paidRows.filter(hasOfferCreatedEvidence)
             :stage.label==="Offer sent"?paidRows.filter(hasVerifiedSentOfferEvidence)
             :paidRows.filter(row=>row.leadIds.some(id=>paidWonLeadIds.has(id)));
-          const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
           const selection:RecordDrilldown={
             title:stage.label,
             initialKind:stage.label==="Won clients"?"clients":undefined,
@@ -63,7 +59,6 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
               ? `${data.periodLabel} · ${acquisition.cohort.paidCrmTracked} paid-source CRM records shown here; ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads have no CRM record/acquisition date`
               : data.periodLabel,
             leads:relevant.map(row=>row.lead),
-            appointments:stage.label==="Visits"?(data.commercialAppointments??[]).filter(item=>leadIds.has(item.leadId)):undefined,
             offers:["Offer created","Offer sent"].includes(stage.label)?relevant.flatMap(row=>row.offers).filter((item,index,array)=>array.findIndex(other=>other.id===item.id)===index):undefined,
             clients:stage.label==="Won clients"?paidWonClients:undefined,
           };

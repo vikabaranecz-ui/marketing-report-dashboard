@@ -8,7 +8,7 @@ Scope: live Supabase reporting records for ISOPROTECH and Reno Rangers, shared r
 2. **Unmatched clients were assigned to calendar cohorts.** A monthly source/drill-down could use ROBAWS `client_since` for a manually sourced client with no CRM lead. That is not a verified acquisition date. Such clients now remain visible in YTD/all-time source totals but are excluded from monthly cohorts.
 3. **A source click could switch analytical clocks.** The source table used cohort clients while the Leads & Sales executive row recomputed all-time source clients independently. It now consumes the same source-performance client IDs. All-time company ledger metrics are explicitly labelled as all time.
 4. **Name-only duplicate warnings reinforced the same unsafe assumption.** Data-health duplicate counts now use exact email/phone evidence only.
-5. **Visit metrics were not sufficiently reliable for executive acquisition economics.** The unsupported completed-visit and cost-per-recorded-visit cards were removed from Overview. Appointment data remains available for operational review where an actual appointment record exists.
+5. **Visit metrics were not sufficiently reliable for acquisition reporting.** Completed-visit milestones, paid-source conversion ratios and cost-per-recorded-visit cards were removed. Appointment data remains available only for operational review where an actual appointment record exists.
 
 ## Live reconciliation
 
