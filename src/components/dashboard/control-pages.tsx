@@ -22,7 +22,8 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
   const offersCreated = acquisition.cohort.offersCreated;
   const sentOffers = acquisition.cohort.offers;
   const allWonClients = acquisition.commercialLedger.clients;
-  const paidWonClients=acquisition.cohort.clients.filter(client=>PAID_ACQUISITION_SOURCES.has(resolvedClientSource(data,client)));
+  const paidWonClients=acquisition.cohort.sourceAttributedPaidClients;
+  const paidWonLeadIds=new Set(paidWonClients.flatMap(client=>client.matchedLeadId?[client.matchedLeadId]:[]));
   const stages = [
     { label:"Known paid acquired", value:acquisition.cohort.knownPaidAcquired, note:`${acquisition.cohort.paidCrmTracked} CRM-tracked · ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads` },
     { label:"CRM tracked", value:acquisition.cohort.paidCrmTracked, note:"Paid-source CRM people only" },
@@ -30,7 +31,7 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
     { label:"Visits", value:completedVisits, note:"Completed / post-visit evidence" },
     { label:"Offer created", value:offersCreated, note:"ROBAWS offer exists" },
     { label:"Offer sent", value:sentOffers, note:"Sent date / offer-stage evidence" },
-    { label:"Won clients", value:paidWonClients.length, note:"ROBAWS project or invoice/payment evidence" },
+    { label:"Won clients", value:paidWonClients.length, note:`ROBAWS evidence · ${acquisition.cohort.manualSourceOnlyCustomers} manual-source without CRM match` },
   ];
   const notRelevant = paidRows.filter(row => row.isNotRelevant).length;
   const neverContacted = paidRows.filter(row => normalized(row.lead.crmStatus)==="nog geen contact").length;
@@ -42,8 +43,8 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
 
   return <div className="space-y-6">
     <Card className="overflow-hidden">
-      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Paid lead → won client funnel" description="Paid acquisition sources only: Meta/Facebook, Google Ads, AgenciYou, LeadAngel and Solary. Supplier-only leads are included at the top. Signed is not a separate stage; ROBAWS won client is the final conversion."/></div>
-      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} company won clients in ROBAWS</strong><span className="ml-2 text-xs">{formatNumber(paidWonClients.length)} are linked to the selected paid-lead cohort · unlinked ROBAWS clients stay outside the funnel</span></div>
+      <div className="border-b border-[var(--line)] p-5"><SectionHeader title="Paid lead → won client evidence" description="Paid acquisition sources only. CRM stages show linked records; the final won-client result also includes user-verified manual source assignments without a CRM match."/></div>
+      <div className="border-b border-[var(--line)] bg-emerald-50 px-5 py-3 text-sm text-emerald-950"><strong>{formatNumber(allWonClients.length)} company won clients in ROBAWS</strong><span className="ml-2 text-xs">{formatNumber(paidWonClients.length)} have a paid source · {formatNumber(acquisition.cohort.manualSourceOnlyCustomers)} rely on a manual source assignment without a CRM match</span></div>
       <div className="control-funnel">
         {stages.map((stage,index) => {
           const previous = index===0 ? null : stages[index-1].value;
@@ -53,10 +54,11 @@ export function FunnelPage({ data }: { data: CompanyDataset }) {
             :stage.label==="Visits"?paidRows.filter(hasCompletedVisitEvidence)
             :stage.label==="Offer created"?paidRows.filter(hasOfferCreatedEvidence)
             :stage.label==="Offer sent"?paidRows.filter(hasVerifiedSentOfferEvidence)
-            :paidRows.filter(row=>row.isCommercialClient);
+            :paidRows.filter(row=>row.leadIds.some(id=>paidWonLeadIds.has(id)));
           const leadIds=new Set(relevant.flatMap(row=>row.leadIds));
           const selection:RecordDrilldown={
             title:stage.label,
+            initialKind:stage.label==="Won clients"?"clients":undefined,
             subtitle:stage.label==="Known paid acquired"
               ? `${data.periodLabel} · ${acquisition.cohort.paidCrmTracked} paid-source CRM records shown here; ${acquisition.cohort.paidSupplierOnly} supplier-only paid leads have no CRM record/acquisition date`
               : data.periodLabel,

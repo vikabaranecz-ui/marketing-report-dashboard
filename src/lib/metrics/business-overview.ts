@@ -3,6 +3,7 @@ import { buildJourneyRows, hasCompletedVisitEvidence, hasOfferCreatedEvidence, h
 export { hasCompletedVisitEvidence } from "@/lib/metrics/client-funnel";
 import { isAcceptedPendingClient, isProjectBackedClient, isWonClient } from "@/lib/metrics/commercial-truth";
 import { percentage, safeDivide } from "@/lib/metrics/kpis";
+import { allocateSpendAcrossActiveWindow } from "@/lib/metrics/spend-allocation";
 
 export const PAID_ACQUISITION_SOURCES = new Set(["Meta Ads / Facebook","Google Ads","LeadAngel","AgenciYou","Solary","Facade advertising"]);
 
@@ -125,7 +126,9 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
     const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
     const recurring=recurringSourceSpend(data,source);
-    const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,group);
+    const syncedSpend=syncedSpendForSource(data,source,group);
+    const allocated=manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
+    const baseSpend=manual?Number(manual.value):syncedSpend??allocated?.amount??null;
     const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
     const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
     const costState:SourcePerformanceRow["costState"]=nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known";
@@ -151,7 +154,7 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const attributableClients=attributableClientRows.length;
     return withCostMetrics({
       source,spend:Number.isFinite(spend as number)?spend:null,costState,
-      spendNote:[manual?.note??"",recurring.note,ytdSpend?`YTD bank spend ${Number(ytdSpend.value).toFixed(2)} is known but not allocated to this selected period.`:""].filter(Boolean).join(" · "),
+      spendNote:[manual?.note??"",recurring.note,allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:"")].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
@@ -163,13 +166,11 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
   });
 
   const bySource=new Map(result.map(row=>[row.source,row]));
-  const rowLeadIds=new Set(rows.flatMap(row=>row.leadIds));
   const manualOnlyClients=(data.commercialClients??[]).filter(client=>
-    data.periodKey==="ytd"
-    && isWonClient(client)
+    isWonClient(client)
     && clientInSelectedPeriod(data,client)
     && Boolean(manualClientSource(data,client))
-    && !(client.matchedLeadId&&rowLeadIds.has(client.matchedLeadId))
+    && !client.matchedLeadId
   );
 
   for(const client of manualOnlyClients){
@@ -182,13 +183,15 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
       const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
       const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
       const recurring=recurringSourceSpend(data,source);
-      const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,[]);
+      const syncedSpend=syncedSpendForSource(data,source,[]);
+      const allocated=manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
+      const baseSpend=manual?Number(manual.value):syncedSpend??allocated?.amount??null;
       const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
       const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
       row=withCostMetrics({
         source,spend:Number.isFinite(spend as number)?spend:null,
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-        spendNote:[manual?.note??"",recurring.note,ytdSpend?`YTD bank spend ${Number(ytdSpend.value).toFixed(2)} is known but not allocated to this selected period.`:""].filter(Boolean).join(" · "),
+        spendNote:[manual?.note??"",recurring.note,allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:"")].filter(Boolean).join(" · "),
         isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
         leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,
         sourceKnownClients:0,wonClients:0,sourceClientIds:[],attributableClients:0,datedCohortClients:0,undatedClients:0,clientIds:[],
@@ -222,13 +225,15 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
     const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
     const recurring=recurringSourceSpend(data,source);
-    const baseSpend=manual?Number(manual.value):syncedSpendForSource(data,source,[]);
+    const syncedSpend=syncedSpendForSource(data,source,[]);
+    const allocated=manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
+    const baseSpend=manual?Number(manual.value):syncedSpend??allocated?.amount??null;
     const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
     const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
     const row=withCostMetrics({
       source,spend:Number.isFinite(spend as number)?spend:null,
       costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-      spendNote:[manual?.note??"",recurring.note,ytdSpend?`YTD bank spend ${Number(ytdSpend.value).toFixed(2)} is known but not allocated to this selected period.`:""].filter(Boolean).join(" · "),
+      spendNote:[manual?.note??"",recurring.note,allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:"")].filter(Boolean).join(" · "),
       isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
       leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",
       qualified:0,visits:0,offers:0,customers:0,sourceKnownClients:0,wonClients:0,sourceClientIds:[],
@@ -294,33 +299,38 @@ export function buildOverviewAnalytics(data:CompanyDataset,scope:OverviewScope){
   const offersCreated=paidRows.filter(hasOfferCreatedEvidence).length;
   const offers=paidRows.filter(hasVerifiedSentOfferEvidence).length;
   const scopedLeadIds=new Set(rows.flatMap(row=>row.leadIds));
-  const cohortClientIds=new Set(uniqueCommercialClientsForRows(data,rows).map(client=>client.id));
+  const linkedCohortClientIds=new Set(uniqueCommercialClientsForRows(data,rows).map(client=>client.id));
   const paidWonClients=(data.commercialClients??[]).filter(client=>{
     if(!isWonClient(client))return false;
-    // Funnel stages must use one population from lead through client. Source-only
-    // or manual ROBAWS clients remain in company/source truth, but cannot enter a
-    // lead cohort until they are linked to a CRM person with an acquisition date.
-    if(!cohortClientIds.has(client.id))return false;
     const source=resolvedClientSource(data,client);
     if(!PAID_ACQUISITION_SOURCES.has(source))return false;
     if(scope.source!=="all"&&source!==scope.source)return false;
     if(scope.campaign!=="all"&&(!client.matchedLeadId||!scopedLeadIds.has(client.matchedLeadId)))return false;
-    return true;
+    if(linkedCohortClientIds.has(client.id))return true;
+    // A user-verified source assignment is valid source attribution even when
+    // the ROBAWS client has no CRM match. client_since is the only available
+    // period anchor for these source-only clients.
+    return scope.campaign==="all"
+      && !client.matchedLeadId
+      && Boolean(manualClientSource(data,client))
+      && clientInSelectedPeriod(data,client);
   });
   const customers=paidWonClients.length;
+  const manualSourceOnlyCustomers=paidWonClients.filter(client=>!linkedCohortClientIds.has(client.id)).length;
   const strictSets={
     qualified:new Set(paidRows.filter(row=>row.isQualified).map(row=>row.lead.id)),
     visits:new Set(paidRows.filter(hasCompletedVisitEvidence).map(row=>row.lead.id)),
     offers:new Set(paidRows.filter(hasVerifiedSentOfferEvidence).map(row=>row.lead.id)),
     customers:new Set(paidRows.filter(row=>row.isCommercialClient).map(row=>row.lead.id)),
   };
-  const sequentialSupported=
+  const sequentialSupported=manualSourceOnlyCustomers===0
+    &&
     isSubset(strictSets.visits,strictSets.qualified)
     && isSubset(strictSets.offers,strictSets.visits)
     && isSubset(strictSets.customers,strictSets.offers);
   const cohortClients=uniqueCommercialClientsForRows(data,rows);
   const cohort={
-    rows,clients:cohortClients,
+    rows,clients:cohortClients,sourceAttributedPaidClients:paidWonClients,manualSourceOnlyCustomers,
     unique,knownAcquired,supplierOnly,knownPaidAcquired,paidCrmTracked,paidSupplierOnly,qualified,visits,offersCreated,offers,customers,
     projectValueExclVat:[...new Map(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.projects).map(project=>[project.id,project])).values()].reduce((sum,project)=>sum+Number(project.valueExclVat??0),0),
     projectValueInclVat:[...new Map(rows.filter(row=>row.isAttributableClient).flatMap(row=>row.projects).map(project=>[project.id,project])).values()].reduce((sum,project)=>sum+Number(project.valueInclVat??0),0),
@@ -665,6 +675,9 @@ function refreshCostMetrics(row:SourcePerformanceRow){
   row.costQualified=safeDivide(row.spend,row.qualified);
   row.costVisit=safeDivide(row.spend,row.visits);
   row.costOffer=safeDivide(row.spend,row.offers);
+  // User-verified manual source assignments are valid source attribution even
+  // without a CRM match, so source CAC uses every source-known won client in the
+  // selected period. CRM-only stage costs remain separately labelled.
   row.cac=safeDivide(row.spend,row.sourceKnownClients);
   row.cohortCashRoas=row.spend?row.sourcePaidValue/row.spend:null;
 }
@@ -706,6 +719,22 @@ function sourceYtdNumericOverride(data:CompanyDataset,source:string,fieldKey:str
 
 function sourceSpendOverride(data:CompanyDataset,source:string){
   return sourceNumericOverride(data,source,"spend");
+}
+
+function allocatedYtdSourceSpend(data:CompanyDataset,source:string){
+  if(data.periodKey==="ytd")return null;
+  const totalOverride=sourceYtdNumericOverride(data,source,"spend");
+  const [periodStart,periodEnd]=data.periodLabel.split(" — ");
+  const windows=(data.sourceAcquisitionWindows??[]).filter(item=>normalizeAcquisitionSource(item.source)===source);
+  if(!totalOverride||!periodStart||!periodEnd||!windows.length)return null;
+  const firstDate=windows.map(item=>item.firstDate).sort()[0];
+  const lastDate=windows.map(item=>item.lastDate).sort().at(-1)!;
+  const amount=allocateSpendAcrossActiveWindow(Number(totalOverride.value),{firstDate,lastDate},periodStart,periodEnd);
+  if(amount===null)return null;
+  return{
+    amount,
+    note:`Prorated from YTD total ${Number(totalOverride.value).toFixed(2)} across verified active window ${firstDate} — ${lastDate}.`,
+  };
 }
 
 function recurringSourceSpend(data:CompanyDataset,source:string){

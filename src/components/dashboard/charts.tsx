@@ -27,7 +27,13 @@ export function QualityBars({ data }: { data: { name: string; value: number }[] 
 
 
 export function BusinessActivityChart({data,onMonthClick}:{data:Array<{month:string;label:string;won:number;invoiced:number;paid:number;spend:number;complete:boolean}>;onMonthClick?:(month:string)=>void}){
-  const click=(state:unknown)=>{const chartState=state as {activePayload?:Array<{payload?:{month?:string}}>;activeLabel?:string|number}|null;const month=chartState?.activePayload?.[0]?.payload?.month??chartState?.activeLabel;if(month&&onMonthClick)onMonthClick(String(month));};
+  const click=(state:unknown)=>{
+    const chartState=state as {activePayload?:Array<{payload?:{month?:string;label?:string}}> ;activeLabel?:string|number}|null;
+    const payloadMonth=chartState?.activePayload?.find(item=>item.payload?.month)?.payload?.month;
+    const activeLabel=chartState?.activeLabel===undefined?null:String(chartState.activeLabel);
+    const month=payloadMonth??data.find(item=>item.label===activeLabel||item.month===activeLabel)?.month;
+    if(month&&onMonthClick)onMonthClick(month);
+  };
   return <div className="space-y-4">
     <div className="h-[270px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={data} margin={{top:12,right:12,left:0,bottom:0}} onClick={click}><CartesianGrid stroke="#eeeeea" vertical={false}/><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:11}}/><YAxis axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:11}} tickFormatter={(v)=>formatCurrency(Number(v),true)}/><Tooltip contentStyle={tooltipStyle} formatter={(value,name)=>[formatCurrency(Number(value)),name==="won"?"Won project value":name==="invoiced"?"Invoiced":"Paid value on invoices"]}/><Bar dataKey="won" fill={WAT_YELLOW} radius={[5,5,0,0]}/><Bar dataKey="invoiced" fill="#7f7f78" radius={[5,5,0,0]}/><Bar dataKey="paid" fill={WAT_BLACK} radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div>
     <div className="h-[130px] w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{top:6,right:12,left:0,bottom:0}} onClick={click}><CartesianGrid stroke="#eeeeea" vertical={false}/><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:10}}/><YAxis axisLine={false} tickLine={false} tick={{fill:"#777873",fontSize:10}} tickFormatter={(v)=>formatCurrency(Number(v),true)}/><Tooltip contentStyle={tooltipStyle} formatter={(value)=>[formatCurrency(Number(value)),"Dated marketing spend"]}/><Area type="monotone" dataKey="spend" stroke={WAT_YELLOW} strokeWidth={2.5} fill={WAT_YELLOW} fillOpacity={.12}/></AreaChart></ResponsiveContainer></div>

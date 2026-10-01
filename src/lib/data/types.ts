@@ -224,6 +224,7 @@ export type BusinessMonthMetric = {
   leads: number;
   wonProjects: number;
   wonProjectValue: number;
+  spendBySource?: Array<{ source: string; spend: number }>;
   complete: boolean;
 };
 
@@ -308,6 +309,7 @@ export type CompanyDataset = {
   appointmentLeadIds?: string[];
   commercialAppointments?: CommercialAppointment[];
   leads: Lead[];
+  acquisitionLeads?: Lead[];
   services: ServiceMetric[];
   campaigns: CampaignMetric[];
   trend: TrendPoint[];
@@ -319,6 +321,7 @@ export type CompanyDataset = {
   integrations: Integration[];
   changeEvents?: ReportingChangeEvent[];
   manualOverrides?: ReportingOverride[];
+  sourceAcquisitionWindows?: Array<{ source: string; firstDate: string; lastDate: string; crmPeople: number }>;
   automation?: AutomationSettings | null;
   dataHealth: { missingSource: number; missingService: number; missingCampaign: number; wonMissingRevenue: number; duplicates: number; campaignsWithoutSpend: number; daysSinceSync: number | null };
 };
