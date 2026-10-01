@@ -7,6 +7,7 @@ import type { CommercialClient, CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildJourneyRows, hasOfferCreatedEvidence, hasVerifiedSentOfferEvidence, journeyStageMeta, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
 import { buildOverviewAnalytics, hasCompletedVisitEvidence, resolvedClientSource } from "@/lib/metrics/business-overview";
+import { filterPaybackRecordsForPeriod } from "@/lib/metrics/payback-period";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { ClientProfileDrawer } from "./client-profile-drawer";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
@@ -14,16 +15,20 @@ import { isWonClient } from "@/lib/metrics/commercial-truth";
 
 export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
   const rows = useMemo(() => buildJourneyRows(data), [data]);
-  const cohortAnalytics = useMemo(() => buildOverviewAnalytics(data,{source:"all",campaign:"all"}), [data]);
   const journeyByLeadId=useMemo(()=>{
     const map=new Map<string,JourneyRow>();
     for(const row of rows) for(const id of row.leadIds) map.set(id,row);
     return map;
   },[rows]);
   const wonClients=useMemo(()=>(data.commercialClients??[]).filter(isWonClient),[data.commercialClients]);
-  const paybackRows = useMemo(() => wonClients
+  const allPaybackRows = useMemo(() => wonClients
     .map(client=>buildClientPaybackRecord(data,client,client.matchedLeadId?journeyByLeadId.get(client.matchedLeadId):undefined))
     .sort((a,b)=>(b.acquired??b.client.clientSince??"").localeCompare(a.acquired??a.client.clientSince??"")), [data,wonClients,journeyByLeadId]);
+  const paybackRows=useMemo(
+    ()=>filterPaybackRecordsForPeriod(allPaybackRows,data.periodKey??"ytd",data.periodLabel),
+    [allPaybackRows,data.periodKey,data.periodLabel],
+  );
+  const isAcquisitionPeriodFiltered=(data.periodKey??"ytd")!=="ytd";
   const datedCohortClients=paybackRows.filter(item=>Boolean(item.acquired)).length;
   const undatedClients=paybackRows.length-datedCohortClients;
 
@@ -73,16 +78,16 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
         <div>
           <p className="eyebrow">Acquisition cohort → later cash</p>
           <h2>Customer payback</h2>
-          <p>All won clients stay visible here. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month.</p>
+          <p>{isAcquisitionPeriodFiltered?"Only clients acquired in the selected period are shown. Their later project, invoice and paid value stays attached to that original lead period.":"All won clients stay visible in the year view. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month."}</p>
         </div>
-        <div className="payback-scope"><CalendarClock size={17}/><div><span>Won-client scope</span><strong>{formatNumber(totals.clients)} won clients</strong></div></div>
+        <div className="payback-scope"><CalendarClock size={17}/><div><span>{isAcquisitionPeriodFiltered?"Selected acquisition period":"Year won-client scope"}</span><strong>{formatNumber(totals.clients)} won clients</strong></div></div>
       </div>
       <div className="payback-truth-note">
         <strong>Timing rule:</strong> CRM gives the acquisition date. ROBAWS gives a project record date and invoice dates. The API does not currently expose reliable work-start/work-finish dates or payment timestamps, so the dashboard does not pretend invoice dates are construction dates. “Paid by month” below means paid value attached to invoices dated in that month.
       </div>
     </Card>
 
-    <div className="payback-truth-note"><strong>Customer coverage:</strong> {formatNumber(totals.clients)} won client(s) are shown. {formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; {formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being dropped or assigned to a guessed month. Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
+    <div className="payback-truth-note"><strong>Customer coverage:</strong> {isAcquisitionPeriodFiltered?`${formatNumber(totals.clients)} won client(s) have a verified lead acquisition date inside ${data.periodLabel}. Clients acquired outside this period and clients without a trustworthy acquisition date are excluded from this filtered view.`:`${formatNumber(totals.clients)} won client(s) are shown. ${formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; ${formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being assigned to a guessed month.`} Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
     <div className="payback-kpis">
       <PaybackKpi label="Won clients" value={formatNumber(totals.clients)} note="Canonical ROBAWS project/invoice evidence"/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
@@ -93,7 +98,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     </div>
 
     <Card className="p-5">
-      <SectionHeader title="Invoice-month realization" description="All won clients are included here. This shows invoice timing and current paid value by invoice month; it does not require a trusted acquisition month."/>
+      <SectionHeader title="Invoice-month realization" description={isAcquisitionPeriodFiltered?"Only clients acquired in the selected period are included. This shows when their invoices were issued and the current paid value attached to those invoices.":"All won clients are included here. This shows invoice timing and current paid value by invoice month; it does not require a trusted acquisition month."}/>
       {monthlyCash.length?<div className="payback-month-grid">
         {monthlyCash.map(item=><div key={item.month} className="payback-month">
           <span>{monthName(item.month)}</span>
@@ -150,7 +155,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
           <div>{item.cashMonths.length?item.cashMonths.map(month=><em key={month.month}>{monthName(month.month)} <b>{formatCurrency(month.paid,true)}</b></em>):<small>No invoice payments yet</small>}</div>
         </div>
       </button>)}
-      {!filtered.length&&<Card className="p-5"><EmptyState title="No customers match these filters" body="Try a different source, payback state or search term."/></Card>}
+      {!filtered.length&&<Card className="p-5"><EmptyState title="No customers match these filters" body={isAcquisitionPeriodFiltered?"No won client has a verified acquisition date in this selected period, or the additional source/status/search filters exclude them.":"Try a different source, payback state or search term."}/></Card>}
     </div>
 
     {filtered.length>limit&&<div className="flex justify-center"><button type="button" className="button-secondary" onClick={()=>setLimit(value=>value+12)}>Show 12 more</button></div>}

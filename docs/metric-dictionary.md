@@ -20,6 +20,7 @@ All date filtering uses ISO calendar dates in `Europe/Brussels`. Acquisition coh
 | CPL | Acquisition spend / known acquired leads | Daily facts or verified manual acquisition spend | Same acquisition period/window for numerator and denominator | Only sources with both cost and lead evidence. |
 | Paid CAC | Attributable paid acquisition cost / paid-source won clients | Spend facts + ROBAWS | Cohort basis | Referrals, historical/returning clients, and unknown sources are excluded. |
 | Cohort cash ROAS | Paid value to date attributed to cohort / cohort acquisition spend | ROBAWS balances + spend facts | Acquisition cohort | Explicitly a paid-value snapshot, not payment-date cash ROAS. |
+| Customer payback scope | Won-client records with later project/invoice value | CRM acquisition date + ROBAWS commercial ledger | A selected month/quarter includes only clients with a trusted acquisition date inside that range; YTD retains the broader won-client view and labels unverified acquisition dates | Project, invoiced and paid-to-date values follow the selected clients even when those commercial events happened later. |
 
 ## Identity and attribution rules
 

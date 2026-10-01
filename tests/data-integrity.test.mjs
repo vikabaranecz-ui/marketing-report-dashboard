@@ -6,6 +6,7 @@ import { effectiveAcquisitionDate } from "../src/lib/metrics/acquisition-date.ts
 import { buildCalendarActivity } from "../src/lib/metrics/calendar-activity.ts";
 import { groupByStableLeadIdentity } from "../src/lib/metrics/lead-identity.ts";
 import { metricDefinitions } from "../src/lib/metrics/metric-definitions.ts";
+import { filterPaybackRecordsForPeriod } from "../src/lib/metrics/payback-period.ts";
 
 test("historical commercial activity does not move a lead into a later acquisition month",()=>{
   assert.equal(effectiveAcquisitionDate("2026-06-12T10:00:00Z","2026-09-03T00:00:00Z"),"2026-06-12");
@@ -69,4 +70,17 @@ test("paid acquisition reporting does not expose the unsupported completed-visit
   ]);
   assert.doesNotMatch(analyticsSource,/key:\s*"visits"/);
   assert.doesNotMatch(funnelSource,/label:\s*"Visits"/);
+});
+
+test("customer payback follows the selected acquisition month",()=>{
+  const records=[
+    {id:"june",acquired:"2026-06-12",paid:1000},
+    {id:"september",acquired:"2026-09-03",paid:2000},
+    {id:"undated",acquired:null,paid:3000},
+  ];
+  assert.deepEqual(
+    filterPaybackRecordsForPeriod(records,"2026-09","2026-09-01 — 2026-09-30").map(item=>item.id),
+    ["september"],
+  );
+  assert.deepEqual(filterPaybackRecordsForPeriod(records,"ytd","2026-01-01 — 2026-10-01"),records);
 });
