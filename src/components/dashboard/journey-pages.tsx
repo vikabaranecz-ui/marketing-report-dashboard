@@ -78,7 +78,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
         <div>
           <p className="eyebrow">Acquisition cohort → later cash</p>
           <h2>Customer payback</h2>
-          <p>{isAcquisitionPeriodFiltered?"Only clients acquired in the selected period are shown. Their later project, invoice and paid value stays attached to that original lead period.":"All won clients stay visible in the year view. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month."}</p>
+          <p>{isAcquisitionPeriodFiltered?"Only clients acquired in the selected period are shown: by CRM lead date, or by the month they became a ROBAWS client when no CRM lead exists. Their later project, invoice and paid value stays attached to that original period.":"All won clients stay visible in the year view. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month."}</p>
         </div>
         <div className="payback-scope"><CalendarClock size={17}/><div><span>{isAcquisitionPeriodFiltered?"Selected acquisition period":"Year won-client scope"}</span><strong>{formatNumber(totals.clients)} won clients</strong></div></div>
       </div>
@@ -87,7 +87,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
       </div>
     </Card>
 
-    <div className="payback-truth-note"><strong>Customer coverage:</strong> {isAcquisitionPeriodFiltered?`${formatNumber(totals.clients)} won client(s) have a verified lead acquisition date inside ${data.periodLabel}. Clients acquired outside this period and clients without a trustworthy acquisition date are excluded from this filtered view.`:`${formatNumber(totals.clients)} won client(s) are shown. ${formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; ${formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being assigned to a guessed month.`} Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
+    <div className="payback-truth-note"><strong>Customer coverage:</strong> {isAcquisitionPeriodFiltered?`${formatNumber(totals.clients)} won client(s) were acquired inside ${data.periodLabel} (CRM lead date, or client-since month for clients without a CRM lead). Clients acquired outside this period are excluded from this filtered view.`:`${formatNumber(totals.clients)} won client(s) are shown. ${formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; ${formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being assigned to a guessed month.`} Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
     <div className="payback-kpis">
       <PaybackKpi label="Won clients" value={formatNumber(totals.clients)} note="Canonical ROBAWS project/invoice evidence"/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
@@ -131,7 +131,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
         </div>
 
         <div className="payback-milestones">
-          <PaybackMilestone label="Lead acquired" value={item.acquired?date(item.acquired):"Acquisition month unverified"}/>
+          <PaybackMilestone label={item.acquiredBasis==="client-since"?"Became client · no CRM lead":"Lead acquired"} value={item.acquired?date(item.acquired):"Acquisition month unverified"}/>
           <ArrowRight size={14}/>
           <PaybackMilestone label="ROBAWS project date" value={item.projectDate?date(item.projectDate):"—"}/>
           <ArrowRight size={14}/>
@@ -169,6 +169,7 @@ type PaybackRecord = {
   service:string;
   municipality:string;
   acquired:string|null;
+  acquiredBasis:"lead"|"client-since"|null;
   projectDate:string|null;
   firstInvoice:string|null;
   lastInvoice:string|null;
@@ -190,7 +191,11 @@ function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,ro
   const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
   const leadDate=row?.lead.date??null;
   const clientDate=client.clientSince?.slice(0,10)??"";
-  const acquired=leadDate&&(!clientDate||clientDate>=leadDate.slice(0,10))?leadDate:null;
+  const leadAcquired=leadDate&&(!clientDate||clientDate>=leadDate.slice(0,10))?leadDate:null;
+  // A client without any CRM lead is anchored to the month it became a ROBAWS client.
+  const clientAcquired=!leadAcquired&&!client.matchedLeadId&&clientDate?clientDate:null;
+  const acquired=leadAcquired??clientAcquired;
+  const acquiredBasis:PaybackRecord["acquiredBasis"]=leadAcquired?"lead":clientAcquired?"client-since":null;
   const cashMonths=[...invoices.reduce((map,item)=>{
     if(!item.date)return map;
     const month=item.date.slice(0,7);
@@ -209,6 +214,7 @@ function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,ro
     service:row?.lead.service??"",
     municipality:row?.lead.municipality??client.municipality??"",
     acquired,
+    acquiredBasis,
     projectDate:projects[0]?.projectDate??projects[0]?.date??null,
     firstInvoice,
     lastInvoice:invoices.at(-1)?.date??null,

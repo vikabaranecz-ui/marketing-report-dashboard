@@ -200,7 +200,8 @@ export type TrendPoint = {
   leads: number;
   qualified: number;
   revenue: number;
-  cpl: number;
+  /** Synced ad spend ÷ Meta/Google-sourced CRM leads that day; null when there are none. */
+  cpl: number | null;
   cac: number;
   roas: number;
   sessions: number;

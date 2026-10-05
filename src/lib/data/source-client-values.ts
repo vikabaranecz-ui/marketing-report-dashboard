@@ -1,5 +1,6 @@
 import "server-only";
 
+import { effectiveAcquisitionDate } from "@/lib/metrics/acquisition-date";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SourceClientValue } from "./source-client-types";
 
@@ -8,6 +9,7 @@ type LeadRow = {
   source: string | null;
   campaign_id: string | null;
   created_at: string;
+  robaws_client_id: string | null;
 };
 
 type CampaignRow = {
@@ -50,9 +52,8 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
   const [leadsRes, clientsRes, campaignsRes, overridesRes] = await Promise.all([
     supabase
       .from("leads")
-      .select("id,source,campaign_id,created_at")
+      .select("id,source,campaign_id,created_at,robaws_client_id")
       .eq("company_id", companyId)
-      .gte("created_at", period.fromIso)
       .lte("created_at", period.toIso),
     supabase
       .from("commercial_clients")
@@ -73,16 +74,26 @@ export async function getSourceClientValues(companyId: string, month = "ytd"): P
   const error = [leadsRes, clientsRes, campaignsRes, overridesRes].find(result => result.error)?.error;
   if (error) throw new Error(`Unable to load source client values: ${error.message}`);
 
-  const leads = (leadsRes.data ?? []) as LeadRow[];
   const clients = (clientsRes.data ?? []) as ClientRow[];
+  // Same acquisition clock as the Overview: a CRM row imported after the person
+  // was already a ROBAWS client keeps the earlier client_since date.
+  const clientByLeadId = new Map(clients.filter(client => client.matched_lead_id).map(client => [client.matched_lead_id as string, client]));
+  const clientByExternalId = new Map(clients.map(client => [client.external_id, client]));
+  const leads = ((leadsRes.data ?? []) as LeadRow[]).filter(lead => {
+    const client = clientByLeadId.get(lead.id) ?? (lead.robaws_client_id ? clientByExternalId.get(lead.robaws_client_id) : undefined);
+    const date = effectiveAcquisitionDate(lead.created_at, client?.client_since);
+    return date >= period.dateFrom && date <= period.dateTo;
+  });
   const campaigns = (campaignsRes.data ?? []) as CampaignRow[];
   const overrides = (overridesRes.data ?? []) as OverrideRow[];
 
   const leadById = new Map(leads.map(lead => [lead.id, lead]));
   const campaignById = new Map(campaigns.map(campaign => [campaign.id, campaign.name]));
+  // A period-specific source assignment wins over the general ("all") one.
   const sourceOverrideByClient = new Map(
     overrides
       .filter(row => row.field_key === "source" && typeof row.value === "string" && row.value.trim())
+      .sort((a, b) => Number(a.period_key === period.selectedMonth) - Number(b.period_key === period.selectedMonth))
       .map(row => [row.scope_key, String(row.value).trim()]),
   );
 
@@ -167,7 +178,7 @@ function numeric(value: unknown) {
 function reportingPeriod(month: string) {
   const today = brusselsDate(new Date());
   const year = today.slice(0, 4);
-  const selectedMonth = /^\d{4}-\d{2}$/.test(month) ? month : "ytd";
+  const selectedMonth = /^\d{4}-\d{2}$/.test(month) || /^\d{4}-Q[1-4]$/.test(month) ? month : "ytd";
 
   if (selectedMonth === "ytd") {
     const dateFrom = `${year}-01-01`;
@@ -180,10 +191,13 @@ function reportingPeriod(month: string) {
     };
   }
 
-  const [selectedYear, selectedMonthNumber] = selectedMonth.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(selectedYear, selectedMonthNumber, 0)).getUTCDate();
-  const dateFrom = `${selectedMonth}-01`;
-  const rawDateTo = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
+  const quarter = selectedMonth.match(/^(\d{4})-Q([1-4])$/);
+  const selectedYear = Number(selectedMonth.slice(0, 4));
+  const startMonth = quarter ? (Number(quarter[2]) - 1) * 3 + 1 : Number(selectedMonth.slice(5, 7));
+  const endMonth = quarter ? startMonth + 2 : startMonth;
+  const lastDay = new Date(Date.UTC(selectedYear, endMonth, 0)).getUTCDate();
+  const dateFrom = `${selectedYear}-${String(startMonth).padStart(2, "0")}-01`;
+  const rawDateTo = `${selectedYear}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   const dateTo = rawDateTo > today ? today : rawDateTo;
 
   return {
