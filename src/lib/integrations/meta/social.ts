@@ -55,7 +55,7 @@ export async function fetchMetaSocial(accessToken: string, companyName: string, 
       followers: numberOrNull(igInfo?.followers_count),
     });
   } else {
-    warnings.push(`Facebook Page "${page.name}" has no linked Instagram professional account.`);
+    warnings.push(`No Instagram account is visible on Facebook Page "${page.name.trim()}". Either the permission instagram_basic is not granted yet, or the Instagram professional account is not linked to this Page.`);
   }
 
   return { posts, accounts, warning: warnings.length ? warnings.join(" ") : null, pageName: page.name as string | null };

@@ -6,12 +6,16 @@ type ProviderDefinition = {
   id: IntegrationProvider;
   name: string;
   auth: "oauth" | "signed_webhook" | "server_token";
-  authorizationGroup: "meta" | "google" | "monday" | "hubspot" | "robaws" | "website";
+  authorizationGroup: "meta" | "meta_social" | "instagram" | "google" | "monday" | "hubspot" | "robaws" | "website";
   selectedResource: string;
 };
 
 export const providerCatalog: Record<IntegrationProvider, ProviderDefinition> = {
   meta: { id: "meta", name: "Meta Ads", auth: "oauth", authorizationGroup: "meta", selectedResource: "Meta ad account" },
+  // Organic posts use a separate Meta app so the ads app keeps its own permissions.
+  // Instagram API with Instagram Login: server-side token from Vercel, auto-refreshed into the vault.
+  instagram: { id: "instagram", name: "Instagram", auth: "server_token", authorizationGroup: "instagram", selectedResource: "Instagram professional account" },
+  meta_social: { id: "meta_social", name: "Facebook & Instagram posts", auth: "oauth", authorizationGroup: "meta_social", selectedResource: "Facebook Page" },
   google_ads: { id: "google_ads", name: "Google Ads", auth: "oauth", authorizationGroup: "google", selectedResource: "Google Ads customer" },
   ga4: { id: "ga4", name: "Google Analytics 4", auth: "oauth", authorizationGroup: "google", selectedResource: "GA4 property" },
   search_console: { id: "search_console", name: "Google Search Console", auth: "oauth", authorizationGroup: "google", selectedResource: "Search Console property" },
@@ -41,6 +45,8 @@ export async function missingProviderConfiguration(provider: IntegrationProvider
 
   const requirements: Record<ProviderDefinition["authorizationGroup"], string[]> = {
     meta: ["META_APP_ID", "META_APP_SECRET"],
+    meta_social: ["META_SOCIAL_APP_ID", "META_SOCIAL_APP_SECRET"],
+    instagram: ["INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_ACCOUNT_ID"],
     google: [],
     monday: ["MONDAY_API_TOKEN"],
     hubspot: ["HUBSPOT_ACCESS_TOKEN"],

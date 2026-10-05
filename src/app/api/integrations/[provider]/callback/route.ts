@@ -12,7 +12,7 @@ import {
 import {
   verifyOAuthState,
 } from "@/lib/integrations/oauth-state";
-import { parseMetaPermissionRows } from "@/lib/integrations/meta/production-core";
+import { META_SOCIAL_PERMISSIONS, parseMetaPermissionRows } from "@/lib/integrations/meta/production-core";
 
 export const runtime = "nodejs";
 
@@ -86,7 +86,7 @@ export async function GET(
       );
     }
 
-    if (provider === "meta") {
+    if (provider === "meta" || provider === "meta_social") {
       resetConnection = async (message: string) => {
         const { error } = await access.supabase
           .from("reporting_integration_connections")
@@ -109,7 +109,7 @@ export async function GET(
       };
     }
 
-    if (!code || (provider === "meta" && providerReportedError)) {
+    if (!code || ((provider === "meta" || provider === "meta_social") && providerReportedError)) {
       if (resetConnection) {
         await resetConnection(incompleteAuthorizationMessage);
       }
@@ -215,6 +215,13 @@ export async function GET(
               meta_permission_status: metaReadiness.status,
               meta_granted_permissions: metaReadiness.granted,
               meta_missing_permissions: metaReadiness.missing,
+            },
+          } : {}),
+          ...(provider === "meta_social" ? {
+            configuration: {
+              ...(access.connection.configuration ?? {}),
+              social_granted_permissions: credential.scopes ?? [],
+              social_missing_permissions: META_SOCIAL_PERMISSIONS.filter(permission => !(credential.scopes ?? []).includes(permission)),
             },
           } : {}),
           updated_at: new Date().toISOString(),

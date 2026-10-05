@@ -15,7 +15,10 @@ const googleScopes = [
   "https://www.googleapis.com/auth/business.manage",
 ];
 
-const metaScopes = [...META_REQUIRED_PERMISSIONS, ...META_SOCIAL_PERMISSIONS];
+const metaApps = {
+  meta: { idEnv: "META_APP_ID", secretEnv: "META_APP_SECRET", scopes: [...META_REQUIRED_PERMISSIONS] },
+  meta_social: { idEnv: "META_SOCIAL_APP_ID", secretEnv: "META_SOCIAL_APP_SECRET", scopes: [...META_SOCIAL_PERMISSIONS] },
+} as const;
 
 export async function buildAuthorizationUrl(
   provider: IntegrationProvider,
@@ -24,15 +27,16 @@ export async function buildAuthorizationUrl(
 ) {
   const group = providerCatalog[provider].authorizationGroup;
 
-  if (group === "meta") {
+  if (group === "meta" || group === "meta_social") {
+    const app = metaApps[group];
     const url = new URL("https://www.facebook.com/v26.0/dialog/oauth");
 
     url.search = new URLSearchParams({
-      client_id: required("META_APP_ID"),
+      client_id: required(app.idEnv),
       redirect_uri: redirectUri,
       response_type: "code",
       state,
-      scope: metaScopes.join(","),
+      scope: app.scopes.join(","),
     }).toString();
 
     return url.toString();
@@ -101,8 +105,8 @@ export async function exchangeAuthorizationCode(
     return exchangeMondayCode(code, redirectUri, state);
   }
 
-  if (group === "meta") {
-    return exchangeMetaCode(code, redirectUri);
+  if (group === "meta" || group === "meta_social") {
+    return exchangeMetaCode(code, redirectUri, metaApps[group]);
   }
 
   throw new Error("This provider does not use OAuth.");
@@ -180,6 +184,7 @@ async function exchangeMondayCode(
 async function exchangeMetaCode(
   code: string,
   redirectUri: string,
+  app: { idEnv: string; secretEnv: string },
 ): Promise<ProviderCredential> {
   const shortResponse = await fetch(
     "https://graph.facebook.com/v26.0/oauth/access_token",
@@ -189,8 +194,8 @@ async function exchangeMetaCode(
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        client_id: required("META_APP_ID"),
-        client_secret: required("META_APP_SECRET"),
+        client_id: required(app.idEnv),
+        client_secret: required(app.secretEnv),
         redirect_uri: redirectUri,
         code,
       }),
@@ -209,8 +214,8 @@ async function exchangeMetaCode(
       },
       body: new URLSearchParams({
         grant_type: "fb_exchange_token",
-        client_id: required("META_APP_ID"),
-        client_secret: required("META_APP_SECRET"),
+        client_id: required(app.idEnv),
+        client_secret: required(app.secretEnv),
         fb_exchange_token: shortToken.access_token,
       }),
       cache: "no-store",

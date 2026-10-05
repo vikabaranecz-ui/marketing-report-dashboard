@@ -4,6 +4,8 @@ import { syncCrmProvider } from "@/lib/integrations/crm-sync";
 import { isGoogleProvider } from "@/lib/integrations/google/client";
 import { syncGoogleProvider } from "@/lib/integrations/google-sync";
 import { syncMetaProvider } from "@/lib/integrations/meta-sync";
+import { syncMetaSocialProvider } from "@/lib/integrations/meta-social-sync";
+import { syncInstagramProvider } from "@/lib/integrations/instagram-sync";
 import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -31,7 +33,7 @@ type Snapshot = {
 };
 
 const operationalProviders = new Set<IntegrationProvider>(["monday", "hubspot", "robaws"]);
-const marketingProviders = new Set<IntegrationProvider>(["meta", "google_ads", "ga4", "search_console", "google_business"]);
+const marketingProviders = new Set<IntegrationProvider>(["meta", "meta_social", "instagram", "google_ads", "ga4", "search_console", "google_business"]);
 
 export async function runAutomatedSync(scope: AutomationScope) {
   const admin = createSupabaseAdminClient();
@@ -92,6 +94,8 @@ export async function runAutomatedSync(scope: AutomationScope) {
 function isConfiguredForAutomation(connection: ConnectionRow) {
   const configuration = connection.configuration ?? {};
   if (connection.provider === "meta") return Boolean(configuration.ad_account_id);
+  // The posts connection picks the Page by company name when none is configured.
+  if (connection.provider === "meta_social" || connection.provider === "instagram") return true;
   if (connection.provider === "google_ads") return Boolean(configuration.customer_id);
   if (connection.provider === "ga4") return Boolean(configuration.property_id);
   if (connection.provider === "search_console") return Boolean(configuration.site_url);
@@ -191,6 +195,11 @@ async function runConnection(connection: ConnectionRow) {
         meta_permission_status: result.metaPermissionStatus,
         meta_granted_permissions: result.grantedPermissions,
         meta_missing_permissions: result.missingPermissions,
+      };
+    }
+    if ((connection.provider === "meta_social" || connection.provider === "instagram") && "socialWarning" in result) {
+      update.configuration = {
+        ...(connection.configuration ?? {}),
         social_page_name: result.socialPageName,
         social_warning: result.socialWarning,
       };
@@ -240,6 +249,12 @@ async function dispatchSync(connection: ConnectionRow) {
   }
   if (connection.provider === "meta") {
     return syncMetaProvider(connection.id, connection.company_id, configuration);
+  }
+  if (connection.provider === "meta_social") {
+    return syncMetaSocialProvider(connection.id, connection.company_id, configuration);
+  }
+  if (connection.provider === "instagram") {
+    return syncInstagramProvider(connection.id, connection.company_id);
   }
   if (isGoogleProvider(connection.provider)) {
     return syncGoogleProvider(
