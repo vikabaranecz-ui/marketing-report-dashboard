@@ -74,6 +74,15 @@ export function OverviewPage({data}:{data:CompanyDataset}){
   const unattributedPaid=unattributedWon.reduce((sum,item)=>sum+item.paidTotal,0);
   const affectedCoverageClients=coverageGapClients(data);
   const integrationIssues=data.integrations.filter(item=>item.status!=="Connected"||!item.lastSuccess);
+  const neverReachedPaid=analytics.rows.filter(row=>
+    PAID_ACQUISITION_SOURCES.has(normalizeAcquisitionSource(row.lead.source))
+    && !row.isCommercialClient && row.offers.length===0
+    && NEVER_REACHED_STATUSES.has(String(row.lead.crmStatus??"").trim().toLowerCase())
+  );
+  const visitedNoOffer=analytics.rows.filter(row=>
+    !row.isCommercialClient && row.offers.length===0
+    && VISITED_NO_OFFER_STATUSES.has(String(row.lead.crmStatus??"").trim().toLowerCase())
+  );
   const commercialLedgerClients=(data.commercialClients??[]).filter(isWonClient);
   const paidLedgerClients=commercialLedgerClients.filter(client=>client.paidTotal>0).sort((a,b)=>b.paidTotal-a.paidTotal||a.name.localeCompare(b.name));
   const invoicedLedgerClients=commercialLedgerClients.filter(client=>client.invoicedTotal>0).sort((a,b)=>b.invoicedTotal-a.invoicedTotal||a.name.localeCompare(b.name));
@@ -380,8 +389,10 @@ export function OverviewPage({data}:{data:CompanyDataset}){
         {(analytics.coverage.missingInvoices>0||analytics.coverage.missingProjects>0)&&<ActionButton title="ROBAWS detail coverage incomplete" value={String(analytics.coverage.loadedInvoices)+"/"+String(analytics.coverage.expectedInvoices)+" invoices"} detail={String(analytics.coverage.missingInvoices)+" invoice row(s) and "+String(analytics.coverage.missingProjects)+" project row(s) are not represented in the detailed snapshot."} onClick={()=>setDrilldown({title:"Clients affected by ROBAWS detail gaps",subtitle:"Reconciliation coverage",initialKind:"clients",clients:affectedCoverageClients})}/>}
         {analytics.coverage.projectValueGap>0.01&&<ActionButton title="Project value reconciliation gap" value={formatCurrency(analytics.coverage.projectValueGap)} detail={"Detailed project rows total "+formatCurrency(analytics.coverage.loadedProjectValue)+" while the ROBAWS client aggregate reports "+formatCurrency(analytics.coverage.clientAggregateProjectValue)+". The aggregate can include offer values not safely attributable as won project value."} onClick={()=>setDrilldown({title:"Detailed ROBAWS projects",subtitle:"Use project rows for won-value attribution until aggregate logic is reconciled",projects:data.allCommercialProjects??[]})}/>}
         {data.dataHealth.duplicates>0&&<ActionLink title="Potential duplicate leads" value={formatNumber(data.dataHealth.duplicates)} detail="Review duplicate candidates before trusting unique-lead conversion." href={scopedHref("/data-health")}/>}
+        {neverReachedPaid.length>0&&<ActionButton title="Paid leads never reached" value={formatNumber(neverReachedPaid.length)} detail={(analytics.economics.cpl===null?"":"≈ "+formatCurrency(neverReachedPaid.length*analytics.economics.cpl)+" of acquisition cost at the current CPL. ")+"CRM status is unreachable, voicemail or not yet contacted, and no offer exists."} onClick={()=>setDrilldown({title:"Paid leads never reached",subtitle:scopeLabel,leads:neverReachedPaid.map(row=>row.lead)})}/>}
+        {visitedNoOffer.length>0&&<ActionButton title="Visited, no offer yet" value={formatNumber(visitedNoOffer.length)} detail="CRM says the visit happened and an offer is still to be made, but ROBAWS has no offer for these people." onClick={()=>setDrilldown({title:"Visited without offer",subtitle:scopeLabel,leads:visitedNoOffer.map(row=>row.lead)})}/>}
         {integrationIssues.length>0&&<ActionLink title="Integration sync needs review" value={formatNumber(integrationIssues.length)} detail={integrationIssues.map(item=>item.name).join(", ")} href={scopedHref("/data-health")}/>}
-        {dueOffers.length===0&&analytics.business.notYetInvoicedPeriodGap===0&&analytics.business.outstanding===0&&analytics.economics.missingCostSources.length===0&&unattributedWon.length===0&&undatedCohortClients===0&&acquisitionDateConflicts===0&&analytics.coverage.missingInvoices===0&&analytics.coverage.missingProjects===0&&analytics.coverage.projectValueGap<=0.01&&data.dataHealth.duplicates===0&&integrationIssues.length===0&&
+        {dueOffers.length===0&&neverReachedPaid.length===0&&visitedNoOffer.length===0&&analytics.business.notYetInvoicedPeriodGap===0&&analytics.business.outstanding===0&&analytics.economics.missingCostSources.length===0&&unattributedWon.length===0&&undatedCohortClients===0&&acquisitionDateConflicts===0&&analytics.coverage.missingInvoices===0&&analytics.coverage.missingProjects===0&&analytics.coverage.projectValueGap<=0.01&&data.dataHealth.duplicates===0&&integrationIssues.length===0&&
           <div className="action-clear"><CheckCircle2 size={17}/><strong>No supported action alert is currently triggered.</strong></div>}
       </div>
     </section>
@@ -470,6 +481,9 @@ function EconomicsMetric({label,value,note,onClick}:{label:string;value:string;n
   const body=<><span>{label}</span><strong>{value}</strong><small>{note}</small></>;
   return onClick?<button type="button" className="economics-metric drillable text-left" onClick={onClick}>{body}</button>:<div className="economics-metric">{body}</div>;
 }
+
+const NEVER_REACHED_STATUSES=new Set(["onbereikbaar","nog geen contact","voicemail ingesproken"]);
+const VISITED_NO_OFFER_STATUSES=new Set(["visited offerte to be done"]);
 
 function ActionButton({title,value,detail,onClick}:{title:string;value:string;detail:string;onClick:()=>void}){
   return <button type="button" className="action-card drillable text-left" onClick={onClick}><div><strong>{title}</strong><p>{detail}</p></div><span>{value}</span></button>;

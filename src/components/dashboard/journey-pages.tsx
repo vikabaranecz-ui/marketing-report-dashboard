@@ -6,8 +6,9 @@ import { ArrowRight, CalendarClock, CircleDollarSign, Pencil, RotateCcw, Search,
 import type { CommercialClient, CompanyDataset } from "@/lib/data/types";
 import { formatCurrency, formatNumber, formatPercent, percentage } from "@/lib/metrics/kpis";
 import { buildJourneyRows, hasOfferCreatedEvidence, hasVerifiedSentOfferEvidence, journeyStageMeta, type JourneyRow, type JourneyStage } from "@/lib/metrics/client-funnel";
-import { buildOverviewAnalytics, hasCompletedVisitEvidence, resolvedClientSource } from "@/lib/metrics/business-overview";
+import { buildOverviewAnalytics, hasCompletedVisitEvidence, PAID_ACQUISITION_SOURCES, resolvedClientSource } from "@/lib/metrics/business-overview";
 import { filterPaybackRecordsForPeriod } from "@/lib/metrics/payback-period";
+import { buildMonthlySourceSpend, monthsBetween, sourceSpendInMonths, totalSpendInMonths, type MonthlySourceSpend } from "@/lib/metrics/monthly-spend";
 import { Card, EmptyState, KpiCard, SectionHeader, StatusPill } from "./ui";
 import { ClientProfileDrawer } from "./client-profile-drawer";
 import { RecordDrilldownDrawer, type RecordDrilldown } from "./record-drilldown";
@@ -21,9 +22,10 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
     return map;
   },[rows]);
   const wonClients=useMemo(()=>(data.commercialClients??[]).filter(isWonClient),[data.commercialClients]);
+  const monthlySpend=useMemo(()=>buildMonthlySourceSpend(data),[data]);
   const allPaybackRows = useMemo(() => wonClients
-    .map(client=>buildClientPaybackRecord(data,client,client.matchedLeadId?journeyByLeadId.get(client.matchedLeadId):undefined))
-    .sort((a,b)=>(b.acquired??b.client.clientSince??"").localeCompare(a.acquired??a.client.clientSince??"")), [data,wonClients,journeyByLeadId]);
+    .map(client=>buildClientPaybackRecord(data,client,client.matchedLeadId?journeyByLeadId.get(client.matchedLeadId):undefined,monthlySpend))
+    .sort((a,b)=>(b.acquired??b.client.clientSince??"").localeCompare(a.acquired??a.client.clientSince??"")), [data,wonClients,journeyByLeadId,monthlySpend]);
   const paybackRows=useMemo(
     ()=>filterPaybackRecordsForPeriod(allPaybackRows,data.periodKey??"ytd",data.periodLabel),
     [allPaybackRows,data.periodKey,data.periodLabel],
@@ -72,13 +74,36 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
 
   const hasFilters=Boolean(search||source!=="all"||status!=="all");
 
+  const [periodFrom,periodTo]=data.periodLabel.split(" — ");
+  const clientMonths=paybackRows.map(item=>item.clientMonth).filter((value):value is string=>Boolean(value));
+  const firstMonth=[periodFrom?.slice(0,7),...clientMonths].filter(Boolean).sort()[0]??"";
+  const lastMonth=[periodTo?.slice(0,7),...clientMonths].filter(Boolean).sort().at(-1)??"";
+  const monthRows=(firstMonth&&lastMonth?monthsBetween(firstMonth,lastMonth):[]).map(month=>{
+    const clients=paybackRows.filter(item=>item.clientMonth===month);
+    const paidSourceClients=clients.filter(item=>PAID_ACQUISITION_SOURCES.has(item.source)).length;
+    const spend=totalSpendInMonths(monthlySpend,month,month);
+    return {month,clients:clients.length,paidSourceClients,spend,costPerClient:paidSourceClients?spend/paidSourceClients:null,
+      projectValue:clients.reduce((sum,item)=>sum+item.projectValue,0),paid:clients.reduce((sum,item)=>sum+item.paid,0)};
+  });
+  const spendFrom=monthRows[0]?.month??"";
+  const spendTo=monthRows.at(-1)?.month??"";
+  const sourceRows=[...new Set([...paybackRows.map(item=>item.source),...[...monthlySpend.bySource.keys()].filter(key=>(sourceSpendInMonths(monthlySpend,key,spendFrom,spendTo)??0)>0)])].map(name=>{
+    const clients=paybackRows.filter(item=>item.source===name);
+    const spend=sourceSpendInMonths(monthlySpend,name,spendFrom,spendTo);
+    const paid=clients.reduce((sum,item)=>sum+item.paid,0);
+    return {source:name,isPaid:PAID_ACQUISITION_SOURCES.has(name),spend,clients:clients.length,
+      costPerClient:spend&&clients.length?spend/clients.length:null,projectValue:clients.reduce((sum,item)=>sum+item.projectValue,0),paid,
+      paidToSpend:spend?paid/spend:null};
+  }).sort((a,b)=>Number(b.isPaid)-Number(a.isPaid)||b.paid-a.paid);
+  const monthTotals=monthRows.reduce((acc,row)=>({clients:acc.clients+row.clients,paidSourceClients:acc.paidSourceClients+row.paidSourceClients,spend:acc.spend+row.spend,projectValue:acc.projectValue+row.projectValue,paid:acc.paid+row.paid}),{clients:0,paidSourceClients:0,spend:0,projectValue:0,paid:0});
+
   return <div className="space-y-6">
     <Card className="overflow-hidden">
       <div className="payback-hero">
         <div>
           <p className="eyebrow">Acquisition cohort → later cash</p>
           <h2>Customer payback</h2>
-          <p>{isAcquisitionPeriodFiltered?"Only clients acquired in the selected period are shown. Their later project, invoice and paid value stays attached to that original lead period.":"All won clients stay visible in the year view. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month."}</p>
+          <p>{isAcquisitionPeriodFiltered?"Only clients acquired in the selected period are shown: by CRM lead date, or by the month they became a ROBAWS client when no CRM lead exists. Their later project, invoice and paid value stays attached to that original period.":"All won clients stay visible in the year view. When a trustworthy acquisition date exists, later project and invoice value stays attached to that original lead month."}</p>
         </div>
         <div className="payback-scope"><CalendarClock size={17}/><div><span>{isAcquisitionPeriodFiltered?"Selected acquisition period":"Year won-client scope"}</span><strong>{formatNumber(totals.clients)} won clients</strong></div></div>
       </div>
@@ -87,7 +112,7 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
       </div>
     </Card>
 
-    <div className="payback-truth-note"><strong>Customer coverage:</strong> {isAcquisitionPeriodFiltered?`${formatNumber(totals.clients)} won client(s) have a verified lead acquisition date inside ${data.periodLabel}. Clients acquired outside this period and clients without a trustworthy acquisition date are excluded from this filtered view.`:`${formatNumber(totals.clients)} won client(s) are shown. ${formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; ${formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being assigned to a guessed month.`} Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
+    <div className="payback-truth-note"><strong>Customer coverage:</strong> {isAcquisitionPeriodFiltered?`${formatNumber(totals.clients)} won client(s) were acquired inside ${data.periodLabel} (CRM lead date, or client-since month for clients without a CRM lead). Clients acquired outside this period are excluded from this filtered view.`:`${formatNumber(totals.clients)} won client(s) are shown. ${formatNumber(datedCohortClients)} have a trustworthy acquisition date for month-level cohort analysis; ${formatNumber(undatedClients)} remain visible with “Acquisition month unverified” instead of being assigned to a guessed month.`} Supplier-only leads without a won ROBAWS client are not customers and therefore do not appear in this client list.</div>
     <div className="payback-kpis">
       <PaybackKpi label="Won clients" value={formatNumber(totals.clients)} note="Canonical ROBAWS project/invoice evidence"/>
       <PaybackKpi label="Project value" value={formatCurrency(totals.projectValue,true)} note="ROBAWS-linked project value"/>
@@ -106,6 +131,21 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
           <small>{item.clients.size} client(s) · {formatCurrency(item.invoiced,true)} invoiced</small>
         </div>)}
       </div>:<EmptyState title="No invoices for this acquisition cohort yet" body="Customers will appear here when linked ROBAWS invoices are available."/>}
+    </Card>
+
+    <Card className="p-5">
+      <SectionHeader title="When clients became clients · and what was spent that month" description="Month = first ROBAWS project (first invoice when there is no project). Spend = all paid sources that month: synced ad spend, recorded bank payments and recurring offline spend. One month is noisy with few clients; read cost per client over several months."/>
+      <div className="table-scroll"><table><thead><tr><th>Month</th><th>New clients</th><th>From paid sources</th><th>Marketing spend</th><th>Cost per paid-source client</th><th>Project value</th><th>Paid to date</th></tr></thead><tbody>
+        {monthRows.map(row=><tr key={row.month}><td className="font-semibold">{monthName(row.month)}</td><td>{row.clients}</td><td>{row.paidSourceClients}</td><td>{formatCurrency(row.spend)}</td><td>{row.costPerClient===null?(row.spend>0?"No paid client":"—"):formatCurrency(row.costPerClient)}</td><td>{formatCurrency(row.projectValue,true)}</td><td>{formatCurrency(row.paid,true)}</td></tr>)}
+        <tr className="font-semibold"><td>Total</td><td>{monthTotals.clients}</td><td>{monthTotals.paidSourceClients}</td><td>{formatCurrency(monthTotals.spend)}</td><td>{monthTotals.paidSourceClients?formatCurrency(monthTotals.spend/monthTotals.paidSourceClients):"—"}</td><td>{formatCurrency(monthTotals.projectValue,true)}</td><td>{formatCurrency(monthTotals.paid,true)}</td></tr>
+      </tbody></table></div>
+    </Card>
+
+    <Card className="p-5">
+      <SectionHeader title="Where clients came from · cost per client" description={spendFrom?`Spend from ${monthName(spendFrom)} to ${monthName(spendTo)} for each source, divided by the clients from that source shown on this page.`:"Spend per source divided by its clients."}/>
+      <div className="table-scroll"><table><thead><tr><th>Source</th><th>Spend</th><th>Clients</th><th>Cost per client</th><th>Project value</th><th>Paid to date</th><th>Paid ÷ spend</th></tr></thead><tbody>
+        {sourceRows.map(row=><tr key={row.source}><td className="font-semibold">{row.source}{!row.isPaid&&<small className="block text-[var(--muted)]">no ad cost</small>}</td><td>{row.spend===null?"YTD total only":row.isPaid||row.spend>0?formatCurrency(row.spend):"—"}</td><td>{row.clients}</td><td>{row.costPerClient===null?"—":formatCurrency(row.costPerClient)}</td><td>{formatCurrency(row.projectValue,true)}</td><td>{formatCurrency(row.paid,true)}</td><td>{row.paidToSpend===null?"—":`${formatNumber(row.paidToSpend)}×`}</td></tr>)}
+      </tbody></table></div>
     </Card>
 
     <Card className="p-4">
@@ -131,13 +171,13 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
         </div>
 
         <div className="payback-milestones">
-          <PaybackMilestone label="Lead acquired" value={item.acquired?date(item.acquired):"Acquisition month unverified"}/>
+          <PaybackMilestone label={item.acquiredBasis==="lead"?"Lead came in":item.client.matchedLeadId?"Lead date not verified":"Lead came in · not in CRM"} value={item.acquiredBasis==="lead"&&item.acquired?date(item.acquired):"—"}/>
           <ArrowRight size={14}/>
-          <PaybackMilestone label="ROBAWS project date" value={item.projectDate?date(item.projectDate):"—"}/>
+          <PaybackMilestone label={item.offerBasis==="offer"?"Offer created":"ROBAWS client created"} value={item.offerDate?date(item.offerDate):"—"}/>
+          <ArrowRight size={14}/>
+          <PaybackMilestone label="Became client" value={item.becameClient?date(item.becameClient):"—"}/>
           <ArrowRight size={14}/>
           <PaybackMilestone label="First invoice" value={item.firstInvoice?date(item.firstInvoice):"—"}/>
-          <ArrowRight size={14}/>
-          <PaybackMilestone label="Last invoice" value={item.lastInvoice?date(item.lastInvoice):"—"}/>
         </div>
 
         <div className="payback-money-grid">
@@ -145,8 +185,10 @@ export function ClientJourneyPage({ data }: { data: CompanyDataset }) {
           <div><span>Invoiced</span><strong>{formatCurrency(item.invoiced,true)}</strong></div>
           <div><span>Paid</span><strong>{formatCurrency(item.paid,true)}</strong></div>
           <div><span>Outstanding</span><strong>{formatCurrency(item.open,true)}</strong></div>
-          <div><span>Lead → first invoice</span><strong>{item.daysToFirstInvoice===null?"—":item.daysToFirstInvoice+" d"}</strong></div>
+          <div><span>Lead → client</span><strong>{item.daysLeadToClient===null?"—":item.daysLeadToClient+" d"}</strong></div>
         </div>
+
+        <div className="payback-truth-note"><strong>Came from {item.source}.</strong> {item.clientMonth?<>{PAID_ACQUISITION_SOURCES.has(item.source)?<>{item.source} spend in {monthName(item.clientMonth)}: <b>{item.sourceSpendInClientMonth===null?"YTD total only":formatCurrency(item.sourceSpendInClientMonth)}</b> · </>:<>No ad cost for this source · </>}all marketing spend in {monthName(item.clientMonth)}: <b>{formatCurrency(item.totalSpendInClientMonth)}</b>{item.daysLeadToOffer!==null&&<> · lead → offer {item.daysLeadToOffer} d</>}{item.daysOfferToClient!==null&&<> · offer → client {item.daysOfferToClient} d</>}</>:"Client month unknown."}</div>
 
         {item.invoiced>0&&<div className="payback-progress"><div><span>Collection</span><strong>{formatPercent(percentage(item.paid,item.invoiced))}</strong></div><div className="payback-progress-track"><i style={{width:`${Math.min(100,percentage(item.paid,item.invoiced)??0)}%`}}/></div></div>}
 
@@ -169,6 +211,16 @@ type PaybackRecord = {
   service:string;
   municipality:string;
   acquired:string|null;
+  acquiredBasis:"lead"|"client-since"|null;
+  offerDate:string|null;
+  offerBasis:"offer"|"client-record"|null;
+  becameClient:string|null;
+  clientMonth:string|null;
+  sourceSpendInClientMonth:number|null;
+  totalSpendInClientMonth:number;
+  daysLeadToOffer:number|null;
+  daysOfferToClient:number|null;
+  daysLeadToClient:number|null;
   projectDate:string|null;
   firstInvoice:string|null;
   lastInvoice:string|null;
@@ -182,7 +234,7 @@ type PaybackRecord = {
   cashMonths:Array<{month:string;invoiced:number;paid:number}>;
 };
 
-function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,row?:JourneyRow):PaybackRecord {
+function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,row:JourneyRow|undefined,monthlySpend:MonthlySourceSpend):PaybackRecord {
   const projects=(data.allCommercialProjects??[]).filter(project=>project.externalClientId===client.externalId).sort((a,b)=>(a.projectDate??a.date).localeCompare(b.projectDate??b.date));
   const invoices=(data.allCommercialInvoices??[]).filter(invoice=>invoice.externalClientId===client.externalId).sort((a,b)=>a.date.localeCompare(b.date));
   const invoiced=invoices.reduce((sum,item)=>sum+Math.max(0,item.totalInclVat-item.creditedTotal),0);
@@ -190,7 +242,11 @@ function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,ro
   const projectValue=projects.reduce((sum,item)=>sum+Number(item.valueInclVat??0),0);
   const leadDate=row?.lead.date??null;
   const clientDate=client.clientSince?.slice(0,10)??"";
-  const acquired=leadDate&&(!clientDate||clientDate>=leadDate.slice(0,10))?leadDate:null;
+  const leadAcquired=leadDate&&(!clientDate||clientDate>=leadDate.slice(0,10))?leadDate:null;
+  // A client without any CRM lead is anchored to the month it became a ROBAWS client.
+  const clientAcquired=!leadAcquired&&!client.matchedLeadId&&clientDate?clientDate:null;
+  const acquired=leadAcquired??clientAcquired;
+  const acquiredBasis:PaybackRecord["acquiredBasis"]=leadAcquired?"lead":clientAcquired?"client-since":null;
   const cashMonths=[...invoices.reduce((map,item)=>{
     if(!item.date)return map;
     const month=item.date.slice(0,7);
@@ -203,12 +259,30 @@ function buildClientPaybackRecord(data:CompanyDataset,client:CommercialClient,ro
   const firstInvoice=invoices[0]?.date??null;
   const daysToFirstInvoice=acquired&&firstInvoice?daysBetweenDates(acquired,firstInvoice):null;
   const paybackStatus:PaybackRecord["paybackStatus"]=invoiced>0&&paid>=invoiced-.01?"paid":paid>0?"partial":invoiced>0?"unpaid":"project";
+  const source=resolvedClientSource(data,client);
+  const firstOffer=data.clientFirstOfferDates?.[client.externalId]??null;
+  const offerDate=firstOffer??(clientDate||null);
+  const offerBasis:PaybackRecord["offerBasis"]=firstOffer?"offer":clientDate?"client-record":null;
+  const firstProjectDay=projects.map(item=>(item.date||item.projectDate||"").slice(0,10)).filter(Boolean).sort()[0]??null;
+  const becameClient=firstProjectDay??firstInvoice?.slice(0,10)??(clientDate||null);
+  const clientMonth=becameClient?.slice(0,7)??null;
+  const leadDay=acquiredBasis==="lead"&&acquired?acquired.slice(0,10):null;
   return {
     client,
-    source:resolvedClientSource(data,client),
+    source,
+    offerDate,
+    offerBasis,
+    becameClient,
+    clientMonth,
+    sourceSpendInClientMonth:clientMonth?sourceSpendInMonths(monthlySpend,source,clientMonth,clientMonth):null,
+    totalSpendInClientMonth:clientMonth?totalSpendInMonths(monthlySpend,clientMonth,clientMonth):0,
+    daysLeadToOffer:leadDay&&firstOffer?daysBetweenDates(leadDay,firstOffer):null,
+    daysOfferToClient:offerDate&&becameClient?daysBetweenDates(offerDate,becameClient):null,
+    daysLeadToClient:leadDay&&becameClient?daysBetweenDates(leadDay,becameClient):null,
     service:row?.lead.service??"",
     municipality:row?.lead.municipality??client.municipality??"",
     acquired,
+    acquiredBasis,
     projectDate:projects[0]?.projectDate??projects[0]?.date??null,
     firstInvoice,
     lastInvoice:invoices.at(-1)?.date??null,

@@ -121,16 +121,11 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
   }
 
   const result=[...groups.entries()].map(([source,group])=>{
-    const manual=sourceSpendOverride(data,source);
-    const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
     const delivered=sourceNumericOverride(data,source,"delivered_leads");
     const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
     const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
-    const recurring=recurringSourceSpend(data,source);
-    const syncedSpend=syncedSpendForSource(data,source,group);
-    const allocated=manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
-    const baseSpend=manual?Number(manual.value):syncedSpend??allocated?.amount??null;
-    const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+    const resolvedSpend=resolveSourceSpend(data,source,group);
+    const spend=resolvedSpend.spend;
     const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
     const costState:SourcePerformanceRow["costState"]=nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known";
     const clients=uniqueCommercialClientsForRows(data,group);
@@ -154,9 +149,9 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const offers=group.filter(hasVerifiedSentOfferEvidence).length;
     const attributableClients=attributableClientRows.length;
     return withCostMetrics({
-      source,spend:Number.isFinite(spend as number)?spend:null,costState,
-      spendNote:[manual?.note??"",recurring.note,allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:"")].filter(Boolean).join(" · "),
-      isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
+      source,spend,costState,
+      spendNote:resolvedSpend.note,
+      isManualSpend:resolvedSpend.isManual,recurringSpend:resolvedSpend.recurringAmount,
       leads:group.length,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified,visits,offers,
       customers:group.filter(item=>item.isCommercialClient).length,
       sourceKnownClients:clients.length,wonClients:clients.length,sourceClientIds:clients.map(item=>item.id),
@@ -178,22 +173,17 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     const source=normalizeAcquisitionSource(manualClientSource(data,client)??"Unattributed");
     let row=bySource.get(source);
     if(!row){
-      const manual=sourceSpendOverride(data,source);
-      const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
       const delivered=sourceNumericOverride(data,source,"delivered_leads");
       const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
       const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
-      const recurring=recurringSourceSpend(data,source);
-      const syncedSpend=syncedSpendForSource(data,source,[]);
-      const allocated=manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
-      const baseSpend=manual?Number(manual.value):syncedSpend??allocated?.amount??null;
-      const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+      const resolvedSpend=resolveSourceSpend(data,source,[]);
+      const spend=resolvedSpend.spend;
       const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
       row=withCostMetrics({
-        source,spend:Number.isFinite(spend as number)?spend:null,
+        source,spend,
         costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-        spendNote:[manual?.note??"",recurring.note,allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:"")].filter(Boolean).join(" · "),
-        isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
+        spendNote:resolvedSpend.note,
+        isManualSpend:resolvedSpend.isManual,recurringSpend:resolvedSpend.recurringAmount,
         leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",qualified:0,visits:0,offers:0,customers:0,
         sourceKnownClients:0,wonClients:0,sourceClientIds:[],attributableClients:0,datedCohortClients:0,undatedClients:0,clientIds:[],
         sourceProjectValueExclVat:0,sourceProjectValueInclVat:0,sourceInvoicedValue:0,sourcePaidValue:0,
@@ -220,22 +210,17 @@ export function buildSourcePerformance(data:CompanyDataset,rows:JourneyRow[]=bui
     .map(manualOverrideSource))];
   for(const source of sourceEvidenceSources){
     if(bySource.has(source))continue;
-    const manual=sourceSpendOverride(data,source);
-    const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
     const delivered=sourceNumericOverride(data,source,"delivered_leads");
     const supplierOnly=sourceNumericOverride(data,source,"supplier_only_leads");
     const supplierMatched=sourceNumericOverride(data,source,"supplier_matched_people");
-    const recurring=recurringSourceSpend(data,source);
-    const syncedSpend=syncedSpendForSource(data,source,[]);
-    const allocated=manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
-    const baseSpend=manual?Number(manual.value):syncedSpend??allocated?.amount??null;
-    const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+    const resolvedSpend=resolveSourceSpend(data,source,[]);
+    const spend=resolvedSpend.spend;
     const nonPaid=!PAID_ACQUISITION_SOURCES.has(source);
     const row=withCostMetrics({
-      source,spend:Number.isFinite(spend as number)?spend:null,
+      source,spend,
       costState:nonPaid?"not-applicable":spend===null||!Number.isFinite(spend)?"missing":"known",
-      spendNote:[manual?.note??"",recurring.note,allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:"")].filter(Boolean).join(" · "),
-      isManualSpend:Boolean(manual),recurringSpend:recurring.amount,
+      spendNote:resolvedSpend.note,
+      isManualSpend:resolvedSpend.isManual,recurringSpend:resolvedSpend.recurringAmount,
       leads:0,deliveredLeads:delivered?Number(delivered.value):null,supplierOnlyLeads:supplierOnly?Number(supplierOnly.value):0,supplierMatchedPeople:supplierMatched?Number(supplierMatched.value):null,leadCountNote:delivered?.note??"",
       qualified:0,visits:0,offers:0,customers:0,sourceKnownClients:0,wonClients:0,sourceClientIds:[],
       attributableClients:0,datedCohortClients:0,undatedClients:0,clientIds:[],
@@ -674,7 +659,7 @@ function refreshCostMetrics(row:SourcePerformanceRow){
     row.cpl=row.costQualified=row.costVisit=row.costOffer=row.cac=row.cohortCashRoas=null;
     return;
   }
-  row.cpl=safeDivide(row.spend,row.deliveredLeads??row.leads);
+  row.cpl=safeDivide(row.spend,row.deliveredLeads??(row.leads+row.supplierOnlyLeads));
   row.costQualified=safeDivide(row.spend,row.qualified);
   row.costVisit=safeDivide(row.spend,row.visits);
   row.costOffer=safeDivide(row.spend,row.offers);
@@ -724,6 +709,49 @@ function sourceSpendOverride(data:CompanyDataset,source:string){
   return sourceNumericOverride(data,source,"spend");
 }
 
+type ResolvedSourceSpend={spend:number|null;note:string;isManual:boolean;recurringAmount:number};
+
+/**
+ * One spend rule for every source row. Monthly manual entries (bank payments
+ * stored per YYYY-MM) win over a single YTD total, so a month without a
+ * recorded payment shows 0 instead of a prorated estimate.
+ */
+function resolveSourceSpend(data:CompanyDataset,source:string,rows:JourneyRow[]):ResolvedSourceSpend{
+  const recurring=recurringSourceSpend(data,source);
+  const monthly=monthlyManualSpend(data,source);
+  const manual=monthly?null:sourceSpendOverride(data,source);
+  const syncedSpend=syncedSpendForSource(data,source,rows);
+  const ytdSpend=data.periodKey==="ytd"?null:sourceYtdNumericOverride(data,source,"spend");
+  const allocated=monthly||manual||syncedSpend!==null?null:allocatedYtdSourceSpend(data,source);
+  const baseSpend=monthly?monthly.amount:manual?Number(manual.value):syncedSpend??allocated?.amount??null;
+  const spend=baseSpend===null?(recurring.amount>0?recurring.amount:null):baseSpend+recurring.amount;
+  const note=[
+    monthly?.note??manual?.note??"",
+    recurring.note,
+    monthly?"":allocated?.note??(ytdSpend?`YTD spend ${Number(ytdSpend.value).toFixed(2)} has no verified first/last acquisition date and remains unallocated.`:""),
+  ].filter(Boolean).join(" · ");
+  return {spend:Number.isFinite(spend as number)?spend:null,note,isManual:Boolean(monthly||manual),recurringAmount:recurring.amount};
+}
+
+function monthlyManualSpend(data:CompanyDataset,source:string){
+  const entries=(data.manualOverrides??[]).filter(item=>
+    item.scopeType==="source"&&item.fieldKey==="spend"&&/^\d{4}-\d{2}$/.test(item.periodKey)
+    &&normalizeAcquisitionSource(item.scopeKey)===source&&typeof item.value==="number"
+  );
+  if(!entries.length)return null;
+  const [from,to]=data.periodLabel.split(" — ");
+  if(!from||!to)return null;
+  const inRange=entries
+    .filter(item=>item.periodKey>=from.slice(0,7)&&item.periodKey<=to.slice(0,7))
+    .sort((a,b)=>a.periodKey.localeCompare(b.periodKey));
+  return {
+    amount:inRange.reduce((sum,item)=>sum+Number(item.value),0),
+    note:inRange.length
+      ?`Recorded payments: ${inRange.map(item=>`${item.periodKey} €${Number(item.value).toFixed(2)}`).join(", ")}`
+      :"No payment recorded in this period.",
+  };
+}
+
 function allocatedYtdSourceSpend(data:CompanyDataset,source:string){
   if(data.periodKey==="ytd")return null;
   const totalOverride=sourceYtdNumericOverride(data,source,"spend");
@@ -768,7 +796,7 @@ function recurringSourceSpend(data:CompanyDataset,source:string){
   return{amount,note:notes.join(" · ")};
 }
 
-function manualOverrideSource(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
+export function manualOverrideSource(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
   if(item.fieldKey==="recurring_spend"&&item.value&&typeof item.value==="object"&&!Array.isArray(item.value)){
     const label=String((item.value as Record<string,unknown>).label??"");
     if(label.toLowerCase().includes("facade ad"))return "Facade advertising";
@@ -798,10 +826,9 @@ export function manualClientSource(data:CompanyDataset,client:CommercialClient){
 }
 
 function clientInSelectedPeriod(data:CompanyDataset,client:CommercialClient){
-  // client_since is commercial-system evidence, not a safe replacement for a
-  // missing lead acquisition date. Unmatched, manually attributed clients stay
-  // in YTD source totals but are never guessed into a calendar-month cohort.
-  if(!client.matchedLeadId)return data.periodKey==="ytd";
+  // Clients without a CRM lead have no lead date. Their ROBAWS client_since
+  // (the month they became a client) is used as their period anchor so that
+  // manually sourced clients are visible in monthly source economics too.
   const [from,to]=data.periodLabel.split(" — ");
   const date=client.clientSince?.slice(0,10)??"";
   return Boolean(date&&from&&to&&date>=from&&date<=to);

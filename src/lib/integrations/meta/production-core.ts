@@ -10,6 +10,13 @@ export const META_REQUIRED_PERMISSIONS = [
   "pages_manage_ads",
 ] as const;
 
+/** Extra permissions for organic Page and Instagram reporting. Optional: ads sync works without them. */
+export const META_SOCIAL_PERMISSIONS = [
+  "read_insights",
+  "instagram_basic",
+  "instagram_manage_insights",
+] as const;
+
 export type MetaRequiredPermission = typeof META_REQUIRED_PERMISSIONS[number];
 export type MetaPermissionStatus = {
   permission: string;

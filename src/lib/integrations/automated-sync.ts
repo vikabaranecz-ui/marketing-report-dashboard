@@ -191,6 +191,8 @@ async function runConnection(connection: ConnectionRow) {
         meta_permission_status: result.metaPermissionStatus,
         meta_granted_permissions: result.grantedPermissions,
         meta_missing_permissions: result.missingPermissions,
+        social_page_name: result.socialPageName,
+        social_warning: result.socialWarning,
       };
     }
 

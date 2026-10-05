@@ -6,7 +6,7 @@ import type { IntegrationProvider } from "./types";
 import { providerCatalog } from "./catalog";
 import { getGoogleAppConfig } from "./google/app-config";
 import { fetchMetaPermissionState } from "./meta/client";
-import { META_REQUIRED_PERMISSIONS } from "./meta/production-core";
+import { META_REQUIRED_PERMISSIONS, META_SOCIAL_PERMISSIONS } from "./meta/production-core";
 
 const googleScopes = [
   "https://www.googleapis.com/auth/adwords",
@@ -15,7 +15,7 @@ const googleScopes = [
   "https://www.googleapis.com/auth/business.manage",
 ];
 
-const metaScopes = [...META_REQUIRED_PERMISSIONS];
+const metaScopes = [...META_REQUIRED_PERMISSIONS, ...META_SOCIAL_PERMISSIONS];
 
 export async function buildAuthorizationUrl(
   provider: IntegrationProvider,
