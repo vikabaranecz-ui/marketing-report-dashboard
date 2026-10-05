@@ -213,7 +213,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
     warning: socialPostsRes.error
       ? `Social tables unavailable: ${socialPostsRes.error.message}`
       : typeof metaConnection?.configuration?.social_warning === "string" ? metaConnection.configuration.social_warning : null,
-    missingPermissions: ["read_insights","instagram_basic","instagram_manage_insights"].filter(permission => !metaGranted.includes(permission)),
+    missingPermissions: ["pages_read_user_content","read_insights","instagram_basic","instagram_manage_insights"].filter(permission => !metaGranted.includes(permission)),
   };
   const syncedMonthlySpend=[...((yearMetricsRes.data ?? []) as unknown as Array<{date:string;spend:number|string;marketing_channels:{name:string}|null}>).reduce((map,row)=>{
     const month=row.date.slice(0,7);
