@@ -10,9 +10,12 @@ export const META_REQUIRED_PERMISSIONS = [
   "pages_manage_ads",
 ] as const;
 
-/** Extra permissions for organic Page and Instagram reporting. Optional: ads sync works without them. */
+/** Permissions of the separate organic-posts Meta app (Facebook Page + Instagram). */
 export const META_SOCIAL_PERMISSIONS = [
+  "pages_show_list",
+  "pages_read_engagement",
   "pages_read_user_content",
+  "business_management",
   "read_insights",
   "instagram_basic",
   "instagram_manage_insights",

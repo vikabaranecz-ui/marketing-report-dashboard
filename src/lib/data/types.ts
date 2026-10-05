@@ -270,7 +270,7 @@ export type SocialPost = {
 
 export type Integration = {
   id: string;
-  provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" | "website_forms";
+  provider: "meta" | "meta_social" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" | "website_forms";
   name: string;
   status: "Connected" | "Connecting" | "Not connected" | "Error";
   lastSuccess: string | null;

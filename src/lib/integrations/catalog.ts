@@ -6,12 +6,14 @@ type ProviderDefinition = {
   id: IntegrationProvider;
   name: string;
   auth: "oauth" | "signed_webhook" | "server_token";
-  authorizationGroup: "meta" | "google" | "monday" | "hubspot" | "robaws" | "website";
+  authorizationGroup: "meta" | "meta_social" | "google" | "monday" | "hubspot" | "robaws" | "website";
   selectedResource: string;
 };
 
 export const providerCatalog: Record<IntegrationProvider, ProviderDefinition> = {
   meta: { id: "meta", name: "Meta Ads", auth: "oauth", authorizationGroup: "meta", selectedResource: "Meta ad account" },
+  // Organic posts use a separate Meta app so the ads app keeps its own permissions.
+  meta_social: { id: "meta_social", name: "Facebook & Instagram posts", auth: "oauth", authorizationGroup: "meta_social", selectedResource: "Facebook Page" },
   google_ads: { id: "google_ads", name: "Google Ads", auth: "oauth", authorizationGroup: "google", selectedResource: "Google Ads customer" },
   ga4: { id: "ga4", name: "Google Analytics 4", auth: "oauth", authorizationGroup: "google", selectedResource: "GA4 property" },
   search_console: { id: "search_console", name: "Google Search Console", auth: "oauth", authorizationGroup: "google", selectedResource: "Search Console property" },
@@ -41,6 +43,7 @@ export async function missingProviderConfiguration(provider: IntegrationProvider
 
   const requirements: Record<ProviderDefinition["authorizationGroup"], string[]> = {
     meta: ["META_APP_ID", "META_APP_SECRET"],
+    meta_social: ["META_SOCIAL_APP_ID", "META_SOCIAL_APP_SECRET"],
     google: [],
     monday: ["MONDAY_API_TOKEN"],
     hubspot: ["HUBSPOT_ACCESS_TOKEN"],

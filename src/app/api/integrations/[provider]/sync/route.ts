@@ -6,6 +6,7 @@ import { syncCrmProvider } from "@/lib/integrations/crm-sync";
 import { isGoogleProvider } from "@/lib/integrations/google/client";
 import { syncGoogleProvider, type GoogleSyncResult } from "@/lib/integrations/google-sync";
 import { syncMetaProvider } from "@/lib/integrations/meta-sync";
+import { syncMetaSocialProvider, type MetaSocialSyncResult } from "@/lib/integrations/meta-social-sync";
 import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -28,7 +29,7 @@ type StandardSyncResult = {
 };
 
 type MetaSyncResult = Awaited<ReturnType<typeof syncMetaProvider>>;
-type SyncResult = StandardSyncResult | MetaSyncResult | GoogleSyncResult;
+type SyncResult = StandardSyncResult | MetaSyncResult | GoogleSyncResult | MetaSocialSyncResult;
 
 export async function POST(
   request: Request,
@@ -139,6 +140,12 @@ export async function POST(
             body.companyId,
             access.connection.configuration as ConnectionConfiguration,
           )
+        : provider === "meta_social"
+          ? await syncMetaSocialProvider(
+              access.connection.id,
+              body.companyId,
+              access.connection.configuration as ConnectionConfiguration,
+            )
         : isGoogleProvider(provider)
           ? await syncGoogleProvider(
               provider,
@@ -170,6 +177,15 @@ export async function POST(
         body.companyId,
         configuredAdAccountId,
       )
+    : provider === "meta_social"
+      ? {
+          trigger: "manual",
+          provider,
+          companyId: body.companyId,
+          postsImported: (result as MetaSocialSyncResult).socialPostsImported,
+          pageName: (result as MetaSocialSyncResult).socialPageName,
+          warning: (result as MetaSocialSyncResult).socialWarning,
+        }
     : isGoogleProvider(provider)
       ? googleSyncMetadata(result as GoogleSyncResult, body.companyId)
     : standardSyncMetadata(
@@ -210,8 +226,13 @@ export async function POST(
           meta_permission_status: (result as MetaSyncResult).metaPermissionStatus,
           meta_granted_permissions: (result as MetaSyncResult).grantedPermissions,
           meta_missing_permissions: (result as MetaSyncResult).missingPermissions,
-          social_page_name: (result as MetaSyncResult).socialPageName,
-          social_warning: (result as MetaSyncResult).socialWarning,
+        },
+      } : {}),
+      ...(provider === "meta_social" ? {
+        configuration: {
+          ...(access.connection.configuration ?? {}),
+          social_page_name: (result as MetaSocialSyncResult).socialPageName,
+          social_warning: (result as MetaSocialSyncResult).socialWarning,
         },
       } : {}),
       updated_at: completedAt,
@@ -236,11 +257,11 @@ export async function POST(
   });
 }
 
-function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" {
-  return provider === "meta" || isGoogleProvider(provider) || provider === "monday" || provider === "hubspot" || provider === "robaws";
+function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "meta_social" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" {
+  return provider === "meta" || provider === "meta_social" || isGoogleProvider(provider) || provider === "monday" || provider === "hubspot" || provider === "robaws";
 }
 
-function successMessage(provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws", result: SyncResult) {
+function successMessage(provider: "meta" | "meta_social" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws", result: SyncResult) {
   if (provider === "meta") {
     const meta = result as MetaSyncResult;
     if (!meta.leadAdsAvailable) {
@@ -250,6 +271,11 @@ function successMessage(provider: "meta" | "google_ads" | "ga4" | "search_consol
       ? `Lead Ads warning: ${meta.metaLeadAttributionWarning}`
       : `${meta.metaLeadsImported} Meta leads · ${meta.metaLeadsMatched} CRM matches`;
     return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows · ${meta.campaignsImported} campaigns · ${meta.adsetsImported} ad sets · ${meta.adsImported} ads · ${leadSummary}.`;
+  }
+
+  if (provider === "meta_social") {
+    const social = result as MetaSocialSyncResult;
+    return `Facebook & Instagram posts synced: ${social.socialPostsImported} posts${social.socialPageName ? ` from ${social.socialPageName.trim()}` : ""}.${social.socialWarning ? ` Warning: ${social.socialWarning}` : ""}`;
   }
 
   if (isGoogleProvider(provider)) {

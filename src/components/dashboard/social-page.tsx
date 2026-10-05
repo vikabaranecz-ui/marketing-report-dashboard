@@ -58,11 +58,13 @@ export function SocialPage({ data }: { data: CompanyDataset }) {
       <div>
         <strong>{noData ? "No organic posts synced yet." : "Social sync needs attention."}</strong>
         <p>
-          {sync?.missingPermissions.length
-            ? `Reconnect Meta on the Data & Sync page and approve the new permissions (${sync.missingPermissions.join(", ")}). `
-            : ""}
+          {!sync?.connected
+            ? "Connect “Facebook & Instagram posts” on the Data & Sync page (separate from Meta Ads). "
+            : sync.missingPermissions.length
+              ? `Reconnect “Facebook & Instagram posts” and approve: ${sync.missingPermissions.join(", ")}. `
+              : ""}
           {sync?.warning ? `${sync.warning} ` : ""}
-          {noData && !sync?.missingPermissions.length && !sync?.warning ? "Posts appear after the next Meta sync (every 3 hours). " : ""}
+          {noData && sync?.connected && !sync.missingPermissions.length && !sync.warning ? "Posts appear after the next sync (every 3 hours) or after “Sync now”. " : ""}
           Instagram must be a Business or Creator account linked to the Facebook Page.
           {" "}<Link href="/data-health" className="underline">Open Data &amp; Sync</Link>
         </p>
