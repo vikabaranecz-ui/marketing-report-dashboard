@@ -7,6 +7,7 @@ import { isGoogleProvider } from "@/lib/integrations/google/client";
 import { syncGoogleProvider, type GoogleSyncResult } from "@/lib/integrations/google-sync";
 import { syncMetaProvider } from "@/lib/integrations/meta-sync";
 import { syncMetaSocialProvider, type MetaSocialSyncResult } from "@/lib/integrations/meta-social-sync";
+import { syncInstagramProvider } from "@/lib/integrations/instagram-sync";
 import { syncRobawsProvider } from "@/lib/integrations/robaws-sync";
 import type { ConnectionConfiguration, IntegrationProvider } from "@/lib/integrations/types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -140,6 +141,8 @@ export async function POST(
             body.companyId,
             access.connection.configuration as ConnectionConfiguration,
           )
+        : provider === "instagram"
+          ? await syncInstagramProvider(access.connection.id, body.companyId)
         : provider === "meta_social"
           ? await syncMetaSocialProvider(
               access.connection.id,
@@ -177,7 +180,7 @@ export async function POST(
         body.companyId,
         configuredAdAccountId,
       )
-    : provider === "meta_social"
+    : provider === "meta_social" || provider === "instagram"
       ? {
           trigger: "manual",
           provider,
@@ -228,7 +231,7 @@ export async function POST(
           meta_missing_permissions: (result as MetaSyncResult).missingPermissions,
         },
       } : {}),
-      ...(provider === "meta_social" ? {
+      ...(provider === "meta_social" || provider === "instagram" ? {
         configuration: {
           ...(access.connection.configuration ?? {}),
           social_page_name: (result as MetaSocialSyncResult).socialPageName,
@@ -257,11 +260,11 @@ export async function POST(
   });
 }
 
-function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "meta_social" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" {
-  return provider === "meta" || provider === "meta_social" || isGoogleProvider(provider) || provider === "monday" || provider === "hubspot" || provider === "robaws";
+function isManualSyncProvider(provider: IntegrationProvider): provider is "meta" | "meta_social" | "instagram" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" {
+  return provider === "meta" || provider === "meta_social" || provider === "instagram" || isGoogleProvider(provider) || provider === "monday" || provider === "hubspot" || provider === "robaws";
 }
 
-function successMessage(provider: "meta" | "meta_social" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws", result: SyncResult) {
+function successMessage(provider: "meta" | "meta_social" | "instagram" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws", result: SyncResult) {
   if (provider === "meta") {
     const meta = result as MetaSyncResult;
     if (!meta.leadAdsAvailable) {
@@ -273,9 +276,9 @@ function successMessage(provider: "meta" | "meta_social" | "google_ads" | "ga4" 
     return `Meta Ads synced successfully: ${meta.dailyRowsImported} daily ad rows · ${meta.campaignsImported} campaigns · ${meta.adsetsImported} ad sets · ${meta.adsImported} ads · ${leadSummary}.`;
   }
 
-  if (provider === "meta_social") {
+  if (provider === "meta_social" || provider === "instagram") {
     const social = result as MetaSocialSyncResult;
-    return `Facebook & Instagram posts synced: ${social.socialPostsImported} posts${social.socialPageName ? ` from ${social.socialPageName.trim()}` : ""}.${social.socialWarning ? ` Warning: ${social.socialWarning}` : ""}`;
+    return `${provider === "instagram" ? "Instagram" : "Facebook & Instagram"} posts synced: ${social.socialPostsImported} posts${social.socialPageName ? ` from ${social.socialPageName.trim()}` : ""}.${social.socialWarning ? ` Warning: ${social.socialWarning}` : ""}`;
   }
 
   if (isGoogleProvider(provider)) {

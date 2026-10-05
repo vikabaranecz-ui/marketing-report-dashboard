@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { credentialStore } from "./credentials";
 import { fetchMetaSocial } from "./meta/social";
+import type { SocialAccountSnapshot, SocialPostRecord } from "./meta/social-core";
 import type { ConnectionConfiguration } from "./types";
 
 const SOCIAL_SYNC_FROM = "2026-01-01";
@@ -44,7 +45,7 @@ export async function syncMetaSocialProvider(
   };
 }
 
-type Admin = ReturnType<typeof createSupabaseAdminClient>;
+export type Admin = ReturnType<typeof createSupabaseAdminClient>;
 
 async function syncMetaSocialPosts(
   admin: Admin,
@@ -55,6 +56,19 @@ async function syncMetaSocialPosts(
   today: string,
 ) {
   const result = await fetchMetaSocial(accessToken, companyName, configuredPageId, SOCIAL_SYNC_FROM);
+  await storeSocialResults(admin, companyId, result.posts, result.accounts, today);
+  return { imported: result.posts.length, pageName: result.pageName, warning: result.warning };
+}
+
+/** Upserts organic posts and today's follower snapshot; shared by the Facebook and Instagram connections. */
+export async function storeSocialResults(
+  admin: Admin,
+  companyId: string,
+  posts: SocialPostRecord[],
+  accounts: SocialAccountSnapshot[],
+  today: string,
+) {
+  const result = { posts, accounts };
   const syncedAt = new Date().toISOString();
   for (let index = 0; index < result.posts.length; index += 200) {
     const upsert = await admin.from("social_posts").upsert(result.posts.slice(index, index + 200).map(post => ({
@@ -93,11 +107,9 @@ async function syncMetaSocialPosts(
     })), { onConflict: "company_id,platform,account_id,date" });
     if (upsert.error) throw new Error(`Unable to store social follower counts: ${upsert.error.message}`);
   }
-  return { imported: result.posts.length, pageName: result.pageName, warning: result.warning };
 }
 
-
-function brusselsDate(date: Date) {
+export function brusselsDate(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Brussels",
     year: "numeric",
