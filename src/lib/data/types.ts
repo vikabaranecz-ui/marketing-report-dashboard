@@ -328,6 +328,10 @@ export type CompanyDataset = {
   changeEvents?: ReportingChangeEvent[];
   manualOverrides?: ReportingOverride[];
   sourceAcquisitionWindows?: Array<{ source: string; firstDate: string; lastDate: string; crmPeople: number }>;
+  /** Earliest ROBAWS offer date per ROBAWS client external id (offers linked to CRM leads only). */
+  clientFirstOfferDates?: Record<string, string>;
+  /** Synced ad spend for the selected year, per calendar month and marketing channel. */
+  syncedMonthlySpend?: Array<{ month: string; channel: string; spend: number }>;
   automation?: AutomationSettings | null;
   dataHealth: { missingSource: number; missingService: number; missingCampaign: number; wonMissingRevenue: number; duplicates: number; campaignsWithoutSpend: number; daysSinceSync: number | null };
 };

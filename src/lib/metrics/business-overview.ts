@@ -796,7 +796,7 @@ function recurringSourceSpend(data:CompanyDataset,source:string){
   return{amount,note:notes.join(" · ")};
 }
 
-function manualOverrideSource(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
+export function manualOverrideSource(item:NonNullable<CompanyDataset["manualOverrides"]>[number]){
   if(item.fieldKey==="recurring_spend"&&item.value&&typeof item.value==="object"&&!Array.isArray(item.value)){
     const label=String((item.value as Record<string,unknown>).label??"");
     if(label.toLowerCase().includes("facade ad"))return "Facade advertising";
