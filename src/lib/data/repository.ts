@@ -24,7 +24,7 @@ type DashboardPeriod = {
   toIso: string;
 };
 
-export type DashboardLoadProfile = "full" | "overview" | "commercial" | "website" | "health";
+export type DashboardLoadProfile = "full" | "overview" | "commercial" | "website" | "health" | "social";
 
 export async function getDashboardBootstrap(month = "ytd", companyId?: string, profile: DashboardLoadProfile = "full"): Promise<DashboardBootstrap> {
   const period = dashboardPeriod(month);
@@ -96,7 +96,8 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const needsClients = profile === "full" || profile === "overview" || profile === "health" || profile === "commercial";
   const needsCatalog = profile === "full" || profile === "commercial" || profile === "health";
   const needsWebsite = profile === "full" || profile === "website";
-  const needsIntegrations = profile === "full" || profile === "overview" || profile === "health";
+  const needsIntegrations = profile === "full" || profile === "overview" || profile === "health" || profile === "social";
+  const needsSocial = profile === "full" || profile === "social";
   const needsChanges = profile === "full" || profile === "overview";
   const needsOverrides = profile === "full" || profile === "overview" || profile === "commercial" || profile === "health";
   const needsAutomation = profile === "full" || profile === "overview" || profile === "health";
@@ -168,6 +169,52 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
   const rawWebsite = (websiteRes.data ?? []) as unknown as RawWebsite[];
   const rawSeo = (seoRes.data ?? {impressions:0,clicks:0,position_sum:0,branded_clicks:0,classified_clicks:0}) as unknown as RawSeoSummary;
   const rawGbp = (gbpRes.data ?? []) as unknown as RawGbp[];
+  // Organic social tables are optional: if they are missing or unreadable the
+  // rest of the dashboard still loads and the Social page shows the reason.
+  const [socialPostsRes, socialFollowersRes] = needsSocial
+    ? await Promise.all([
+        supabase.from("social_posts").select("id,platform,account_name,published_at,post_type,caption,permalink,thumbnail_url,reach,views,likes,comments,shares,saves,clicks,interactions").eq("company_id",company.id).gte("published_at",`${selectedYearStart}T00:00:00.000Z`).order("published_at",{ascending:false}),
+        supabase.from("social_account_daily").select("platform,account_name,date,followers").eq("company_id",company.id).gte("date",selectedYearStart).order("date"),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  const socialPosts = (socialPostsRes.error ? [] : (socialPostsRes.data ?? []) as unknown as Array<Record<string, unknown>>).map(row => ({
+    id: String(row.id),
+    platform: row.platform === "instagram" ? "instagram" as const : "facebook" as const,
+    accountName: typeof row.account_name === "string" ? row.account_name : null,
+    publishedAt: String(row.published_at),
+    postType: String(row.post_type ?? "Post"),
+    caption: String(row.caption ?? ""),
+    permalink: typeof row.permalink === "string" ? row.permalink : null,
+    thumbnailUrl: typeof row.thumbnail_url === "string" ? row.thumbnail_url : null,
+    reach: nullableNumber(row.reach),
+    views: nullableNumber(row.views),
+    likes: nullableNumber(row.likes),
+    comments: nullableNumber(row.comments),
+    shares: nullableNumber(row.shares),
+    saves: nullableNumber(row.saves),
+    clicks: nullableNumber(row.clicks),
+    interactions: nullableNumber(row.interactions),
+  }));
+  const socialFollowers = (socialFollowersRes.error ? [] : (socialFollowersRes.data ?? []) as unknown as Array<Record<string, unknown>>)
+    .filter(row => nullableNumber(row.followers) !== null)
+    .map(row => ({
+      platform: row.platform === "instagram" ? "instagram" as const : "facebook" as const,
+      accountName: typeof row.account_name === "string" ? row.account_name : null,
+      date: String(row.date),
+      followers: Number(row.followers),
+    }));
+  const metaConnection = ((integrationsRes.data ?? []) as unknown as RawIntegration[]).find(item => item.provider === "meta");
+  const metaGranted = Array.isArray(metaConnection?.configuration?.meta_granted_permissions)
+    ? (metaConnection?.configuration?.meta_granted_permissions as unknown[]).filter((value): value is string => typeof value === "string")
+    : [];
+  const socialSync = {
+    connected: metaConnection?.status === "connected",
+    pageName: typeof metaConnection?.configuration?.social_page_name === "string" ? metaConnection.configuration.social_page_name : null,
+    warning: socialPostsRes.error
+      ? `Social tables unavailable: ${socialPostsRes.error.message}`
+      : typeof metaConnection?.configuration?.social_warning === "string" ? metaConnection.configuration.social_warning : null,
+    missingPermissions: ["read_insights","instagram_basic","instagram_manage_insights"].filter(permission => !metaGranted.includes(permission)),
+  };
   const syncedMonthlySpend=[...((yearMetricsRes.data ?? []) as unknown as Array<{date:string;spend:number|string;marketing_channels:{name:string}|null}>).reduce((map,row)=>{
     const month=row.date.slice(0,7);
     const channel=row.marketing_channels?.name??"Unknown";
@@ -573,7 +620,7 @@ async function loadLiveDataset(supabase: Awaited<ReturnType<typeof createSupabas
 
   const revenue=attributableProjects.reduce((sum, project) => sum + Number(project.project_value ?? 0), 0), grossProfit=attributableProjects.every(p=>p.gross_margin!==null)?attributableProjects.reduce((s,p)=>s+Number(p.project_value??0)*Number(p.gross_margin??0),0):null;
   const previous = { spend:0, leads:0, notRelevant:0, qualified:0, visits:0, quotes:0, won:0, revenue:0 };
-  return {company,periodKey:period.selectedMonth,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:`vs ${comparison.fromDate} — ${comparison.toDate}`,metrics:{spend:total("spend"),leads:rawLeads.length,notRelevant:rawLeads.filter(isNotRelevantLead).length,qualified:rawLeads.filter(isQualifiedLead).length,visits:rawLeads.filter(hasReachedVisit).length,quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous,channels,leadSources,commercialDeals,commercialClients,commercialOffers,periodCommercialOffers,commercialProjects,commercialInvoices,periodCommercialProjects,periodCommercialInvoices,allCommercialProjects,allCommercialInvoices,commercialAppointments,appointmentLeadIds,leads,acquisitionLeads,services,campaigns,trend,businessDecision,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:classifiedClicks?branded/classifiedClicks*100:null},gbp,integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[])[0]?.records_imported??0,resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),changeEvents:rawChangeEvents.map(event=>({id:event.id,provider:event.provider,occurredAt:event.occurred_at,metricKey:event.metric_key,title:event.title,detail:event.detail??"",delta:event.delta===null?null:Number(event.delta),beforeValue:event.before_value===null?null:Number(event.before_value),afterValue:event.after_value===null?null:Number(event.after_value),severity:event.severity})),manualOverrides:rawOverrides.map(item=>({id:item.id,periodKey:item.period_key,scopeType:item.scope_type,scopeKey:item.scope_key,fieldKey:item.field_key,value:item.value,note:item.note??"",updatedAt:item.updated_at})),sourceAcquisitionWindows,clientFirstOfferDates,syncedMonthlySpend,automation:rawAutomation?{enabled:rawAutomation.enabled,operationalSchedule:rawAutomation.operational_schedule,marketingSchedule:rawAutomation.marketing_schedule}:null,dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:attributableProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:potentialDuplicateCount(rawLeads),campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
+  return {company,periodKey:period.selectedMonth,periodLabel:`${fromDate} — ${toDate}`,comparisonLabel:`vs ${comparison.fromDate} — ${comparison.toDate}`,metrics:{spend:total("spend"),leads:rawLeads.length,notRelevant:rawLeads.filter(isNotRelevantLead).length,qualified:rawLeads.filter(isQualifiedLead).length,visits:rawLeads.filter(hasReachedVisit).length,quotes:quoteLeadIds.size,won:wonLeadIds.size,revenue,grossProfit},previous,channels,leadSources,commercialDeals,commercialClients,commercialOffers,periodCommercialOffers,commercialProjects,commercialInvoices,periodCommercialProjects,periodCommercialInvoices,allCommercialProjects,allCommercialInvoices,commercialAppointments,appointmentLeadIds,leads,acquisitionLeads,services,campaigns,trend,businessDecision,locations,website,seo:{impressions:seoImpressions,clicks:seoClicks,ctr:seoImpressions?seoClicks/seoImpressions*100:0,position:seoImpressions?positionSum/seoImpressions:0,brandedShare:classifiedClicks?branded/classifiedClicks*100:null},gbp,integrations:((integrationsRes.data??[]) as unknown as RawIntegration[]).map(i=>({id:i.id,provider:i.provider,name:providerName(i.provider),status:i.status==="connected"?"Connected":i.status==="connecting"?"Connecting":i.status==="error"?"Error":"Not connected",lastSuccess:i.last_successful_sync,lastAttempt:i.last_attempted_sync,records:(i.sync_logs??[])[0]?.records_imported??0,resource:integrationResource(i.provider,i.configuration),errorMessage:i.error_message,metaPermissionStatus:metaPermissionStatus(i.provider,i.configuration),metaMissingPermissions:metaMissingPermissions(i.provider,i.configuration)})),changeEvents:rawChangeEvents.map(event=>({id:event.id,provider:event.provider,occurredAt:event.occurred_at,metricKey:event.metric_key,title:event.title,detail:event.detail??"",delta:event.delta===null?null:Number(event.delta),beforeValue:event.before_value===null?null:Number(event.before_value),afterValue:event.after_value===null?null:Number(event.after_value),severity:event.severity})),manualOverrides:rawOverrides.map(item=>({id:item.id,periodKey:item.period_key,scopeType:item.scope_type,scopeKey:item.scope_key,fieldKey:item.field_key,value:item.value,note:item.note??"",updatedAt:item.updated_at})),sourceAcquisitionWindows,clientFirstOfferDates,syncedMonthlySpend,socialPosts,socialFollowers,socialSync,automation:rawAutomation?{enabled:rawAutomation.enabled,operationalSchedule:rawAutomation.operational_schedule,marketingSchedule:rawAutomation.marketing_schedule}:null,dataHealth:{missingSource:rawLeads.filter(l=>!l.source&&!l.channel_id).length,missingService:rawLeads.filter(l=>!l.service_id).length,missingCampaign:rawLeads.filter(l=>!l.campaign_id).length,wonMissingRevenue:attributableProjects.filter(p=>p.status==="won"&&!p.project_value).length,duplicates:potentialDuplicateCount(rawLeads),campaignsWithoutSpend:Math.max(0,((campaignsRes.data??[]).length-new Set(rawMetrics.filter(m=>Number(m.spend)>0).map(m=>m.campaign_id)).size)),daysSinceSync:null}};
 }
 
 function isDateConflict(status: string | null | undefined) {
@@ -1088,6 +1135,12 @@ function availableDashboardMonths() {
   for(let quarter=currentQuarter;quarter>=1;quarter-=1) values.push(`${year}-Q${quarter}`);
   for(let month=currentMonth;month>=1;month-=1) values.push(`${year}-${String(month).padStart(2,"0")}`);
   return values;
+}
+
+function nullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function brusselsDate(date: Date) {

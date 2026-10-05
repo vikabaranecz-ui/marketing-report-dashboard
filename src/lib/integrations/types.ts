@@ -49,6 +49,10 @@ export type ConnectionConfiguration = {
   account_name?: string;
   ad_account_id?: string;
   ad_account_name?: string;
+  /** Facebook Page used for organic social reporting; defaults to the Page matching the company name. */
+  social_page_id?: string;
+  social_page_name?: string | null;
+  social_warning?: string | null;
   customer_id?: string;
   customer_name?: string;
   login_customer_id?: string;

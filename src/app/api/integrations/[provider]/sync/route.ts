@@ -210,6 +210,8 @@ export async function POST(
           meta_permission_status: (result as MetaSyncResult).metaPermissionStatus,
           meta_granted_permissions: (result as MetaSyncResult).grantedPermissions,
           meta_missing_permissions: (result as MetaSyncResult).missingPermissions,
+          social_page_name: (result as MetaSyncResult).socialPageName,
+          social_warning: (result as MetaSyncResult).socialWarning,
         },
       } : {}),
       updated_at: completedAt,

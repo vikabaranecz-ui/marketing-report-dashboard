@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { credentialStore } from "./credentials";
 import { syncMetaLeadAttribution, type MetaLeadSyncResult } from "./meta-lead-sync";
 import { fetchMetaDailyInsights, fetchMetaLeadAds, fetchMetaPermissionState } from "./meta/client";
+import { fetchMetaSocial } from "./meta/social";
 import { normalizeMetaAdAccountId, type MetaInsight } from "./meta/core";
 import type { MetaLeadRecord } from "./meta/lead-attribution-core";
 import { optionalMetaLeadPhase, parseMetaPermissionRows, readMetaSyncSources, type MetaReadinessStatus } from "./meta/production-core";
@@ -40,6 +41,9 @@ export type MetaSyncResult = {
   metaLeadRetrievalScope: "direct_forms" | "selected_pages" | "accessible_pages_fallback" | null;
   metaLeadPagesProcessed: number;
   metaLeadFormsProcessed: number;
+  socialPostsImported: number;
+  socialPageName: string | null;
+  socialWarning: string | null;
 };
 
 export async function syncMetaProvider(
@@ -105,7 +109,7 @@ export async function syncMetaProvider(
   const admin = createSupabaseAdminClient();
   const companyResult = await admin
     .from("companies")
-    .select("organization_id")
+    .select("organization_id,name")
     .eq("id", companyId)
     .single();
   if (companyResult.error) throw new Error(`Unable to load the reporting company: ${companyResult.error.message}`);
@@ -242,6 +246,20 @@ export async function syncMetaProvider(
     if (attribution.warning) leadWarnings.push(attribution.warning);
   }
 
+  // Organic Page/Instagram posts are optional: a failure here never blocks ad spend.
+  const social = await syncMetaSocialPosts(
+    admin,
+    companyId,
+    String(companyResult.data.name ?? ""),
+    credential.accessToken,
+    typeof configuration.social_page_id === "string" ? configuration.social_page_id : null,
+    dateTo,
+  ).catch(error => ({
+    imported: 0,
+    pageName: null as string | null,
+    warning: `Organic social sync failed: ${error instanceof Error ? error.message : String(error)}`,
+  }));
+
   const dates = insights.map(row => row.date).sort();
   const monthlySpend = monthlySummary(insights);
   return {
@@ -275,7 +293,60 @@ export async function syncMetaProvider(
     metaLeadRetrievalScope,
     metaLeadPagesProcessed,
     metaLeadFormsProcessed,
+    socialPostsImported: social.imported,
+    socialPageName: social.pageName,
+    socialWarning: social.warning,
   };
+}
+
+async function syncMetaSocialPosts(
+  admin: Admin,
+  companyId: string,
+  companyName: string,
+  accessToken: string,
+  configuredPageId: string | null,
+  today: string,
+) {
+  const result = await fetchMetaSocial(accessToken, companyName, configuredPageId, INITIAL_SYNC_FROM);
+  const syncedAt = new Date().toISOString();
+  for (let index = 0; index < result.posts.length; index += 200) {
+    const upsert = await admin.from("social_posts").upsert(result.posts.slice(index, index + 200).map(post => ({
+      company_id: companyId,
+      platform: post.platform,
+      account_id: post.accountId,
+      account_name: post.accountName,
+      external_id: post.externalId,
+      published_at: post.publishedAt,
+      post_type: post.postType,
+      caption: post.caption,
+      permalink: post.permalink,
+      thumbnail_url: post.thumbnailUrl,
+      reach: post.reach,
+      views: post.views,
+      likes: post.likes,
+      comments: post.comments,
+      shares: post.shares,
+      saves: post.saves,
+      clicks: post.clicks,
+      interactions: post.interactions,
+      synced_at: syncedAt,
+    })), { onConflict: "company_id,platform,external_id" });
+    if (upsert.error) throw new Error(`Unable to store social posts: ${upsert.error.message}`);
+  }
+  const snapshots = result.accounts.filter(account => account.followers !== null);
+  if (snapshots.length) {
+    const upsert = await admin.from("social_account_daily").upsert(snapshots.map(account => ({
+      company_id: companyId,
+      platform: account.platform,
+      account_id: account.accountId,
+      account_name: account.accountName,
+      date: today,
+      followers: account.followers,
+      synced_at: syncedAt,
+    })), { onConflict: "company_id,platform,account_id,date" });
+    if (upsert.error) throw new Error(`Unable to store social follower counts: ${upsert.error.message}`);
+  }
+  return { imported: result.posts.length, pageName: result.pageName, warning: result.warning };
 }
 
 type Admin = ReturnType<typeof createSupabaseAdminClient>;

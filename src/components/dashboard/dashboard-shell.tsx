@@ -8,6 +8,7 @@ import { OverviewPage } from "./overview";
 import { LeadsSalesPage } from "./leads-sales";
 import { ClientJourneyPage, CohortsPage, OffersPipelinePage, SalesProjectsPage, SalesTeamPage, VisitsPage } from "./journey-pages";
 import { AcquisitionPage, IntegrationsPage, LocationsPage, ServicesPage, SettingsPage, WebsiteSeoPage } from "./detail-pages";
+import { SocialPage } from "./social-page";
 import { DataHealthPage, FunnelPage, RevenuePage, SourcesCampaignsPage } from "./control-pages";
 import { EmptyState } from "./ui";
 import { buildOverviewAnalytics } from "@/lib/metrics/business-overview";
@@ -16,7 +17,7 @@ export function DashboardShell({ bootstrap, section }: { bootstrap: DashboardBoo
   const companyId = bootstrap.selectedCompanyId;
   const data = bootstrap.datasets[companyId];
   const meta = sectionMeta[section];
-  const Page = useMemo(() => ({ overview: OverviewPage, funnel: FunnelPage, campaigns: SourcesCampaignsPage, "client-journey": ClientJourneyPage, "offers-pipeline": OffersPipelinePage, revenue: RevenuePage, "website-seo": WebsiteSeoPage, "data-health": DataHealthPage, "leads-sales": LeadsSalesPage, visits: VisitsPage, "sales-projects": SalesProjectsPage, acquisition: AcquisitionPage, services: ServicesPage, locations: LocationsPage, cohorts: CohortsPage, "sales-team": SalesTeamPage, integrations: IntegrationsPage, settings: SettingsPage })[section], [section]);
+  const Page = useMemo(() => ({ overview: OverviewPage, funnel: FunnelPage, campaigns: SourcesCampaignsPage, "client-journey": ClientJourneyPage, "offers-pipeline": OffersPipelinePage, revenue: RevenuePage, "website-seo": WebsiteSeoPage, social: SocialPage, "data-health": DataHealthPage, "leads-sales": LeadsSalesPage, visits: VisitsPage, "sales-projects": SalesProjectsPage, acquisition: AcquisitionPage, services: ServicesPage, locations: LocationsPage, cohorts: CohortsPage, "sales-team": SalesTeamPage, integrations: IntegrationsPage, settings: SettingsPage })[section], [section]);
   function exportCsv() {
     if (!data) return;
     const analytics=buildOverviewAnalytics(data,{source:"all",campaign:"all"});

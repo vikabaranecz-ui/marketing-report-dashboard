@@ -1,4 +1,4 @@
-import { Activity, Database, FileText, Globe2, LayoutDashboard, Megaphone, Settings, UsersRound, WalletCards } from "lucide-react";
+import { Activity, Database, FileText, Globe2, LayoutDashboard, Megaphone, Settings, Share2, UsersRound, WalletCards } from "lucide-react";
 
 export const navItems = [
   { href: "/overview", label: "Home", icon: LayoutDashboard },
@@ -6,6 +6,7 @@ export const navItems = [
   { href: "/offers-pipeline", label: "Pipeline", icon: FileText },
   { href: "/campaigns", label: "Marketing", icon: Megaphone },
   { href: "/website-seo", label: "Website & SEO", icon: Globe2 },
+  { href: "/social", label: "Social media", icon: Share2 },
   { href: "/data-health", label: "Data & Sync", icon: Database },
 ] as const;
 
@@ -15,6 +16,7 @@ export const sectionMeta = {
   "offers-pipeline": { eyebrow: "Offers, follow-up & cash", title: "Pipeline", icon: FileText },
   campaigns: { eyebrow: "Source economics", title: "Marketing", icon: Megaphone },
   "website-seo": { eyebrow: "Demand creation", title: "Website & SEO", icon: Globe2 },
+  social: { eyebrow: "Organic Facebook & Instagram", title: "Social media", icon: Share2 },
   "data-health": { eyebrow: "Automation, integrations & trust", title: "Data & Sync", icon: Database },
 
   funnel: { eyebrow: "Leakage & conversion", title: "Funnel detail", icon: Activity },

@@ -249,6 +249,25 @@ export type LocationMetric = {
   spend: number | null;
 };
 
+export type SocialPost = {
+  id: string;
+  platform: "facebook" | "instagram";
+  accountName: string | null;
+  publishedAt: string;
+  postType: string;
+  caption: string;
+  permalink: string | null;
+  thumbnailUrl: string | null;
+  reach: number | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  clicks: number | null;
+  interactions: number | null;
+};
+
 export type Integration = {
   id: string;
   provider: "meta" | "google_ads" | "ga4" | "search_console" | "google_business" | "monday" | "hubspot" | "robaws" | "website_forms";
@@ -330,6 +349,12 @@ export type CompanyDataset = {
   sourceAcquisitionWindows?: Array<{ source: string; firstDate: string; lastDate: string; crmPeople: number }>;
   /** Earliest ROBAWS offer date per ROBAWS client external id (offers linked to CRM leads only). */
   clientFirstOfferDates?: Record<string, string>;
+  /** Organic Facebook Page / Instagram posts published in the selected year. */
+  socialPosts?: SocialPost[];
+  /** Daily follower snapshots per social account for the selected year. */
+  socialFollowers?: Array<{ platform: "facebook" | "instagram"; accountName: string | null; date: string; followers: number }>;
+  /** Organic social sync state taken from the Meta connection. */
+  socialSync?: { connected: boolean; pageName: string | null; warning: string | null; missingPermissions: string[] };
   /** Synced ad spend for the selected year, per calendar month and marketing channel. */
   syncedMonthlySpend?: Array<{ month: string; channel: string; spend: number }>;
   automation?: AutomationSettings | null;

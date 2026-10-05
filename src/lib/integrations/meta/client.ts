@@ -9,7 +9,7 @@ import {
   type MetaAdContext,
 } from "./production-core";
 
-const GRAPH_ROOT = "https://graph.facebook.com/v26.0";
+export const GRAPH_ROOT = "https://graph.facebook.com/v26.0";
 
 export async function discoverMetaAdAccounts(accessToken: string): Promise<MetaAdAccount[]> {
   const url = new URL(`${GRAPH_ROOT}/me/adaccounts`);
@@ -175,7 +175,7 @@ async function fetchMetaPages(accessToken: string) {
   return fetchAll(pagesUrl, accessToken);
 }
 
-async function fetchAll(initialUrl: URL, accessToken: string) {
+export async function fetchAll(initialUrl: URL, accessToken: string) {
   const rows: Record<string, unknown>[] = [];
   let next: string | null = initialUrl.toString();
 
