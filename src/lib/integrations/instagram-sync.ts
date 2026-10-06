@@ -168,11 +168,19 @@ async function getJson(url: string, accessToken: string) {
   if (!response.ok) {
     const error = body.error as { message?: string } | undefined;
     const hint = /parse access token/i.test(error?.message ?? "")
-      ? " Check INSTAGRAM_ACCESS_TOKEN in Vercel: paste only the token (starts with IGAA or EAA), without quotes or spaces, then redeploy."
+      ? ` ${describeToken(accessToken)} Check INSTAGRAM_ACCESS_TOKEN in Vercel: paste only the access token (starts with IGAA or EAA), without quotes or spaces, then redeploy.`
       : "";
     throw new Error(`Instagram API request failed with HTTP ${response.status}.${error?.message ? ` ${error.message}` : ""}${hint}`);
   }
   return body;
+}
+
+/** Safe diagnostic: names the token family and length, never any secret characters. */
+function describeToken(token: string) {
+  const family = token.startsWith("IGAA") || token.startsWith("IGQ") ? "an Instagram Login token"
+    : token.startsWith("EAA") ? "a Facebook Login token"
+    : "NOT an access token (it does not start with IGAA or EAA)";
+  return `The configured value is ${family}, ${token.length} characters long.`;
 }
 
 function numberOrNull(value: unknown) {
