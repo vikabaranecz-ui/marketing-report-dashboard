@@ -1,12 +1,24 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { credentialStore } from "./credentials";
 import { brusselsDate, storeSocialResults } from "./meta-social-sync";
 import { readInsightValue, socialPostType, type SocialAccountSnapshot, type SocialPostRecord } from "./meta/social-core";
 
-// Instagram API with Instagram Login (tokens starting with "IGAA").
+// Instagram API with Instagram Login tokens start with "IG" and use graph.instagram.com.
+// Facebook Login tokens ("EAA…") reach the same Instagram account through graph.facebook.com.
 const IG_ROOT = "https://graph.instagram.com/v26.0";
+const FB_ROOT = "https://graph.facebook.com/v26.0";
+
+function apiRoot(token: string) {
+  return token.startsWith("IG") ? IG_ROOT : FB_ROOT;
+}
+
+/** Removes quotes, whitespace and line breaks that are easy to paste into an environment variable. */
+export function cleanToken(value: string | undefined | null) {
+  return String(value ?? "").replace(/^["'\s]+|["'\s]+$/g, "").replace(/\s+/g, "");
+}
 const SYNC_FROM = "2026-01-01";
 const REFRESH_WHEN_DAYS_LEFT = 20;
 
@@ -23,14 +35,15 @@ export type InstagramSyncResult = {
  * in the credential vault so the 60-day token never expires while syncs run.
  */
 export async function syncInstagramProvider(connectionId: string, companyId: string): Promise<InstagramSyncResult> {
-  const accountId = (process.env.INSTAGRAM_ACCOUNT_ID ?? "").trim();
+  const accountId = cleanToken(process.env.INSTAGRAM_ACCOUNT_ID);
   if (!accountId) throw new Error("INSTAGRAM_ACCOUNT_ID is not configured.");
   const accessToken = await currentToken(connectionId);
+  const root = apiRoot(accessToken);
 
   const warnings: string[] = [];
-  const profile = await getJson(`${IG_ROOT}/${accountId}?fields=username,followers_count,media_count`, accessToken);
+  const profile = await getJson(`${root}/${accountId}?fields=username,followers_count,media_count`, accessToken);
   const username = typeof profile.username === "string" ? profile.username : null;
-  const posts = await fetchInstagramMedia(accountId, accessToken, username, warnings);
+  const posts = await fetchInstagramMedia(root, accountId, accessToken, username, warnings);
   const accounts: SocialAccountSnapshot[] = [{
     platform: "instagram",
     accountId,
@@ -49,10 +62,16 @@ export async function syncInstagramProvider(connectionId: string, companyId: str
 }
 
 async function currentToken(connectionId: string) {
-  const stored = await credentialStore.read(connectionId, "instagram").catch(() => null);
-  const envToken = (process.env.INSTAGRAM_ACCESS_TOKEN ?? "").trim();
+  const envToken = cleanToken(process.env.INSTAGRAM_ACCESS_TOKEN);
+  // A refreshed token in the vault is only used while it descends from the current
+  // INSTAGRAM_ACCESS_TOKEN; pasting a new token in Vercel always takes over.
+  const source = envToken ? `env:${createHash("sha256").update(envToken).digest("hex").slice(0, 16)}` : "";
+  const vaulted = await credentialStore.read(connectionId, "instagram").catch(() => null);
+  const stored = vaulted && (!source || vaulted.scopes.includes(source)) ? vaulted : null;
   const token = stored?.accessToken || envToken;
   if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN is not configured.");
+  // Only Instagram Login tokens use the ig_refresh_token flow.
+  if (!token.startsWith("IG")) return token;
 
   const expiresAt = stored?.expiresAt ? Date.parse(stored.expiresAt) : NaN;
   const daysLeft = Number.isFinite(expiresAt) ? (expiresAt - Date.now()) / 86_400_000 : 0;
@@ -66,7 +85,7 @@ async function currentToken(connectionId: string) {
       await credentialStore.write(connectionId, "instagram", {
         accessToken: refreshed.access_token,
         expiresAt: new Date(Date.now() + (Number.isFinite(seconds) && seconds > 0 ? seconds : 60 * 86_400) * 1000).toISOString(),
-        scopes: stored?.scopes ?? [],
+        scopes: source ? [source] : [],
       });
       return refreshed.access_token;
     }
@@ -82,19 +101,19 @@ const METRIC_SETS = [
   ["reach"],
 ];
 
-async function fetchInstagramMedia(accountId: string, accessToken: string, username: string | null, warnings: string[]) {
+async function fetchInstagramMedia(root: string, accountId: string, accessToken: string, username: string | null, warnings: string[]) {
   const base = "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count";
   let rows: Record<string, unknown>[] | null = null;
   for (const metrics of METRIC_SETS) {
     try {
-      rows = await getAll(`${IG_ROOT}/${accountId}/media?fields=${base},insights.metric(${metrics.join(",")})&limit=50`, accessToken);
+      rows = await getAll(`${root}/${accountId}/media?fields=${base},insights.metric(${metrics.join(",")})&limit=50`, accessToken);
       break;
     } catch {
       // try the next, smaller metric set
     }
   }
   if (!rows) {
-    rows = await getAll(`${IG_ROOT}/${accountId}/media?fields=${base}&limit=50`, accessToken);
+    rows = await getAll(`${root}/${accountId}/media?fields=${base}&limit=50`, accessToken);
     warnings.push("Post statistics (reach, saves, shares) were unavailable; check the instagram_business_manage_insights permission.");
   }
 
@@ -148,9 +167,20 @@ async function getJson(url: string, accessToken: string) {
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     const error = body.error as { message?: string } | undefined;
-    throw new Error(`Instagram API request failed with HTTP ${response.status}.${error?.message ? ` ${error.message}` : ""}`);
+    const hint = /parse access token/i.test(error?.message ?? "")
+      ? ` ${describeToken(accessToken)} Check INSTAGRAM_ACCESS_TOKEN in Vercel: paste only the access token (starts with IGAA or EAA), without quotes or spaces, then redeploy.`
+      : "";
+    throw new Error(`Instagram API request failed with HTTP ${response.status}.${error?.message ? ` ${error.message}` : ""}${hint}`);
   }
   return body;
+}
+
+/** Safe diagnostic: names the token family and length, never any secret characters. */
+function describeToken(token: string) {
+  const family = token.startsWith("IGAA") || token.startsWith("IGQ") ? "an Instagram Login token"
+    : token.startsWith("EAA") ? "a Facebook Login token"
+    : "NOT an access token (it does not start with IGAA or EAA)";
+  return `The configured value is ${family}, ${token.length} characters long.`;
 }
 
 function numberOrNull(value: unknown) {
